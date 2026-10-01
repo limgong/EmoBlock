@@ -1,0 +1,175 @@
+{
+  "authority": "EmoBlocks-Windows-20260926-UI-v2/EmoBlocks",
+  "backup": "work/sync-backup-20261001",
+  "changes": [
+    {
+      "path": "outputs/EmoBlocks/auto_preview.py",
+      "before": null,
+      "after": "a9aecf296896bc99c9b0359519648cf108ddc44b2ebc1d8e1a5c8fa8a5c58046",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/block_actions.py",
+      "before": null,
+      "after": "a00c69475b44e6541d58bafc5f735e6a4656a470d25e4f99e1230dd6b9e3cf67",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/block_editor.py",
+      "before": null,
+      "after": "8d990d63ee67e12814992ba04174b9eec79bc585963ff95c9c5a913ebdd21540",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/block_timeline.py",
+      "before": null,
+      "after": "62738b2da62314c463177549227cc4dade978f676efe3f832eefb355be9f618f",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/block_visuals.py",
+      "before": null,
+      "after": "c050dae68508f4318af52945be61a84bc0e2e0078fccdbe8204544dc60525d42",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/card_style.py",
+      "before": "9b1bf2960961692669c88ce2465b6457a784b6e0dbdb9c25efb3db0951af7a09",
+      "after": "6d86d2c62267eabe0818f2a3b376d251797b99b6213f1c62c2f2c5e506b7cdcf",
+      "action": "replaced"
+    },
+    {
+      "path": "outputs/EmoBlocks/emotion_input.py",
+      "before": "78117a0076843a91f3fec38056c8eacb11f02683f309bbf81597e9eaed4309ef",
+      "after": "af91c71a09bfd1f0945f38724b8a4cf91e41257eef8c3497626b96568d2de364",
+      "action": "replaced"
+    },
+    {
+      "path": "outputs/EmoBlocks/preview_ui.py",
+      "before": null,
+      "after": "7d5d7e9850b6f33b568b5c24ca19cb924ea689d3149a00c15a6fecf856eaa410",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/story_engine.py",
+      "before": "8ae7c4f809af2e6c7ff048b1441dc49ea66ebd6d760b39bd3a681d7b8d81798c",
+      "after": "fd96f48bf0452bd664564c9ccc08dcc1fa861a83b4a82f3ea6362482573465db",
+      "action": "replaced"
+    },
+    {
+      "path": "outputs/EmoBlocks/story_ui.py",
+      "before": "c8f01b57598866e62b2b86cf34a7a29e8b13b05c0e35328ad9554958d6154b3a",
+      "after": "ce7e9d6d8e9c0ee5d2b60804cc67a1599bfa4d9428baa13e15771579b135c530",
+      "action": "replaced"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_auto_preview.py",
+      "before": null,
+      "after": "532001eda8f4a706375ac9ef423bdd0d9ad304190e66ea8cd625e0938e8f5dd7",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_automatic_memory_ui.py",
+      "before": null,
+      "after": "e4fea4968051a52f03a22faee11d0a545eee3b2484ebfd6b891ff6e7cf7388e2",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_block_actions.py",
+      "before": null,
+      "after": "04d40e54700d03c1d905a86e8339d6e380cda96b00a515ed580e1e8d83517723",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_block_editor.py",
+      "before": null,
+      "after": "bd941ab47fdd5831c9c05d41a0554a66d066ced01937c4e55d27f857127f79b7",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_block_interaction.py",
+      "before": null,
+      "after": "550a88a425ba539eb90dad9b53fdf13da3cc19086ca79b40c336df5101c2580f",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_block_visuals.py",
+      "before": null,
+      "after": "56a46d523f4ceceb36a8a6ebac8a9104be77c619f101378717ee41d8da5567c6",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_paint_sources.py",
+      "before": null,
+      "after": "4bc22557c4c8b3b2ac57af5c4dfefa251d3d6e63af5d409b43f8bbc8cd8eb6b8",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_preview_waveform.py",
+      "before": null,
+      "after": "34f24b16e7622ea66fc03125909fca770be504238c322a1570b3a37238bc7f47",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/test_story_preview.py",
+      "before": null,
+      "after": "2c68baef4d497e7d7c935b23fd046180aa82e2f28257c1a92b481dd5c33f7e35",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/ui_hints.py",
+      "before": null,
+      "after": "dbb62c2ae94efb8bc353734b68be3ddc44dcdd3e901f0656034707aafb254878",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/ui_scale.py",
+      "before": null,
+      "after": "20ecd7f5e0b796669a4b985c556d6669b3bd93df2365b0ab734dbf1feea05215",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/ui_theme.py",
+      "before": null,
+      "after": "8581df71b70fd33115e40f3ac3d274362cdbb26dfd226996359b718ceaa0b662",
+      "action": "added"
+    },
+    {
+      "path": "outputs/EmoBlocks/unified_ui.py",
+      "before": "a4149c0fb209665f03e0e58bd3b2ac0e65a37d1d48ac64b255d71cb235abf360",
+      "after": "f004da49a1e8e2bd236d35355dbc604ef19bcb43a621c742020d190f6c8116df",
+      "action": "replaced"
+    },
+    {
+      "path": "outputs/EmoBlocks/window_ui.py",
+      "before": null,
+      "after": "acf8442fdb8a3290e360656230192808a7e3e14547fee9f93784437fc276e374",
+      "action": "added"
+    },
+    {
+      "path": "outputs/BLOCK-LOGIC.md",
+      "before": null,
+      "after": "eafd30462598542a3a5f8d3101a740bcc2add5e1f08eea952a30fcadab13f04e",
+      "action": "document-sync"
+    },
+    {
+      "path": "outputs/Current-Features-and-History.md",
+      "before": null,
+      "after": "4de212f95f5284efe3db3789d3c050fa5e963365feeb5cae78c070d342b7edbb",
+      "action": "document-sync"
+    },
+    {
+      "path": "outputs/EmoBlocks-Release-README.md",
+      "before": "700f27cd14ddb3be3c7fe755c51e9c9d35878876f01169019719070f23c9b068",
+      "after": "f93aa069b3e543aeaa3abdcd16734df4150dbf52dec35e91d2dc06ab468b1356",
+      "action": "document-sync"
+    },
+    {
+      "path": "outputs/UI-UPDATE.md",
+      "before": null,
+      "after": "031c8d9568df750e93780187275acc7d8d01da1a020c1df9614b500ed5dd2464",
+      "action": "document-sync"
+    }
+  ],
+  "note": "Release binaries/caches/user projects are preserved locally and excluded from Git. Canonical source follows UI-v2, with subsequent platform/path adaptations."
+}

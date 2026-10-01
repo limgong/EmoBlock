@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project creatorversion="1.2.2" version="1.0" creator="LMMS" type="song">
+  <head timesig_denominator="4" masterpitch="0" bpm="120" mastervol="70" timesig_numerator="4"/>
+  <song>
+    <trackcontainer minimized="0" maximized="1" width="900" y="1" visible="1" height="300" type="song" x="1">
+      <track name="Calm - C3 D3 D#3 G#3 G3" solo="0" type="0" muted="0">
+        <instrumenttrack fxch="0" pitch="0" usemasterpitch="1" vol="40" pitchrange="1" basenote="57" pan="0">
+          <instrument name="tripleoscillator">
+            <tripleoscillator coarse0="0" phoffset0="0" stphdetun1="0" pan2="0" finel2="0" wavetype1="0" modalgo2="2" pan1="0" finer0="0" pan0="0" finel0="0" userwavefile0="" modalgo3="2" phoffset1="0" coarse2="0" coarse1="0" finer2="0" modalgo1="2" stphdetun0="0" finer1="0" vol1="0" wavetype2="0" userwavefile1="" stphdetun2="0" phoffset2="0" vol2="0" vol0="100" userwavefile2="" finel1="0" wavetype0="0"/>
+          </instrument>
+          <eldata fcut="14000" fres="0.5" ftype="0" fwet="0">
+            <elvol lamt="0" latt="0" att="0.005" userwavefile="" ctlenvamt="0" pdel="0" hold="0" x100="0" lspd="0.1" lpdel="0" dec="0.15" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" lshp="0" sustain="0.7" amt="1" rel="0.06"/>
+            <elcut lamt="0" latt="0" att="0" userwavefile="" ctlenvamt="0" pdel="0" hold="0.5" x100="0" lspd="0.1" lpdel="0" dec="0.5" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" lshp="0" sustain="0.5" amt="0" rel="0.1"/>
+            <elres lamt="0" latt="0" att="0" userwavefile="" ctlenvamt="0" pdel="0" hold="0.5" x100="0" lspd="0.1" lpdel="0" dec="0.5" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" lshp="0" sustain="0.5" amt="0" rel="0.1"/>
+          </eldata>
+          <chordcreator chord="0" chord-enabled="0" chordrange="1"/>
+          <arpeggiator arp-enabled="0" arpgate="100" arpmode="0" arprange="1" arptime_denominator="4" arptime="200" arpmiss="0" arp="0" arpskip="0" arpdir="0" arpcycle="0" arptime_syncmode="0" arptime_numerator="4"/>
+          <midiport outputprogram="1" inputchannel="0" fixedoutputnote="-1" inputcontroller="0" basevelocity="63" readable="0" outputcontroller="0" writable="0" outputchannel="1" fixedinputvelocity="-1" fixedoutputvelocity="-1"/>
+          <fxchain numofeffects="0" enabled="0"/>
+        </instrumenttrack>
+        <pattern name="Calm - octave down" steps="16" type="1" muted="0" pos="0">
+          <note vol="82" key="36" len="96" pan="0" pos="0"/>
+          <note vol="58" key="48" len="24" pan="0" pos="96"/>
+          <note vol="58" key="48" len="12" pan="0" pos="144"/>
+          <note vol="58" key="48" len="24" pan="0" pos="168"/>
+          <note vol="87" key="38" len="24" pan="0" pos="168"/>
+          <note vol="49" key="39" len="96" pan="0" pos="192"/>
+          <note vol="58" key="51" len="24" pan="0" pos="288"/>
+          <note vol="58" key="51" len="12" pan="0" pos="336"/>
+          <note vol="58" key="51" len="12" pan="0" pos="360"/>
+          <note vol="58" key="44" len="96" pan="0" pos="384"/>
+          <note vol="58" key="56" len="24" pan="0" pos="480"/>
+          <note vol="58" key="56" len="24" pan="0" pos="528"/>
+          <note vol="58" key="43" len="96" pan="0" pos="576"/>
+          <note vol="58" key="55" len="24" pan="0" pos="672"/>
+          <note vol="58" key="55" len="12" pan="0" pos="720"/>
+          <note vol="58" key="55" len="12" pan="0" pos="744"/>
+        </pattern>
+        <pattern name="Calm - octave down" steps="16" type="1" muted="0" pos="768">
+          <note vol="82" key="36" len="96" pan="0" pos="0"/>
+          <note vol="58" key="48" len="24" pan="0" pos="96"/>
+          <note vol="58" key="48" len="12" pan="0" pos="144"/>
+          <note vol="58" key="48" len="24" pan="0" pos="168"/>
+          <note vol="87" key="38" len="24" pan="0" pos="168"/>
+          <note vol="49" key="39" len="96" pan="0" pos="192"/>
+          <note vol="58" key="51" len="24" pan="0" pos="288"/>
+          <note vol="58" key="51" len="12" pan="0" pos="336"/>
+          <note vol="58" key="51" len="12" pan="0" pos="360"/>
+          <note vol="58" key="44" len="96" pan="0" pos="384"/>
+          <note vol="58" key="56" len="24" pan="0" pos="480"/>
+          <note vol="58" key="56" len="24" pan="0" pos="528"/>
+          <note vol="58" key="43" len="96" pan="0" pos="576"/>
+          <note vol="58" key="55" len="24" pan="0" pos="672"/>
+          <note vol="58" key="55" len="12" pan="0" pos="720"/>
+          <note vol="58" key="55" len="12" pan="0" pos="744"/>
+        </pattern>
+      </track>
+    </trackcontainer>
+    <track name="Automation track" solo="0" type="6" muted="0">
+      <automationtrack/>
+      <automationpattern mute="0" prog="0" name="Numerator" len="0" tens="1" pos="0"/>
+      <automationpattern mute="0" prog="0" name="Denominator" len="0" tens="1" pos="0"/>
+      <automationpattern mute="0" prog="0" name="Tempo" len="0" tens="1" pos="0"/>
+      <automationpattern mute="0" prog="0" name="Master volume" len="0" tens="1" pos="0"/>
+      <automationpattern mute="0" prog="0" name="Master pitch" len="0" tens="1" pos="0"/>
+    </track>
+    <fxmixer minimized="0" maximized="0" width="535" y="310" visible="1" height="333" x="5">
+      <fxchannel num="0" name="Master" soloed="0" volume="1" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+      </fxchannel>
+    </fxmixer>
+    <ControllerRackView minimized="0" maximized="0" width="350" y="310" visible="1" height="200" x="680"/>
+    <pianoroll minimized="0" maximized="0" width="860" y="13" visible="1" height="774" x="853"/>
+    <automationeditor minimized="0" maximized="0" width="860" y="202" visible="0" height="480" x="476"/>
+    <projectnotes minimized="0" maximized="0" width="712" y="10" visible="0" height="300" x="700"><![CDATA[<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
+<html><head><meta name="qrichtext" content="1" /><style type="text/css">
+p, li { white-space: pre-wrap; }
+</style></head><body style=" font-family:'SimSun'; font-size:9pt; font-weight:400; font-style:normal;">
+<p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"><span style=" color:#e0e0e0;">Enter project notes here</span></p></body></html>]]></projectnotes>
+    <timeline lp1pos="192" lp0pos="0" lpstate="0"/>
+    <controllers/>
+  </song>
+</lmms-project>

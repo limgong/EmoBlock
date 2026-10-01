@@ -1,0 +1,2 @@
+# Optional audio-to-MIDI runtime; install in a separate environment.
+basic-pitch==0.4.0
