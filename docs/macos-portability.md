@@ -4,7 +4,7 @@
 
 音乐后端无需整体重写：音符/MIDI/XML 处理、块规划、关联素材、情绪曲线及连接算法采用 Python、mido、NumPy，可共用。WAV 渲染仍需要 Mac 本机的 LMMS；不能使用 Windows 包中的 `lmms.exe`。LMMS 官方提供 Mac 构建，请从 [官方 Releases](https://github.com/LMMS/lmms/releases) 选择适合 Intel/Apple Silicon 的包。
 
-此次已做代码适配，但执行环境为 Windows。Mac 真机启动、实际音频输出、Finder 拖入、Retina 布局及本机 LMMS 渲染 **尚未实测**。CI 的 Mac 无窗口测试也不等同于完整 GUI / 音频测试。
+2026-10-03 已在 Apple Silicon Mac 上完成 Python/Tk 启动、完整测试和 LMMS 原生 WAV 渲染。Finder 拖入、Retina 布局及人工试听仍待交互验证；自动化测试和生成 WAV 不能证明这些体验。
 
 ## 已处理的原障碍
 
@@ -38,9 +38,9 @@ Finder 拖入采用 [tkinterdnd2](https://github.com/pmgagne/tkinterdnd2)。如�
 
 ## 验证记录与 Mac 实测步骤
 
-本次在 Windows 验证音乐逻辑与后端独立导入；通过模拟 afplay 验证截取帧数、暂停/恢复计时、播放结束和临时文件清理；用临时目录验证 Mac bundle 资源路径。模拟不会发出声音，也不能证明实际 macOS 播放成功。
+Windows 基线曾验证音乐逻辑与后端独立导入，并通过模拟 afplay 验证片段播放行为。2026-10-03 在 Apple Silicon Mac 上，Python 3.11.16 / Tk 9.0 使用用户目录中的 LMMS 1.3.0-alpha.2 完成原生验证：290 项测试通过，`scripts/check_frontends.py` 通过，`scripts/doctor.py --render` 生成了 44.1 kHz、27 秒的非静音 WAV，报告状态为 `complete`。`run.py` 启动后事件循环保持运行，但尚未完成人工界面交互及试听验证。Tk 9 对未选中 Combobox 的 `current()` 行为与旧版不同，已经做兼容处理；LMMS 1.3 不接受旧渲染命令的 `-x` 参数，现已移除。
 
-Mac 需依次执行：
+Mac 后续回归检查：
 
 ```bash
 python scripts/check_frontends.py

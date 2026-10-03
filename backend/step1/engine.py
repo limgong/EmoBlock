@@ -511,7 +511,7 @@ def generate(source,index,options,progress=lambda text:None,render=True):
                 raise ValueError('找不到 LMMS：'+str(LMMS))
             progress('编配完成，正在生成声音…')
             flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
-            proc=subprocess.run([str(LMMS),'render',str(folder/'arrangement.mmp'),'-o',str(folder/'dry.wav'),'-s','44100','-x','1'],
+            proc=subprocess.run([str(LMMS),'render',str(folder/'arrangement.mmp'),'-o',str(folder/'dry.wav'),'-s','44100'],
                                 capture_output=True,timeout=120,creationflags=flags)
             (folder/'render.log').write_bytes(proc.stdout+proc.stderr)
             if proc.returncode or not (folder/'dry.wav').is_file():

@@ -1,4 +1,5 @@
 from ui_scale import font as scaled_font
+from combobox_selection import selected_index
 from ui_theme import color as theme_color
 """One-window studio: quick melody-to-piece and detailed material workflow."""
 import copy
@@ -61,7 +62,7 @@ class CurveEditor(ttk.Frame):
         self.last=ttk.Combobox(row,state='readonly',width=16);self.last.pack(side='left',padx=5)
         self.emotion=ttk.Combobox(row,state='readonly',values=list(flow.music.EMOTIONS.values()),width=15)
         self.emotion.current(0);self.emotion.pack(side='left',padx=5)
-        self.first.bind('<<ComboboxSelected>>',lambda e:self.pick(self.first.current()))
+        self.first.bind('<<ComboboxSelected>>',lambda e:self.pick(selected_index(self.first)))
         row=ttk.Frame(self);row.pack(fill='x',pady=3)
         self.start=tk.StringVar(value='30');self.end=tk.StringVar(value='60')
         for label,var in [('起始强度',self.start),('结束强度',self.end)]:
@@ -72,7 +73,7 @@ class CurveEditor(ttk.Frame):
 
     def set_rows(self,rows):
         self.rows=copy.deepcopy(rows)
-        selected=self.first.current()
+        selected=selected_index(self.first)
         names=[f'{i+1} · {r["name"]}' for i,r in enumerate(rows)]
         self.first.configure(values=names);self.last.configure(values=names)
         if rows:self.pick(max(0,min(selected,len(rows)-1)))
@@ -118,7 +119,7 @@ class CurveEditor(ttk.Frame):
                     c.create_line(a,117-value['start']*75,b,117-value['end']*75,fill=shade,width=3)
             for side,px,py in [('start',x,y1),('end',end,y2)]:
                 c.create_oval(px-5,py-5,px+5,py+5,fill=color,outline=BG,width=2);self.handles.append((i,side,px,py))
-            if i==self.first.current():c.create_line(x,134,end,134,fill=ACCENT,width=2)
+            if i==selected_index(self.first):c.create_line(x,134,end,134,fill=ACCENT,width=2)
             prev=y2
 
     def press(self,event):
@@ -139,7 +140,7 @@ class CurveEditor(ttk.Frame):
             self.drag=None;self.apply()
 
     def apply(self):
-        if not self.busy():self.commit(self.first.current(),self.last.current(),self.emotion.get(),self.start.get(),self.end.get())
+        if not self.busy():self.commit(selected_index(self.first),selected_index(self.last),self.emotion.get(),self.start.get(),self.end.get())
 
 
 class UnifiedApp(PreviewAudio):
@@ -674,8 +675,8 @@ class UnifiedApp(PreviewAudio):
         self.doc=flow.prepare(structure.create(self.pool,ids));self.dirty=True;self.refresh();self.tell('骨架已按列表顺序固定。可原位替换变体、插入回答句，或设置情绪线。')
 
     def sid(self):
-        if not self.doc or self.slot.current()<0:raise ValueError('请先确认骨架并选择位置。')
-        return self.doc['backbone'][self.slot.current()]['id']
+        if not self.doc or selected_index(self.slot)<0:raise ValueError('请先确认骨架并选择位置。')
+        return self.doc['backbone'][selected_index(self.slot)]['id']
 
     def structure_choices(self):
         if not self.doc:return
@@ -693,12 +694,12 @@ class UnifiedApp(PreviewAudio):
         result=flow.prepare(structure.edit(self.doc,op,**args));self.undo_stack.append(copy.deepcopy(self.doc));self.doc=result;self.dirty=True;self.refresh();self.tell('结构已更新。请检查新插入块的情绪设置后重新生成。')
 
     def replace(self):
-        if self.replacement.current()<0:raise ValueError('请选择可用原段或变体。')
-        self.edit_structure('replace',slot_id=self.sid(),material_id=self.replace_options[self.replacement.current()]['id'])
+        if selected_index(self.replacement)<0:raise ValueError('请选择可用原段或变体。')
+        self.edit_structure('replace',slot_id=self.sid(),material_id=self.replace_options[selected_index(self.replacement)]['id'])
 
     def answer_id(self):
-        if self.answer.current()<0:raise ValueError('请先生成并保留回答句。')
-        return self.answer_options[self.answer.current()]['id']
+        if selected_index(self.answer)<0:raise ValueError('请先生成并保留回答句。')
+        return self.answer_options[selected_index(self.answer)]['id']
 
     def insert(self):self.edit_structure('insert',slot_id=self.sid(),material_id=self.answer_id())
     def authorize(self):self.edit_structure('authorize',slot_id=self.sid(),material_id=self.answer_id(),confirmed=True)
@@ -742,7 +743,7 @@ class UnifiedApp(PreviewAudio):
     def refresh_inner(self):
         if not hasattr(self,'inner_block'):return
         rows=structure.timeline(self.doc)['rows'] if self.doc else []
-        index=self.inner_block.current();self.inner_block.configure(values=[r['name'] for r in rows])
+        index=selected_index(self.inner_block);self.inner_block.configure(values=[r['name'] for r in rows])
         if not rows:
             self.inner_block.set('');self.inner_first.set('');self.inner_last.set('');self.inner_info.configure(text='先建立作品结构。');self.refresh_beats();return
         index=max(0,min(index,len(rows)-1));self.inner_block.current(index);row=rows[index]
@@ -754,7 +755,7 @@ class UnifiedApp(PreviewAudio):
 
     def refresh_beats(self):
         if not hasattr(self,'beat_info'):return
-        c=self.beat_canvas;c.delete('all');index=self.inner_block.current()
+        c=self.beat_canvas;c.delete('all');index=selected_index(self.inner_block)
         if not self.doc or index<0:
             self.beat_info.configure(text='先选择音乐块。');self.beat_position.set('');return
         entry=self.doc['placements'][index];bars=structure.entry_material(self.doc,entry)['bars'];total=bars*4
@@ -774,13 +775,13 @@ class UnifiedApp(PreviewAudio):
             '；'.join(f'{"终点" if n["beat"]==total else str(n["beat"]+1)+"拍"}：{flow.music.EMOTIONS[n["emotion"]]} {n["intensity"]:.0%}' for n in nodes)))
 
     def pick_beat_point(self,event):
-        if self.busy or not self.doc or self.inner_block.current()<0:return
-        entry=self.doc['placements'][self.inner_block.current()];total=structure.entry_material(self.doc,entry)['bars']*4
+        if self.busy or not self.doc or selected_index(self.inner_block)<0:return
+        entry=self.doc['placements'][selected_index(self.inner_block)];total=structure.entry_material(self.doc,entry)['bars']*4
         beat=max(0,min(total,round((event.x-25)/max(1,max(300,self.beat_canvas.winfo_width())-50)*total)))
         self.beat_position.set(str(beat+1));self.beat_level.set(str(round(max(0,min(1,(105-event.y)/80))*100)))
 
     def apply_beat(self,remove=False):
-        index=self.inner_block.current()
+        index=selected_index(self.inner_block)
         if not self.doc or index<0:raise ValueError('请先选择音乐块。')
         key=next(k for k,v in flow.music.EMOTIONS.items() if v==self.beat_emotion.get())
         new=flow.edit_beat_node(self.doc,self.doc['placements'][index]['id'],int(self.beat_position.get())-1,
@@ -789,7 +790,7 @@ class UnifiedApp(PreviewAudio):
         self.tell('拍级情绪线已更新，未改变结构或时长。请生成新版本；旧音频保持。')
 
     def apply_inner(self):
-        index=self.inner_block.current()
+        index=selected_index(self.inner_block)
         if not self.doc or index<0:raise ValueError('请先选择要修改的音乐块。')
         entry=self.doc['placements'][index]
         emotion=next(k for k,v in flow.music.EMOTIONS.items() if v==self.inner_emotion.get())
@@ -853,7 +854,7 @@ class UnifiedApp(PreviewAudio):
             try:snapshot_blocks=model.playback_blocks(report)
             except (ValueError,OSError,KeyError):snapshot_blocks=[]
             self.audition_blocks=snapshot_blocks;self.audition_page=0
-            old=self.result_block.current()
+            old=selected_index(self.result_block)
             self.result_block.configure(values=[f'{i+1:02} · '+b['name'].replace('默认 · ','').split(' / ')[0][:18] for i,b in enumerate(snapshot_blocks)])
             if snapshot_blocks:self.result_block.current(max(0,min(old,len(snapshot_blocks)-1)))
             self.draw_result_tiles()
@@ -917,10 +918,10 @@ class UnifiedApp(PreviewAudio):
 
     def play_result_block(self):
         report=self.selected_report();blocks=model.playback_blocks(report)
-        self.play_segment(Path(report['output_directory'])/'preview.wav',blocks,self.result_block.current(),report['output_directory'],'成品分块试听')
+        self.play_segment(Path(report['output_directory'])/'preview.wav',blocks,selected_index(self.result_block),report['output_directory'],'成品分块试听')
 
     def next_result_block(self):
-        values=self.result_block['values'];index=self.result_block.current()+1
+        values=self.result_block['values'];index=selected_index(self.result_block)+1
         if not values or index>=len(values):raise ValueError('已到最后一块。')
         self.result_block.current(index);self.play_result_block()
 
@@ -975,7 +976,7 @@ class UnifiedApp(PreviewAudio):
         if self.doc:
             info=structure.timeline(self.doc);rows=info['rows'];items={i['id']:i for i in self.pool['items']};slots={s['id']:s for s in self.doc['backbone']}
             for row in rows:self.route.insert('','end',iid=row['id'],text=row['name'],values=(slots[row['slot_id']]['role'] if row['kind']=='slot' else '独立过门' if row['kind']=='transition' else '关联插入',row['bars']))
-            index=self.slot.current();self.slot.configure(values=[items[s['theme_id']]['name'] for s in self.doc['backbone']]);self.slot.current(max(0,min(index,len(slots)-1)));self.structure_choices()
+            index=selected_index(self.slot);self.slot.configure(values=[items[s['theme_id']]['name'] for s in self.doc['backbone']]);self.slot.current(max(0,min(index,len(slots)-1)));self.structure_choices()
             self.detail_curve.set_rows([dict(self.doc['expression'][r['id']],name=r['name'],bars=r['bars']) for r in rows])
             self.summary.configure(text=f'{len(self.pool["items"])} 个素材 · {len(rows)} 个内容块\n{info["bars"]} 小节 / {info["seconds"]:.0f} 秒主体\n\n'+' → '.join(r['name'] for r in rows))
         else:

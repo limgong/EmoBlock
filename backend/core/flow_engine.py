@@ -350,7 +350,7 @@ def generate(doc, connections=True, progress=lambda text:None, render=True, arra
         report['score_sha256']=hashlib.sha256((folder/'score.json').read_bytes()).hexdigest()
         if render:
             progress('正在一次性渲染整段作品，不拼接单块 WAV…')
-            proc=subprocess.run([str(music.LMMS),'render',str(folder/'composition.mmp'),'-o',str(folder/'dry.wav'),'-s','44100','-x','1'],
+            proc=subprocess.run([str(music.LMMS),'render',str(folder/'composition.mmp'),'-o',str(folder/'dry.wav'),'-s','44100'],
                 capture_output=True,timeout=240,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             (folder/'render.log').write_bytes(proc.stdout+proc.stderr)
             if proc.returncode or not (folder/'dry.wav').is_file():raise ValueError('整段渲染失败，详情见 '+str(folder/'render.log'))

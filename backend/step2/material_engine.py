@@ -350,7 +350,7 @@ def export_material(item, output_root=None, render=True):
     try:
         if render:
             proc = subprocess.run([str(music.LMMS), 'render', str(folder / 'melody.mmp'),
-                '-o', str(folder / 'dry.wav'), '-s', '44100', '-x', '1'],
+                '-o', str(folder / 'dry.wav'), '-s', '44100'],
                 capture_output=True, timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             (folder / 'render.log').write_bytes(proc.stdout + proc.stderr)
             if proc.returncode or not (folder / 'dry.wav').is_file():

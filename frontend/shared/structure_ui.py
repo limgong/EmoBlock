@@ -1,4 +1,5 @@
 """Structure editing UI. No free reordering once the user confirms the backbone."""
+from combobox_selection import selected_index
 import copy
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -77,8 +78,8 @@ class StructureWindow:
         self.doc=engine.create(self.pool,[i['id'] for i in self.themes]); self.dirty=True; self.render()
 
     def sid(self):
-        if not self.doc or self.slot.current()<0: raise ValueError('请先确认骨架并选择位置。')
-        return self.doc['backbone'][self.slot.current()]['id']
+        if not self.doc or selected_index(self.slot)<0: raise ValueError('请先确认骨架并选择位置。')
+        return self.doc['backbone'][selected_index(self.slot)]['id']
 
     def apply(self, operation, **args):
         result=engine.edit(self.doc,operation,**args)
@@ -90,7 +91,7 @@ class StructureWindow:
         items={i['id']:i for i in self.doc['pool']['items']}
         self.themes=[items[s['theme_id']] for s in self.doc['backbone']]; self.refresh_draft()
         self.draft.configure(state='disabled')
-        selected=self.slot.current()
+        selected=selected_index(self.slot)
         self.slot.configure(values=[f'{i+1}. {items[s["theme_id"]]["name"]}' for i,s in enumerate(self.doc['backbone'])])
         self.slot.current(max(0,min(selected,len(self.doc['backbone'])-1)))
         self.route.delete(*self.route.get_children())
@@ -116,13 +117,13 @@ class StructureWindow:
 
     def replace(self):
         sid=self.sid()
-        if self.replacement.current()<0:raise ValueError('没有可用的已保留变体。')
-        self.apply('replace',slot_id=sid,material_id=self.replace_options[self.replacement.current()]['id'])
+        if selected_index(self.replacement)<0:raise ValueError('没有可用的已保留变体。')
+        self.apply('replace',slot_id=sid,material_id=self.replace_options[selected_index(self.replacement)]['id'])
 
     def answer_id(self):
         self.sid()
-        if self.answer.current()<0:raise ValueError('请先在素材池保留回答句，再重新打开结构窗口。')
-        return self.answer_options[self.answer.current()]['id']
+        if selected_index(self.answer)<0:raise ValueError('请先在素材池保留回答句，再重新打开结构窗口。')
+        return self.answer_options[selected_index(self.answer)]['id']
 
     def insert(self):self.apply('insert',slot_id=self.sid(),material_id=self.answer_id())
 

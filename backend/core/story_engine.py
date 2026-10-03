@@ -604,7 +604,7 @@ def generate(project, progress=lambda _:None, render=True):
         report['score_sha256']=hashlib.sha256((folder/'score.json').read_bytes()).hexdigest()
         if render:
             progress('连续渲染整首音乐；固定锚点不会因连接而后移…')
-            proc=subprocess.run([str(music.LMMS),'render',str(folder/'composition.mmp'),'-o',str(folder/'dry.wav'),'-s','44100','-x','1'],capture_output=True,timeout=240,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            proc=subprocess.run([str(music.LMMS),'render',str(folder/'composition.mmp'),'-o',str(folder/'dry.wav'),'-s','44100'],capture_output=True,timeout=240,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             (folder/'render.log').write_bytes(proc.stdout+proc.stderr)
             if proc.returncode or not (folder/'dry.wav').is_file():raise ValueError('音频渲染失败：'+str(folder/'render.log'))
             report['audio']=flow.finish_audio(folder/'dry.wav',folder/'preview.wav',report['duration_seconds'])

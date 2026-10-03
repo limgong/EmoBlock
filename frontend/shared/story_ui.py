@@ -1,4 +1,5 @@
 from ui_scale import font as scaled_font
+from combobox_selection import selected_index
 from ui_theme import color as theme_color
 """Single-window simplified workflow; legacy editors remain available."""
 import copy
@@ -505,7 +506,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         if self.source is None:raise ValueError('请先选择文件。')
         role=next(k for k,v in ROLE_LABELS.items() if v==self.role.get())
         policy={'单旋律（冲突时报错）':'reject','同时起音取高音':'upper','同时起音取低音':'lower'}[self.policy.get()]
-        material=engine.import_source(self.path,self.tracks.current(),role,policy)
+        material=engine.import_source(self.path,selected_index(self.tracks),role,policy)
         project=self.snapshot();default=emotion_input.is_default_story(project)
         if len(project['sources'])==1 and project['sources'][0].get('builtin_default'):project['sources']=[]
         project['sources'].append(material)

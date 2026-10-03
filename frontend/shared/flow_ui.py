@@ -1,4 +1,5 @@
 """Emotion regions and whole-score preview, without rearranging the backbone."""
+from combobox_selection import selected_index
 import copy
 import os
 import queue
@@ -67,7 +68,7 @@ class FlowWindow:
         for i,row in enumerate(rows):
             v=self.doc['expression'][row['id']];names.append(f'{i+1}. {row["name"]}')
             self.tree.insert('','end',iid=row['id'],text=names[-1],values=(f'{row["start_bar"]}–{row["start_bar"]+row["bars"]-1}',engine.music.EMOTIONS[v['emotion']],f'{v["start"]*100:.0f}% → {v["end"]*100:.0f}%'))
-        a,b=self.first.current(),self.last.current()
+        a,b=selected_index(self.first),selected_index(self.last)
         self.first.configure(values=names);self.last.configure(values=names)
         self.first.current(max(0,a));self.last.current(len(names)-1 if b<0 else b)
         self.draw()
@@ -91,8 +92,8 @@ class FlowWindow:
         canvas.create_text(36,133,anchor='w',text='颜色＝情绪类别；折线＝目标强度（非音频响度测量）。',fill='#adc0ce')
 
     def apply(self):
-        key=list(engine.music.EMOTIONS)[self.emotion.current()]
-        new=engine.set_region(self.doc,self.first.current(),self.last.current(),key,float(self.start.get())/100,float(self.end.get())/100)
+        key=list(engine.music.EMOTIONS)[selected_index(self.emotion)]
+        new=engine.set_region(self.doc,selected_index(self.first),selected_index(self.last),key,float(self.start.get())/100,float(self.end.get())/100)
         self.undo_stack.append(self.doc);self.doc=new;self.dirty=True;self.refresh()
         self.status.configure(text='情绪区间已更新。旧试听不会自动改变，请重新生成；本版重新规划整段，不承诺其他块编配不变。')
 

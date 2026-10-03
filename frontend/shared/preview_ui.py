@@ -1,4 +1,5 @@
 from ui_scale import font as scaled_font
+from combobox_selection import selected_index
 """Preview-matched navigation, saved-version cards and real audio waveform."""
 import tkinter as tk
 from tkinter import ttk
@@ -253,7 +254,7 @@ class PreviewAudio:
         self.audition_boxes=[]
         if not blocks:
             c.create_text(w/2,56,text='生成后点击分块试听',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',9)));c.scale('all',0,0,1,ui_scale.factor);return
-        selected=self.result_block.current();tile=(w-2)/columns
+        selected=selected_index(self.result_block);tile=(w-2)/columns
         for slot,index in enumerate(range(self.audition_page*capacity,min(len(blocks),(self.audition_page+1)*capacity))):
             b=blocks[index];x=slot%columns*tile+2;y=27+slot//columns*35;active=index==selected
             shade=COLORS.get(b.get('emotion'),color('line'))
@@ -284,7 +285,7 @@ class PreviewAudio:
     def step_result_block(self,delta):
         values=self.result_block.cget('values')
         if not values:raise ValueError('请先生成或选择成品。')
-        index=max(0,min(len(values)-1,self.result_block.current()+delta))
+        index=max(0,min(len(values)-1,selected_index(self.result_block)+delta))
         columns=max(3,int(max(180,self.audition_tiles.winfo_width())//(42*ui_scale.factor)))
         self.audition_page=index//(columns*2)
         self.result_block.current(index);self.play_result_block()

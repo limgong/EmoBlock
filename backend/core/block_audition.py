@@ -37,7 +37,7 @@ def render_source(source,bpm,progress=lambda _:None):
     music=engine.music
     score=dict(bpm=bpm,total_ticks=source['ticks'],layers=[dict(name='source melody',preset='soft',volume=28,pan=0,drum=None,notes=[music.Note(**n) for n in source['notes']])])
     music.export_mmp(score,folder/'source.mmp')
-    proc=subprocess.run([str(music.LMMS),'render',str(folder/'source.mmp'),'-o',str(folder/'dry.wav'),'-s','44100','-x','1'],
+    proc=subprocess.run([str(music.LMMS),'render',str(folder/'source.mmp'),'-o',str(folder/'dry.wav'),'-s','44100'],
                         capture_output=True,timeout=240,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     (folder/'render.log').write_bytes(proc.stdout+proc.stderr)
     if proc.returncode or not (folder/'dry.wav').is_file():raise ValueError('素材试听渲染失败：'+str(folder/'render.log'))
