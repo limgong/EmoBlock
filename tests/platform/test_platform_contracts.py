@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock,patch
 import wave
+import numpy as np
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts'))
 import check_frontends
@@ -57,33 +58,61 @@ class MacPlaybackSimulation(unittest.TestCase):
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory();self.path=Path(self.folder.name)/'source.wav'
         with wave.open(str(self.path),'wb') as f:
-            f.setnchannels(1);f.setsampwidth(2);f.setframerate(1000);f.writeframes(b'\0\0'*5000)
-        self.process=Mock();self.process.poll.return_value=None;self.process.pid=123
+            f.setnchannels(1);f.setsampwidth(2);f.setframerate(1000)
+            f.writeframes(np.full(5000,16000,dtype='<i2').tobytes())
+        self.stream=Mock()
+        self.device=Mock(OutputStream=Mock(return_value=self.stream),CallbackStop=type('CallbackStop',(Exception,),{}))
+        self.output=patch.object(mac,'_sounddevice',return_value=self.device)
+        self.output.start()
         self.player=mac.WavePlayer()
-    def tearDown(self):self.player.close();self.folder.cleanup()
-    def test_segment_has_correct_frames(self):
-        with patch.object(mac.subprocess,'Popen',return_value=self.process) as spawn:
-            self.assertEqual(self.player.play(self.path,1,3),5)
-        clip=self.player.temp
-        with wave.open(str(clip),'rb') as f:self.assertEqual(f.getnframes(),2000)
-        self.assertEqual(spawn.call_args[0][0],['/usr/bin/afplay',str(clip)])
-        self.player.close();self.assertFalse(clip.exists());self.process.terminate.assert_called_once()
-    def test_pause_resume_position(self):
-        with patch.object(mac.subprocess,'Popen',return_value=self.process),patch.object(mac.time,'monotonic',return_value=10):self.player.play(self.path,1,4)
-        with patch.object(mac.os,'kill') as kill,patch.object(mac.signal,'SIGSTOP',19,create=True),patch.object(mac.signal,'SIGCONT',18,create=True):
-            with patch.object(mac.time,'monotonic',return_value=11):self.player.pause()
-            self.assertEqual(self.player.status(),(2,'paused'));kill.assert_called_with(123,19)
-            with patch.object(mac.time,'monotonic',return_value=20):self.player.resume()
-            kill.assert_called_with(123,18)
-        with patch.object(mac.time,'monotonic',return_value=20.5):self.assertEqual(self.player.status(),(2.5,'playing'))
-    def test_failed_launch_cleans_clip(self):
-        with patch.object(mac.subprocess,'Popen',side_effect=OSError('missing afplay')):
-            with self.assertRaises(OSError):self.player.play(self.path)
-        self.assertIsNone(self.player.temp);self.assertFalse(self.player.opened)
-    def test_exit_and_errors(self):
-        with patch.object(mac.subprocess,'Popen',return_value=self.process):self.player.play(self.path)
-        self.process.poll.return_value=0;self.assertEqual(self.player.status(),(5,'stopped'))
-        self.process.poll.return_value=1
-        with self.assertRaises(ValueError):self.player.status()
+    def tearDown(self):
+        self.player.quiet.set();self.player.close();self.output.stop();self.folder.cleanup()
+
+    def output_frames(self,count):
+        frames=np.empty((count,1),dtype=np.float32)
+        self.player._output(frames,count,None,None)
+        return frames[:,0]
+
+    def test_segment_and_playback_position(self):
+        self.assertEqual(self.player.play(self.path,1,3),5)
+        self.assertEqual(len(self.player.samples),2000)
+        self.device.OutputStream.assert_called_once()
+        self.stream.start.assert_called_once()
+        first=self.output_frames(20)
+        self.assertLess(abs(first[0]),abs(first[-1]))
+        self.assertEqual(self.player.status(),(1.02,'playing'))
+
+    def test_pause_resume_fades_without_advancing_silent_position(self):
+        self.player.play(self.path,1,4)
+        before=self.output_frames(20)
+        self.player.pause();fade=self.output_frames(20)
+        self.assertGreater(abs(fade[0]),abs(fade[-1]))
+        self.assertLess(np.max(np.abs(np.diff(np.r_[before,fade]))),.05)
+        position=self.player.status()[0]
+        self.assertEqual(self.player.status()[1],'paused')
+        self.assertTrue(np.all(self.output_frames(20)==0))
+        self.assertEqual(self.player.status()[0],position)
+        self.player.resume();ramp=self.output_frames(20)
+        self.assertLess(abs(ramp[0]),abs(ramp[-1]))
+        self.assertLess(np.max(np.abs(np.diff(np.r_[fade[-1],ramp]))),.05)
+        self.assertEqual(self.player.status()[1],'playing')
+
+    def test_replay_closes_previous_stream(self):
+        self.player.play(self.path)
+        self.player.quiet.set()
+        self.player.play(self.path,2,3)
+        self.stream.close.assert_called_once()
+        self.assertEqual(self.player.status(),(2,'playing'))
+
+    def test_failed_device_open_cleans_player(self):
+        self.stream.start.side_effect=OSError('missing output device')
+        with self.assertRaises(OSError):self.player.play(self.path)
+        self.assertIsNone(self.player.stream);self.assertFalse(self.player.opened)
+
+    def test_end_fades_to_silence(self):
+        self.player.play(self.path,4.98,5)
+        with self.assertRaises(self.device.CallbackStop):self.output_frames(20)
+        self.player._finished()
+        self.assertEqual(self.player.status(),(5,'stopped'))
 
 if __name__=='__main__':unittest.main()

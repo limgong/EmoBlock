@@ -34,13 +34,15 @@ python scripts/doctor.py
 
 Tk 9 将双指触控板滚动作为 `TouchpadScroll` 事件发送，不再作为 `MouseWheel` 发送。共享界面现在同时处理两种事件：精细页面纵向滚动，快速模式的情绪积木时间线横向滚动；时间线使用 1 像素滚动精度，拖拽边缘自动滚动仍保持原速度。Windows 旧版 Tk 的鼠标滚轮路径保留。2026-10-05 在本机 Tk 9 控件上通过自动化滚动测试，触控板手势的主观速度和惯性仍需人工体验检查。
 
-Finder 拖入采用 [tkinterdnd2](https://github.com/pmgagne/tkinterdnd2)。如果 TkDND 与本机 Tk/架构不匹配，程序退回普通 Tk，仍可使用“导入”选文件；拖入需要单独验证。WAV 播放采用系统 `/usr/bin/afplay`，片段播放通过临时 WAV 截取实现，暂停/恢复通过进程信号，结束后清理临时文件。播放位置为单调时钟估计，尚不是硬件采样级精确定位。
+Finder 拖入采用 [tkinterdnd2](https://github.com/pmgagne/tkinterdnd2)。如果 TkDND 与本机 Tk/架构不匹配，程序退回普通 Tk，仍可使用“导入”选文件；拖入需要单独验证。WAV 试听使用 Mac 专属的 `sounddevice` 音频流；片段按帧读取，暂停输出静音而不停止设备，播放、暂停、恢复及重播边界采用约 12 毫秒淡入淡出。播放位置按已提交给音频缓冲区的帧数计算，可能比实际听到的声音略提前。
 
 音频转 MIDI 是可选大型依赖，独立安装 Basic Pitch 并用 `EMOBLOCKS_BASIC_PITCH_PYTHON` 指定解释器；Mac 原生转写未验证，不影响默认 MIDI / MMP 工作流。
 
 ## 验证记录与 Mac 实测步骤
 
 Windows 基线曾验证音乐逻辑与后端独立导入，并通过模拟 afplay 验证片段播放行为。2026-10-03 在 Apple Silicon Mac 上，Python 3.11.16 / Tk 9.0 使用用户目录中的 LMMS 1.3.0-alpha.2 完成原生验证：290 项测试通过，`scripts/check_frontends.py` 通过，`scripts/doctor.py --render` 生成了 44.1 kHz、27 秒的非静音 WAV，报告状态为 `complete`。`run.py` 启动后事件循环保持运行，但尚未完成人工界面交互及试听验证。Tk 9 对未选中 Combobox 的 `current()` 行为与旧版不同，已经做兼容处理；LMMS 1.3 不接受旧渲染命令的 `-x` 参数，现已移除。
+
+2026-10-05 因旋律素材暂停和重播出现杂音，移除了 Mac 播放器对 `afplay` 进程的 `SIGSTOP` / `SIGCONT` 控制，并改用持续音频流与淡入淡出。293 项完整测试、246 项无窗口测试及双平台契约检查通过；本机扬声器上的静音 WAV 播放、暂停、恢复和重播无设备错误。真实旋律的人工听感仍需复核。
 
 Mac 后续回归检查：
 
