@@ -1,5 +1,6 @@
 from ui_scale import font as scaled_font
 from combobox_selection import selected_index
+from scroll_input import bind_touchpad, scroll_canvas_pixels, touchpad_deltas
 from ui_theme import color as theme_color
 """One-window studio: quick melody-to-piece and detailed material workflow."""
 import copy
@@ -254,6 +255,7 @@ class UnifiedApp(PreviewAudio):
         self.modes.insert(0,self.story_page,text='  快速成品  ')
         self.modes.select(self.story_page)
         root.bind_all('<MouseWheel>',self.wheel,add='+')
+        bind_touchpad(root,self.touchpad_scroll)
         ui_platform.setup_window(root,self)
         root.after_idle(self.refresh_surfaces)
         from ui_scale import ResponsiveLayout
@@ -477,10 +479,26 @@ class UnifiedApp(PreviewAudio):
 
     def wheel(self,event):
         widget=self.root.winfo_containing(event.x_root,event.y_root)
+        if widget is self.story_page.line:
+            widget.xview_scroll(24*ui_platform.wheel_units(event.delta),'units');return 'break'
         while widget:
             # Lists and text areas already handle their own wheel events.
-            if isinstance(widget,(tk.Text,tk.Listbox,ttk.Treeview,ttk.Combobox)):return
-            if isinstance(widget,(ScrollPage,story_ui.StoryPage)):widget.canvas.yview_scroll(ui_platform.wheel_units(event.delta),'units');return
+            if isinstance(widget,(tk.Text,tk.Listbox,ttk.Treeview,ttk.Combobox,ttk.Scrollbar)):return
+            if isinstance(widget,ScrollPage):widget.canvas.yview_scroll(ui_platform.wheel_units(event.delta),'units');return 'break'
+            widget=getattr(widget,'master',None)
+
+    def touchpad_scroll(self,event):
+        widget=self.root.winfo_containing(event.x_root,event.y_root)
+        dx,dy=touchpad_deltas(event)
+        if widget is self.story_page.line:
+            scroll_canvas_pixels(widget,'x',dx if abs(dx)>abs(dy) else dy)
+            return 'break'
+        while widget:
+            # Native widgets already have Tk 9 touchpad bindings.
+            if isinstance(widget,(tk.Text,tk.Listbox,ttk.Treeview,ttk.Combobox,ttk.Scrollbar)):return
+            if isinstance(widget,ScrollPage):
+                scroll_canvas_pixels(widget.canvas,'y',dy)
+                return 'break'
             widget=getattr(widget,'master',None)
 
     def browse_source(self):

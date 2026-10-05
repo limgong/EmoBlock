@@ -32,6 +32,8 @@ python scripts/doctor.py
 
 `EMOBLOCKS_LMMS_DATA` 应包含 `samples/drums/bassdrum01.ogg`、`snare01.ogg`、`hihat_closed01.ogg`；实际诊断必须找到这三个文件。音乐工程只使用 TripleOscillator 与这些鼓采样，不依赖 Windows VST。
 
+Tk 9 将双指触控板滚动作为 `TouchpadScroll` 事件发送，不再作为 `MouseWheel` 发送。共享界面现在同时处理两种事件：精细页面纵向滚动，快速模式的情绪积木时间线横向滚动；时间线使用 1 像素滚动精度，拖拽边缘自动滚动仍保持原速度。Windows 旧版 Tk 的鼠标滚轮路径保留。2026-10-05 在本机 Tk 9 控件上通过自动化滚动测试，触控板手势的主观速度和惯性仍需人工体验检查。
+
 Finder 拖入采用 [tkinterdnd2](https://github.com/pmgagne/tkinterdnd2)。如果 TkDND 与本机 Tk/架构不匹配，程序退回普通 Tk，仍可使用“导入”选文件；拖入需要单独验证。WAV 播放采用系统 `/usr/bin/afplay`，片段播放通过临时 WAV 截取实现，暂停/恢复通过进程信号，结束后清理临时文件。播放位置为单调时钟估计，尚不是硬件采样级精确定位。
 
 音频转 MIDI 是可选大型依赖，独立安装 Basic Pitch 并用 `EMOBLOCKS_BASIC_PITCH_PYTHON` 指定解释器；Mac 原生转写未验证，不影响默认 MIDI / MMP 工作流。

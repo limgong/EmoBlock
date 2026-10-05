@@ -64,6 +64,8 @@ class PreviewAudio:
         self.history_offset=0.;self.history_scroll_timer=None;self.history_scroll_visible=False;self.history_drag=None
         self.history_canvas.bind('<Button-1>',self.choose_history)
         self.history_canvas.bind('<MouseWheel>',self.scroll_history)
+        if self.history_canvas.tk.call('info','commands','tk::PreciseScrollDeltas'):
+            self.history_canvas.bind('<TouchpadScroll>',self.scroll_history_touchpad)
         self.history_canvas.bind('<B1-Motion>',self.drag_history)
         self.history_canvas.bind('<ButtonRelease-1>',self.release_history_scroll)
         self.history_canvas.bind('<Destroy>',self.destroy_history_scroll)
@@ -147,6 +149,12 @@ class PreviewAudio:
     def scroll_history(self,event):
         import ui_platform
         self.history_offset=max(0,min(max(0,(len(self.results)-2)*49),self.history_offset+ui_platform.wheel_units(event.delta)*49))
+        self.reveal_history_scroll();return 'break'
+
+    def scroll_history_touchpad(self,event):
+        from scroll_input import touchpad_deltas
+        _,dy=touchpad_deltas(event)
+        self.history_offset=max(0,min(max(0,(len(self.results)-2)*49),self.history_offset-dy))
         self.reveal_history_scroll();return 'break'
 
     def drag_history(self,event):

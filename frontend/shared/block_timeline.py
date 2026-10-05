@@ -223,7 +223,7 @@ class BlockTimeline:
         if not self.drag:return
         x,y=self.pointer;direction=-1 if x<28 else 1 if x>self.line.winfo_width()-28 else 0
         if direction:
-            self.line.xview_scroll(direction,'units');self.motion(SimpleNamespace(x=x,y=y))
+            self.line.xview_scroll(24*direction,'units');self.motion(SimpleNamespace(x=x,y=y))
 
     def cancel_drag(self,event=None):
         if hasattr(self,'block_motion'):self.block_motion.cancel()

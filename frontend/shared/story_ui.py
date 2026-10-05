@@ -112,7 +112,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         for text,command,hint in [('−',lambda:self.resize_timeline(-1),'缩短四拍'),('＋',lambda:self.resize_timeline(1),'增加四拍'),('↶',self.undo,'撤销 · Ctrl+Z')]:
             b=ttk.Button(tools,text=text,width=2,style='Compact.TButton',command=lambda fn=command:self.host.safe(fn));b.pack(side='left',padx=2)
             Tooltip(b,hint)
-        self.line=tk.Canvas(body,height=310,bg=theme_color('panel'),highlightthickness=0,takefocus=True,xscrollincrement=24);self.line.pack(fill='both',expand=True,pady=(4,0))
+        self.line=tk.Canvas(body,height=310,bg=theme_color('panel'),highlightthickness=0,takefocus=True,xscrollincrement=1);self.line.pack(fill='both',expand=True,pady=(4,0))
         timeline_scroll=ttk.Scrollbar(body,orient='horizontal',command=self.line.xview);timeline_scroll.pack(fill='x',pady=(0,2))
         def scroll_state(first,last):
             timeline_scroll.set(first,last)
