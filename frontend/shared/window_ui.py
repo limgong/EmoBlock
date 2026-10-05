@@ -92,7 +92,7 @@ class FixedRail(ttk.Frame):
     def __init__(self,parent):
         super().__init__(parent)
         self.columnconfigure(0,weight=1);self.rowconfigure(2,weight=1)
-        self.audition=RoundedPanel(self,padding=14,height=438)
+        self.audition=RoundedPanel(self,padding=14,height=490)
         self.audition.grid(row=0,column=0,sticky='ew',pady=(0,16))
         self.export=RoundedPanel(self,padding=14,height=124)
         self.export.grid(row=1,column=0,sticky='ew')

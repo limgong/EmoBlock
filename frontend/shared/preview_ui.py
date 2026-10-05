@@ -60,6 +60,8 @@ class PreviewAudio:
     def build_preview_audio(self,rail):
         self.history_canvas=tk.Canvas(rail,height=104,bg=color('panel'),highlightthickness=0,takefocus=True)
         self.history_canvas.pack(fill='x',pady=(10,5))
+        self.selected_version_label=ttk.Label(rail,text='尚无成品版本',wraplength=250,style='Muted.TLabel')
+        self.selected_version_label.pack(anchor='w',pady=(0,4))
         self.history_canvas.bind('<Configure>',lambda _:self.draw_history())
         self.history_offset=0.;self.history_scroll_timer=None;self.history_scroll_visible=False;self.history_drag=None
         self.history_canvas.bind('<Button-1>',self.choose_history)
@@ -120,7 +122,8 @@ class PreviewAudio:
             c.create_text(18,y+25,text=f'{index+1:02}',fill=color('muted'),font=scaled_font(('Segoe UI',10)))
             c.create_text(40,y+17,text=r['mode'],anchor='w',fill=color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
             seconds=r['report']['duration_seconds']
-            c.create_text(40,y+33,text=f'{seconds:g} 秒 · '+('当前版本' if active else '历史版本'),anchor='w',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
+            stamp=r.get('generated_at','')[:16].replace('T',' ') or '时间未记录'
+            c.create_text(40,y+33,text=f'{seconds:g} 秒 · {stamp}',anchor='w',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
             if active:c.create_text(w-17,y+25,text='✓',fill=color('accent'),font=scaled_font(('Segoe UI',12)))
             self.history_rows.append((y,y+46,index))
         c.scale('all',0,0,1,ui_scale.factor)
@@ -238,6 +241,7 @@ class PreviewAudio:
             elif mode=='paused':self.player.resume();self.transport_running=True
             else:self.play()
             self.draw_playback()
+            self.update_play_origin()
             if hasattr(self,'story_page'):self.story_page.sync_source_player()
         else:self.play()
 

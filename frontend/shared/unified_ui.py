@@ -4,6 +4,8 @@ from scroll_input import bind_touchpad, scroll_canvas_pixels, touchpad_deltas
 from ui_theme import color as theme_color
 """One-window studio: quick melody-to-piece and detailed material workflow."""
 import copy
+from datetime import datetime
+import hashlib
 import json
 import queue
 import random
@@ -218,6 +220,8 @@ class UnifiedApp(PreviewAudio):
         self.detail_pages=pages
         ttk.Label(rail,text='试听',font=scaled_font(('Microsoft YaHei UI',11,'bold'))).pack(anchor='w')
         self.summary=ttk.Label(rail,text='尚无结构\n先导入旋律或打开工程。',wraplength=235,justify='left')
+        self.play_origin_label=ttk.Label(rail,text='未在试听',wraplength=250)
+        self.play_origin_label.pack(anchor='w',pady=(4,4))
         self.result_list=tk.Listbox(rail,height=3,bg=CARD,fg=INK,selectbackground=theme_color('#355b60'),relief='flat',highlightthickness=0,font=scaled_font(('Microsoft YaHei UI',10)),width=27,exportselection=False)
         self.result_list.bind('<<ListboxSelect>>',lambda e:self.show_result())
         self.play_label=ttk.Label(rail,text='尚未播放',wraplength=245)
@@ -242,6 +246,8 @@ class UnifiedApp(PreviewAudio):
         ttk.Label(statusbar,text='●',foreground=ACCENT).pack(side='left',padx=(0,6))
         self.notice=ttk.Label(statusbar,text='就绪',wraplength=750,style='Muted.TLabel');self.notice.pack(side='left')
         self.status_duration=ttk.Label(statusbar,text='',style='Muted.TLabel');self.status_duration.pack(side='right')
+        self.edit_status_label=ttk.Label(statusbar,text='当前编辑尚未生成',style='Muted.TLabel')
+        self.edit_status_label.pack(side='right',padx=(8,12))
         self.progress.configure(style='Slim.Horizontal.TProgressbar')
         self.timer=root.after(100,self.poll);root.protocol('WM_DELETE_WINDOW',self.close)
         self.bars.trace_add('write',lambda *args:self.refresh_quick())
@@ -249,6 +255,7 @@ class UnifiedApp(PreviewAudio):
             var.trace_add('write',lambda *args:setattr(self,'dirty',True))
         self.refresh()
         self.story_page=story_ui.StoryPage(self.modes,self)
+        self.update_edit_status()
         # Keep legacy widgets alive for saved-project/detail-editor compatibility,
         # but replace their public tab with the current story workflow.
         self.modes.forget(self.quick_page)
@@ -473,6 +480,54 @@ class UnifiedApp(PreviewAudio):
         except Exception as exc:self.tell(str(exc),True)
 
     def tell(self,text,error=False):self.notice.configure(text=text,foreground=theme_color('#f4a59d') if error else ACCENT)
+
+    def story_fingerprint(self,project):
+        return hashlib.sha256(json.dumps(project,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+
+    def story_edit_summary(self,project):
+        previous=next((r for r in reversed(self.results) if r.get('story_fingerprint') or (r['mode']=='快速成品' and (Path(r['report']['output_directory'])/'story.json').is_file())),None)
+        overview=f'{len(project["sources"])} 段旋律 · {len(project["curve"])} 个情绪段 · {project["duration"]:g} 秒'
+        if not previous:return '首次生成 · '+overview
+        path=Path(previous['report']['output_directory'])/'story.json'
+        try:old=json.loads(path.read_text(encoding='utf-8'))
+        except (OSError,ValueError,TypeError):return '较上一版修改记录不可用 · '+overview
+        changes=[]
+        if old.get('sources')!=project['sources']:changes.append('旋律素材')
+        if any(old.get(key)!=project.get(key) for key in ('curve','intensity_points','anchors','overrides')):changes.append('情绪线')
+        if any(old.get(key)!=project.get(key) for key in ('duration','bpm','melody_only')):changes.append('时长/播放设置')
+        return ('较上一版：'+('、'.join(changes)+'已调整' if changes else '编辑内容相同'))+' · '+overview
+
+    def update_edit_status(self):
+        if not hasattr(self,'story_page'):return
+        try:current=self.story_fingerprint(self.story_page.snapshot())
+        except (ValueError,TypeError):
+            self.edit_status_label.configure(text='当前编辑参数尚未完成 · 已生成音频是历史快照')
+            return
+        latest=next((r for r in reversed(self.results) if r.get('story_fingerprint') or (r['mode']=='快速成品' and (Path(r['report']['output_directory'])/'story.json').is_file())),None)
+        if latest and not latest.get('story_fingerprint'):
+            path=Path(latest['report']['output_directory'])/'story.json'
+            try:latest['story_fingerprint']=self.story_fingerprint(json.loads(path.read_text(encoding='utf-8')))
+            except (OSError,ValueError,TypeError):pass
+        matching=bool(latest and latest.get('story_fingerprint')==current)
+        self.edit_status_label.configure(text='当前编辑与最新成品一致' if matching else '当前编辑尚未生成 · 已生成音频是历史快照')
+
+    def update_play_origin(self):
+        identity=self.playing_path
+        if not identity:self.play_origin_label.configure(text='未在试听');return
+        mode=self.player.status()[1]
+        prefix='已暂停：' if mode=='paused' else '正在试听：'
+        if identity.startswith('source:'):
+            audio=self.story_page.source_audio
+            source=next((s for s in self.story_page.project['sources'] if audio and s['id']==audio['id']),None)
+            name=source['name'] if source else '旋律素材'
+            block=getattr(self.story_page,'source_block_playing',None)
+            suffix=f' · 第 {block[1]+1} 块' if block and audio and block[0]==audio['id'] else ''
+            self.play_origin_label.configure(text=prefix+'素材 '+name+suffix)
+        else:
+            index=next((i for i,r in enumerate(self.results) if r['report']['output_directory']==identity),None)
+            label=f'成品 V{index+1:02}' if index is not None else '成品'
+            if getattr(self,'segment_label',''):label+=' · '+self.segment_label
+            self.play_origin_label.configure(text=prefix+label)
 
     def set_info(self,text):
         self.result_info.configure(state='normal');self.result_info.delete('1.0','end');self.result_info.insert('1.0',text);self.result_info.configure(state='disabled')
@@ -849,8 +904,13 @@ class UnifiedApp(PreviewAudio):
         self.local_info.configure(text='已恢复基准的结构与情绪，并选中旧成品；局部结果保留在历史中，未删除文件。')
         self.tell('已撤回到局部修改前的基准；可再次编辑，或撤销这次恢复。')
 
-    def add_result(self,report,mode):
-        self.results.append(dict(mode=mode,report=report));self.dirty=True;self.refresh_results();self.tell('作品已另存。可在右侧试听、查看连接摘要并导出。')
+    def add_result(self,report,mode,story_project=None):
+        result=dict(mode=mode,report=report,generated_at=datetime.now().astimezone().isoformat(timespec='minutes'),
+                    edit_summary=f'{report["bars"]:g} 小节 · {report["duration_seconds"]:g} 秒主体')
+        if story_project is not None:
+            result['story_fingerprint']=self.story_fingerprint(story_project)
+            result['edit_summary']=self.story_edit_summary(story_project)
+        self.results.append(result);self.dirty=True;self.refresh_results();self.update_edit_status();self.tell('作品已另存。可在右侧试听、查看连接摘要并导出。')
 
     def refresh_results(self):
         self.result_list.delete(0,'end')
@@ -858,6 +918,8 @@ class UnifiedApp(PreviewAudio):
         self.result_block.configure(values=[]);self.result_block.set('')
         for i,r in enumerate(self.results):self.result_list.insert('end',f'{i+1:02} · {r["mode"]} · {r["report"]["duration_seconds"]:.0f} 秒')
         if self.results:self.result_list.selection_set(len(self.results)-1);self.show_result()
+        else:self.selected_version_label.configure(text='尚无成品版本')
+        if hasattr(self,'story_page'):self.update_edit_status()
         self.draw_history();self.draw_result_tiles()
 
     def selected_report(self):
@@ -868,6 +930,10 @@ class UnifiedApp(PreviewAudio):
     def show_result(self):
         try:
             report=self.selected_report();actions=[]
+            index=self.result_list.curselection()[0];result=self.results[index]
+            stamp=result.get('generated_at','')[:16].replace('T',' ') or '生成时间未记录'
+            summary=result.get('edit_summary') or '历史版本，未记录编辑摘要'
+            self.selected_version_label.configure(text=f'所选成品 V{index+1:02} · {result["mode"]}\n{stamp} · {summary}')
             self.load_waveform(report);self.draw_history()
             try:snapshot_blocks=model.playback_blocks(report)
             except (ValueError,OSError,KeyError):snapshot_blocks=[]
@@ -948,6 +1014,7 @@ class UnifiedApp(PreviewAudio):
         try:self.player.close()
         except ValueError:pass
         winsound.PlaySound(None,0);self.playing_path=None;self.play_position=0.
+        if hasattr(self,'play_origin_label'):self.update_play_origin()
         self.segment_end=None;self.segment_label=''
         if hasattr(self,'play_label'):
             self.play_label.configure(text='已停止');self.play_progress['value']=0;self.draw_playback()
@@ -956,6 +1023,7 @@ class UnifiedApp(PreviewAudio):
         if not self.playing_path:return
         try:
             seconds,mode=self.player.status();self.play_position=seconds;self.transport_running=mode=='playing'
+            self.update_play_origin()
             self.play_progress['value']=min(100,seconds/max(.001,self.play_duration)*100)
             index=model.active_block(self.play_blocks,seconds)
             if mode=='stopped':
@@ -973,11 +1041,15 @@ class UnifiedApp(PreviewAudio):
 
 
     def export_result(self,kind):
-        folder=Path(self.selected_report()['output_directory']);source=folder/('preview.wav' if kind=='wav' else 'composition.'+kind)
+        selected=self.result_list.curselection()
+        report=self.selected_report();version=selected[0]+1
+        folder=Path(report['output_directory']);source=folder/('preview.wav' if kind=='wav' else 'composition.'+kind)
         if not source.is_file():raise ValueError('原输出文件已移动或缺失。')
-        target=filedialog.asksaveasfilename(parent=self.root,initialfile='EmoBlocks作品.'+kind,defaultextension='.'+kind,filetypes=[(kind.upper(),'*.'+kind)])
+        target=filedialog.asksaveasfilename(parent=self.root,title=f'导出所选成品 V{version:02} · {self.results[selected[0]]["mode"]}',
+                                            initialfile=f'EmoBlocks-V{version:02}.'+kind,defaultextension='.'+kind,filetypes=[(kind.upper(),'*.'+kind)])
         if target:
             if Path(target).resolve()!=source.resolve():shutil.copyfile(source,target)
+            self.tell(f'已导出所选成品 V{version:02}：{target}')
             self.tell('已导出：'+target)
 
     def refresh(self,selected=None):

@@ -1,6 +1,9 @@
 """Automatic memory follows actual editing, undo, restore and theme switching."""
 import copy
+from pathlib import Path
+import tempfile
 import tkinter as tk
+import wave
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -59,6 +62,52 @@ class AutomaticMemoryUITests(unittest.TestCase):
         self.assertLessEqual(len(self.page.card_play_buttons),columns)
         self.assertNotEqual(set(self.page.card_play_buttons),first)
         self.assertEqual(self.page.project,before)
+
+    def test_source_card_selection_does_not_start_audio(self):
+        project=self.page.snapshot();other=copy.deepcopy(project['sources'][0]);other['id']='second-source';other['name']='第二段旋律'
+        project['sources'].append(other);self.page.restore(project)
+        with patch.object(self.page,'start_source_audio') as start,patch.object(self.page,'toggle_source_play') as toggle:
+            self.page.select_source_card(other['id'])
+            start.assert_not_called();toggle.assert_not_called()
+            self.assertEqual(self.page.sources.selection(),(other['id'],))
+            self.page.card_action(other['id'],'play');toggle.assert_called_once()
+
+    def test_generated_version_and_unrendered_edit_are_distinct(self):
+        report=dict(output_directory='missing-version',duration_seconds=10,bars=5)
+        self.app.add_result(report,'快速成品',story_project=self.page.snapshot())
+        self.assertIn('V01',self.app.selected_version_label.cget('text'))
+        self.assertIn('首次生成',self.app.selected_version_label.cget('text'))
+        self.assertIn('段旋律',self.app.selected_version_label.cget('text'))
+        self.assertIn('一致',self.app.edit_status_label.cget('text'))
+        self.page.resize_timeline(1)
+        self.assertIn('尚未生成',self.app.edit_status_label.cget('text'))
+
+    def test_legacy_quick_result_does_not_claim_story_editor_matches(self):
+        report=dict(output_directory='legacy-quick',duration_seconds=10,bars=5)
+        self.app.add_result(report,'快速成品')
+        self.assertIn('尚未生成',self.app.edit_status_label.cget('text'))
+        self.assertNotIn('story_fingerprint',self.app.results[0])
+
+    def test_play_origin_names_source_and_generated_version(self):
+        source=self.page.selected_source();self.page.source_audio=dict(id=source['id'],path='source-preview.wav')
+        fake=Mock();fake.status.return_value=(1.,'paused')
+        with patch.object(self.app,'player',fake):
+            self.app.playing_path='source:source-preview.wav';self.app.update_play_origin()
+            self.assertIn('已暂停：素材',self.app.play_origin_label.cget('text'))
+            self.app.results=[dict(mode='快速成品',report=dict(output_directory='version-one',duration_seconds=10,bars=5))]
+            self.app.playing_path='version-one';self.app.update_play_origin()
+            self.assertIn('成品 V01',self.app.play_origin_label.cget('text'))
+
+    def test_export_dialog_identifies_selected_version(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with wave.open(str(Path(folder,'preview.wav')),'wb') as output:
+                output.setnchannels(1);output.setsampwidth(2);output.setframerate(1000);output.writeframes(b'\0\0'*1000)
+            self.app.results=[dict(mode='快速成品',report=dict(output_directory=folder,duration_seconds=10,bars=5))]
+            self.app.refresh_results()
+            with patch('unified_ui.filedialog.asksaveasfilename',return_value='') as dialog:
+                self.app.export_result('wav')
+            self.assertIn('V01',dialog.call_args.kwargs['title'])
+            self.assertEqual(dialog.call_args.kwargs['initialfile'],'EmoBlocks-V01.wav')
 
     def test_scaled_timeline_maps_pointer_to_logical_intensity_height(self):
         self.page.timeline_scale=.65

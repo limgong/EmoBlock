@@ -147,7 +147,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.refresh()
         self.trend.trace_add('write',lambda *args:self.brush_changed())
         self.pick_emotion('calm')
-        for var in (self.duration,self.bpm,self.melody_only):var.trace_add('write',lambda *args:setattr(self.host,'dirty',True))
+        for var in (self.duration,self.bpm,self.melody_only):var.trace_add('write',self.mark_edit_changed)
         try:
             import file_drop
             self.file_drop=file_drop.FileDrop(self.host.root,lambda paths:self.host.safe(lambda:self.drop_sources(paths)))
@@ -185,11 +185,13 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         i=self.source_page;s=self.project['sources'][i];width=max(240,getattr(self,'source_card_width',600))
         card=tk.Canvas(self.source_cards,width=width,height=round(94*ui_scale.factor),bg=theme_color('panel'),highlightthickness=0,takefocus=True,cursor='hand2')
         card.pack(fill='x')
-        shape=rounded(card,1,1,width-2,93,theme_color('inset'),theme_color('line'),radius=14)
+        selected=self.sources.selection()==(s['id'],)
+        shape=rounded(card,1,1,width-2,93,theme_color('inset'),theme_color('accent') if selected else theme_color('line'),radius=14)
         card.create_text(27,40,text='♫',fill=theme_color('accent'),font=scaled_font(('Segoe UI',22)))
         title=s['name'].replace('默认 · ','')
         if s.get('builtin_default'):title='欢乐颂 · 主题旋律'
-        card.create_text(55,20,text=title,anchor='w',width=max(140,width-130),fill=theme_color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
+        card.create_text(55,20,text=title,anchor='w',width=max(100,width-200),fill=theme_color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
+        if selected:card.create_text(width-60,20,text='已选中',anchor='e',fill=theme_color('accent'),font=scaled_font(('Microsoft YaHei UI',8)))
         metadata=card.create_text(55,42,text=f'M{i+1:02}     {s["ticks"]/480:g} 拍',anchor='w',fill=theme_color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
         role_button=ttk.Menubutton(card,text=ROLE_LABELS[s['role']]+' ▾',width=8,style='Card.TMenubutton')
         role_button.configure(style='SourceRole.TMenubutton')
@@ -214,15 +216,15 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         card.scale('all',0,0,1,ui_scale.factor)
         # Set embedded-widget dimensions after Canvas scaling to avoid scaling twice.
         card.itemconfigure(role_item,width=round(98*ui_scale.factor),height=round(26*ui_scale.factor))
-        Tooltip(card,s['name']+'\n点击试听；用途菜单可更改用途或删除素材。')
+        Tooltip(card,s['name']+'\n点击卡片只选中；按 ▶ 试听。用途菜单可更改用途或删除素材。')
         card.bind('<Button-1>',lambda event,sid=s['id']:self.host.safe(lambda:self.select_source_card(sid)))
         card.bind('<Return>',lambda event,sid=s['id']:self.host.safe(lambda:self.select_source_card(sid)))
         card.bind('<Delete>',lambda event:self.host.safe(lambda:self.card_action(s['id'],'delete')))
 
     def card_action(self,sid,action):
-        self.sources.selection_set(sid)
+        self.select_source_card(sid)
         if action=='delete':self.remove_source();return
-        self.refresh_source_blocks();self.draw_source_cards();self.toggle_source_play()
+        self.toggle_source_play()
 
     def set_card_role(self,sid,role):
         if role not in ROLE_LABELS:raise ValueError('无效素材用途。')
@@ -232,7 +234,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
     def select_source_card(self,sid):
         self.sources.selection_set(sid);self.refresh_source_blocks();self.draw_source_cards()
         self.source_settings.pack_forget();self.source_seek=False;self.source_slider['value']=0
-        self.start_source_audio()
+        self.sync_source_player()
 
     def start_source_audio(self,fraction=0.):
         self.source_block_playing=None
@@ -259,6 +261,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             if mode=='paused':self.host.player.resume()
             else:self.host.player.pause()
             self.sync_source_player()
+            self.host.update_play_origin()
         else:self.start_source_audio()
 
     def sync_source_player(self):
@@ -472,6 +475,10 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             return updated
         return emotion_input.resize_duration(result,result['duration'])
 
+    def mark_edit_changed(self,*args):
+        self.host.dirty=True
+        if getattr(self.host,'story_page',None) is self:self.host.update_edit_status()
+
     def restore(self,project):
         self.paint_emotion=None
         project=engine.automatic_memory_project(project)
@@ -554,7 +561,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         project=self.snapshot();engine.validate(project)
         self.preview_planner.invalidate()
         def done(result):
-            self.project=project;self.planned,report=result;self.preview_status='';self.host.dirty=True;self.refresh();self.host.add_result(report,'快速成品')
+            self.project=project;self.planned,report=result;self.preview_status='';self.host.dirty=True;self.refresh();self.host.add_result(report,'快速成品',story_project=project)
         self.host.job('生成情绪故事…',lambda:engine.generate(project,self.host.progress_message),done)
 
     def select_block(self,event=None):
@@ -583,3 +590,4 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             self.host.summary.configure(text='%d 段旋律 · %d 块 · %.1f 秒'%(len(self.project['sources']),len(emotion_input.grid_seconds(self.project))-1,self.project['duration']))
             self.preview()
         self.draw()
+        if getattr(self.host,'story_page',None) is self:self.host.update_edit_status()
