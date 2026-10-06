@@ -1,9 +1,9 @@
 # 强度画布 v2 r3 公共契约草案
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p4
+CONTRACT_REV=curve-workflow-v2-r3-p5
 
-**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
+**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 DRAFT，尚未授权实现。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
 
 ## 1. 时间、身份、工程和快照
 
@@ -550,3 +550,192 @@ lead：curve_candidates/curve_workflow/curve_store/project/session版本、纯�
 - 每个新增独立Placement的实际Material必须至少有一个有效音符；整段empty-notes素材即使与其他有音符素材共同覆盖目标也拒绝。允许非空整句/组合中的自然休止，不要求每tick发声，也不把素材内部休止当作新gap。
 - 候选详情显示新放置`emotion_variant.generation.warnings[].message`，尤其如实说明`melody_changed=false`；编配提示仍标为suggested-not-rendered，不声称已经完成伴奏渲染。编辑选择、gap选择、候选预览选择和播放对象独立。
 - 必测旧放置自定义seed=99、max_changes=1时，P3默认重算产生不同区外变体仍不能回写；新增记忆实际冲突应拒绝，不能仅因默认重算的旧变体不同误拒合法补全。另测半个empty素材+半个有音符素材覆盖一个目标的伪完成拒绝、取消后同指纹任务进度隔离、预览内警告与真实保护来源。
+
+
+## 11. P5 bridge 补充契约（DRAFT，待双角色评审与独立检查）
+
+本节只授权设计审查。实现启动须本节独立PASS、状态标FROZEN。处理对象版本p5；历史p0/p23/p4规范和数据不改写。严格顺序为基础输入实际完成→位置判断→位置与全部锁原子登记→完整桥乐句及情绪→独立内容认证→P5就绪；无连接块、最终边界、正式试听／应用／成品导出。P5就绪不是FinalScore。
+
+### 11.1 版本、输入认证与快照归属
+
+Project/Bundle形状保持不变。P5为独立阶段对象，不因捕获、计算、预览、保存升级音乐Project；现有p4新工程／编辑规则保留，输入p0/p23/p4及其快照按原版本验证。P5请求、计划、结果、attempt扩展对象使用`contract_rev=curve-workflow-v2-r3-p5`，不与input_contract_rev混同。Session.capture增加可选处理版本参数，默认行为保留；P4处理Token仍p4，P5处理Token明确p5；旧Token/旧记录不重写。
+
+BridgeRequest精确形状：
+
+```text
+{schema:"emoblocks.bridge-request.v1",spec_rev,contract_rev:p5,
+ request_id,snapshot_id,session_id,edit_revision,input_contract_rev,
+ input_fingerprint,input_project:Project,
+ input_kind:"completed_candidate"|"current_complete",
+ completion_ref:{attempt_id,candidate_id,request:CompletionRequest,candidate:CompletedCandidate}?,
+ base_project:Project,base_fingerprint,resolved_ranges:Range[],remaining_gaps:Gap[],
+ base_notes:Note[],protection_summary:{fingerprint,ranges:Range[]},
+ blank_regions:Blank[],plan_id,plan_version,seed,algorithm_version:"curve-bridge-v1",
+ parameters:{policy:"auto"|"none",max_windows,max_window_blocks,max_window_tests,max_notes}}
+```
+
+默认参数auto/2/8/128/512；上限分别8/32/2048/4096，均正整数拒绝bool；seed为0..2^32-1。内部有限枚举按音乐时间与音乐特征确定性排序，达到预算明示终止；不得运行时随机猜测或无限重试。policy=none是用户明确另建计划的选择，不是错误降级。
+
+completed_candidate输入由Controller用真实completion_attempt_id/candidate_id查当前Bundle，不能接受UI自带副本。所属P4 Attempt必须READY、Outcome为SUCCEEDED或INSUFFICIENT，指定候选须唯一且通过P4纯validate_request/candidate/outcome。INSUFFICIENT的一套合法候选可用；候选数不是完成门禁。P4请求的原Project必须等于当前编辑，原输入指纹匹配，STALE/FAILED/INTERRUPTED拒绝。BridgeRequest同时保留原编辑快照和候选基础Project，不把两种指纹混用。基础来源、目标完成、真实音符、即时记忆和保护摘要重新纯认证，不重新运行P4搜索、记忆或情绪算法。
+
+current_complete输入要求当前Project.gaps=[]；completion_ref=null，base_project=input_project原样，不创建伪CompletionRequest/Candidate或额外素材。全部主动留白可成为完整排布，但不凭空制造旋律。partial候选保留实际remaining_gaps；resolved_ranges是[0,total_ticks)扣除remaining_gaps的规范化补集（包含原占用、已补全和主动留白），不是P4 base_write_ranges。窗口完整落在某个resolved_range，不跨任何未解决范围；无正式整曲完成资格。
+
+BridgeRequest的request_id/snapshot_id/session_id/edit_revision/input_fingerprint等于新完整Token；snapshot表保存原版本input_project，base_project私有只读。已保存READY事实可在重新加载的当前会话中经新的请求捕获认证；旧任务Token不可复用。有效编辑/undo/redo使P4及P5旧attempt持久STALE，撤销回同内容也不复活。
+
+### 11.2 位置提案、共同边界与计划
+
+纯算法`curve_bridge_music.decide(request,should_cancel=None,on_progress=None)->BridgeProposal`。它只做内部提案，不登记或对UI公布位置：
+
+```text
+BridgeProposal={schema:"emoblocks.bridge-proposal.v1",spec_rev,contract_rev:p5,
+ request_fingerprint,decision:"selected"|"none",windows:BridgeWindow[],
+ reasons:Warning[],assessments:JSON-object[],joint_boundary_conditions:JointBoundary[],
+ search:{tested_windows:int,termination:str}}
+BridgeWindow={id,start_tick,end_tick,placement_ids:ID[],
+ context:{left:JSON-object?,right:JSON-object?,motif_note_ids:ID[],key_context:JSON-object},
+ emotion_segments:[{start_tick,end_tick,emotion}],blank_mask:Range[]}
+JointBoundary={id,left_bridge_id,right_bridge_id,tick,relation,reasons:Warning[],
+ left_endpoint:{pitch,start_tick,duration_tick}?,
+ right_endpoint:{pitch,start_tick,duration_tick}?}
+BridgePlan={schema:"emoblocks.bridge-plan.v1",spec_rev,contract_rev:p5,
+ id,version,request_id,snapshot_id,input_fingerprint,base_fingerprint,
+ candidate_id:ID?,request_fingerprint,decision,windows:BridgeWindow[],
+ inherited_bridge_ids:ID[],reasons,assessments,joint_boundary_conditions,search,
+ range_lock_fingerprint,plan_fingerprint}
+```
+
+request_fingerprint=digest请求全对象；BridgePlan id/version来自Request。plan_fingerprint为不含自身字段的完整Plan摘要。新attempt创建新的plan_id、严格递增plan_version（当前Project历史attempt最大值+1），失败重选／改none不修改旧plan。none必须windows=[]、真实理由、预算及对照评价；异常不得转换成none。
+
+位置先比较原排布是否自然成立，分析实际动机、调性、节奏、音域、情绪／强度走势与后方入口空间，评价采用桥与保留基础的收益；相近优先少改。允许2、3、4块及更长区域，不仅以长度／同情绪触发。assessments必须包含原布局与预期bridge收益及具体理由，确定性同分优先较少／较短修改、较早范围。无可写窗／已有音乐成立均可有明确none，算法失败不是none。
+
+窗口范围精确tick、不重叠、不越总长、不交remaining_gaps；基础放置与主动留白覆盖整个窗口。不能切断跨窗边界的实际完整音符，必要时调整窗口或放弃。placement_ids准确列所有相交原放置；原基础Project、位置、情绪和强度一律不改。blank_mask等于原主动留白与窗口交集；主旋律不可进入mask，包括区外延音。原始拼接快照保留，桥是覆盖层，不是破坏性切素材。
+
+所有输入保护包含RANGE_LOCKED失败锁、旧手工保护和记忆完整音符支撑；`memory.protected_ranges`是选位禁写域，不能缩小名义区间而忽略长音。手动bridge及已有自动bridge锁均进入inherited_bridge_ids，保持原实际内容与保护逐字段不变，none不解除它们。多个自动窗先统一解决冲突；共同边界在生成前冻结，相邻窗不读取被覆盖的旧端点互相猜测。真实缺侧为null，不能伪造双侧。每个实际非null端点须有确定pitch/onset/duration并在其对应窗内，结果严格兑现；null说明真实休止／不存在。共同条件不允许跨留白发声。
+
+### 11.3 原子范围锁与保护集合
+
+BridgeProtection沿用第8.1的Protection精确形状，不新增纯UI状态。新自动锁kind=bridge、origin=automatic、owner_id=window.id、placement_id=null、component_path=[]、plan_id/version对应Plan、input_fingerprint为Request原编辑指纹、精确范围和blank_mask对应Window。RANGE_LOCKED时notes=[]、structure_fingerprint=null；内容认证后才CONTENT_READY，保存实际绝对发声身份及结构指纹。
+
+Controller.lock_bridge(token,proposal)独立认证提案，构建完整Plan和全部新锁，在私有Bundle拷贝上validate，成功后一次替换。事务失败不公布Plan、不留下半个锁；前端只能显示此返回的锁定数据。保护集合为基础Project原protections逐字段拷贝＋全部新自动锁；不替换记忆，不把不同候选的锁混合。初始range_lock_fingerprint绑定整个初始集合；升级内容不改Plan，在Outcome另存实际保护摘要。
+
+已有bridge锁也参与必需结果集合。手动CONTENT_READY用原放置实际素材、绝对notes、原plan/保护登记导入结果，不自动改写；历史自动桥有实际就绪结果才能作为继承内容。任何继承的未就绪／失败桥锁继续保留并阻止整个计划P6就绪，不能遗忘它或假装只验证新桥。
+
+### 11.4 完整乐句、来源、情绪及结果
+
+统一旋律模块增加`curve_melody.compose_bridge_phrase`能力，由独立bridge模块调用，不能只拉长首尾音插值。输入为实际左右／窗内动机音符、精确目标长度、key、情绪与强度轨迹、禁写域、留白、共同边界、seed和明确版本。提取节奏／音程动机，在句内发展、为后句保留入口；缺侧按单侧引入／收束；原件不拉伸裁切。新自动桥以kind=phrase的完整乐句存储，bridge身份由Plan/Result/Protection绑定，实际length等于window长度；不能让子块phrase_id指向kind=bridge，也不能伪装组合children。base_material也是未处理phrase，先完整作曲再一次情绪处理，已有kind=bridge的手动素材仍走原完整保护门禁，绝不削弱P3校验。非全留白窗必须有有效notes。
+
+实际音符合法单旋律、整数tick、不交留白／保护、不越窗。每个派生音符必须通过具体motif父音符、变换操作回到Request中真实实际音符；已知origin三字段保留，lineage是具体父链，不能借无关合法来源。改变音高、起点或时值不沿用旧slice。来源认证依据静态操作记录和真实父快照，不重新生成旧音乐。
+
+```text
+BridgeResult={schema:"emoblocks.bridge-result.v1",spec_rev,contract_rev:p5,
+ request_id,snapshot_id,request_fingerprint,base_fingerprint,
+ plan_id,plan_version,plan_fingerprint,bridge_id,protection_id,
+ origin:"automatic"|"inherited",range:Range,status:"READY"|"FAILED"|"CANCELLED",
+ base_material:Material?,material:Material?,children:Material[],
+ emotion_processing:JSON-object?,operations:JSON-object[],
+ notes:Note[],content_fingerprint:str?,error:Error?}
+RawBridgeOutcome={schema:"emoblocks.bridge-raw-outcome.v1",spec_rev,contract_rev:p5,
+ request_fingerprint,plan_id,plan_version,status:"SUCCEEDED"|"FAILED"|"CANCELLED",
+ results:BridgeResult[],error:Error?}
+BridgeOutcome={schema:"emoblocks.bridge-outcome.v1",spec_rev,contract_rev:p5,
+ request_fingerprint,plan_id,plan_version,plan_fingerprint,
+ status:"SUCCEEDED"|"FAILED"|"CANCELLED",results:BridgeResult[],
+ base_fingerprint,notes:Note[]?,content_fingerprint:str?,
+ protection_summary:str,remaining_gaps:Gap[],error:Error?,
+ capabilities:{score_scope:"BRIDGE_STAGE",can_plan_connections:bool,
+ can_audition:false,can_apply:false,can_export_final:false}}
+```
+
+基础桥音乐和情绪后音乐分别保存。emotion_processing记录算法版本、参数、seed、pass_count=1、原情绪位置段和逐音符操作；只从base_material计算一次，绝不能继续变换上次变体。原情绪位置保持，音符按起点归属单一段；各段读取同一未处理基础快照，只合并该段所属音符，任何音符最多一次处理。共同边界音符在情绪步骤冻结；编配提示如实为suggested-not-rendered，不能宣称已完成伴奏。
+
+children为最终完整乐句按四拍切分的可追溯子块，短尾真实长度，phrase_id=material.id、相对位置、origin/lineage/slice与父快照一致。内部四拍分界不是新连接边界，不为每四拍再生成桥。base_material.generation保存目标、实际动机父快照、key、参数／seed／算法版本及逐音符变换；operations与base_material真实音高／时间／来源一一对应，最终变化由emotion_processing静态账本认证。结果content_fingerprint绑定range、blank_mask和最终实际绝对notes（用bridge_id命名发声），不含velocity的保护结构指纹另外保存。
+
+失败／取消结果material/base_material=null、children/notes=[]、content_fingerprint=null、error非null；不冒充实际音乐完成。继承桥READY完全复用原锁和实际音乐，保留原输入保护plan引用及实际音符身份；不能重新走情绪或改写base。
+
+### 11.5 流式认证、就绪门禁及失败状态
+
+`curve_bridge_music.generate(request,plan,should_cancel=None,on_progress=None,on_result=None)->RawBridgeOutcome`有限生成全部新桥，并为继承桥提供事实结果；on_result仅将完成的真实BridgeResult送队列，不写Controller／Tk／文件。生成开始前必须收到真实锁定Plan；纯validate_plan可重算初始锁摘要／指纹，但不决定位置。
+
+Controller.record_bridge_result(token,result)->bool逐项独立认证后暂存并升级所属锁；完全重复返回false，不重复写或清锁；冲突重复、未知／额外桥、错版本和非法音乐明确失败，已有认证内容与锁保留。生成或认证某桥失败允许保存此前有效结果。Controller.finish_bridge(token,raw)->bool对完整桥集合再独立校验：exactly全部automatic＋inherited，缺项、重复、额外结果拒绝；Raw与已登记结果不一致拒绝。所有CONTENT_READY且无失败、身份／版本／范围／共同端点／保护／来源／结构／外部音乐认证通过，才SUCCEEDED和can_plan_connections=true。
+
+Outcome成功notes为原实际基础拼接删除**完整支撑位于自动窗内**的音符＋各自动桥绝对notes；原位保留所有窗外音符，跨边界音符在选位已拒绝，不能悄悄截短。继承桥是原拼接的一部分，不再次叠加。剩余空缺、原总长、强度、留白与位置仍准确；Outcome指纹对实际完整splice计算，不信算法自报。
+
+BridgePlan内容不可变；保护轴独立于attempt终态。状态phase=BRIDGE_DECISION/BRIDGE_LOCKED/BRIDGE_GENERATION/BRIDGES_READY；state=RUNNING/READY/FAILED/CANCELLED/INTERRUPTED/STALE。bridge_state无任务时status=IDLE、phase=null、request/plan/outcome/preview=null、集合为空、所有P5下游能力false。失败、中断、取消、过期均不解除锁或丢弃已认证内容，不能进入P6。无桥也是完整Plan版本，正常none可READY；存在失败继承锁则不能READY。重新选位或none另建attempt和递增版本，旧数据原样保留审计。
+
+旧／重复／取消后回调不得改终态、消耗新任务或清锁。编辑/undo使原RUNNING/READY持久STALE，同时消耗完整Token；该次STAGING变化单独标dirty。pure恢复检查状态对应facts，不自动改变桥音乐或重判none。未知／错版本报PLAN_VERSION_MISMATCH，非法输入STALE_SNAPSHOT/INVALID_CANDIDATE，非法锁PROTECTION_CONFLICT，未就绪BRIDGE_NOT_READY，实际生成失败BRIDGE_GENERATION_FAILED。
+
+### 11.6 暂存、纯保存与恢复
+
+P5 Attempt保留原八字段并增加唯一`bridge`：
+
+```text
+bridge={schema:"emoblocks.bridge-attempt.v1",spec_rev,contract_rev:p5,
+ request:BridgeRequest,phase,plan:BridgePlan?,results:BridgeResult[],outcome:BridgeOutcome?}
+```
+
+外层attempt.id=request_id、snapshot_id=请求原编辑快照ID、input_fingerprint=原编辑指纹。records=[]；protections为基础保护＋新锁（决策前为基础保护），staged_materials仅认证的新桥最终material和children，不写当前库和编号。只有新bridge子对象使用p5，旧completion／一般Attempt形状／所属版本保持。
+
+RUNNING无outcome，可已有Plan/锁/部分results；READY要求完整SUCCEEDED；FAILED/CANCELLED保留Plan/锁/部分音乐及有对应终态Outcome/error；STALE保留原事实并无后续资格；INTERRUPTED保留当时Plan/锁/results、outcome可null。纯存储验证请求、原版本快照、Completion引用闭包、计划／锁／实际结果一致，禁止状态字段冒充就绪。不依赖算法模块以生成旧内容；决策、compose、emotion、render、后台thread在加载/保存/validate全部禁用时仍能读写合法事实。
+
+RUNNING保存后重开变INTERRUPTED（标staging_dirty），不恢复线程或活动Token。staging_dirty沿用P4，计算/锁/结果/取消/失败/失效均参与自动保存保护；音乐is_saved、undo、素材与编号不因stage变化。自动保存失败停止新建／打开／关闭，不丢旧文件或工作。旧Project仅打开／保存不迁移。不得把P5暂存写入bundle.results，不能用P4或旧planner生成正式整曲。
+
+### 11.7 Facade、主流程与前端线程接口
+
+```text
+Controller.capture_bridge(candidate_id=None,completion_attempt_id=None,seed=31,parameters=None)
+ ->{token,request,attempt_id}
+Controller.lock_bridge(token,proposal)->BridgePlan
+Controller.begin_bridge_generation(token,plan)->bool
+Controller.record_bridge_result(token,result)->bool
+Controller.finish_bridge(token,raw)->bool
+Controller.cancel_bridge(token)->bool
+Controller.fail_bridge(token,error)->bool
+Controller.bridge_state()->{status,phase,attempt_id,request,plan,protections,results,
+ outcome,preview,remaining_gaps,capabilities,error,message}
+Provider.decide_bridge(request,should_cancel=None,on_progress=None)->BridgeProposal
+Provider.generate_bridges(request,plan,should_cancel=None,on_progress=None,on_result=None)->RawBridgeOutcome
+```
+
+Controller.capture_bridge无candidate参数只允许当前无gap的完整排布，否则提示先P4补全／选候选。提供candidate时同时提供所属completion_attempt_id，错配／STALE/无效拒绝且无半注册。duplicate bridge或completion正在运行时明确拒绝；其他输入任务与bridge仍受现有busy约束。Session.accepts检查完整阶段Token；finish_job不得绕开桥专属结果认证，cancel_job转派cancel_bridge。
+
+bridge_state为纯查询深拷贝。preview=null（尚无Plan）或`{project:base_project,overlays:JSON-object[],protections:Protection[],memory_info:MemoryInfo,notes:Note[]?}`；overlays来自后端真实Plan/结果，含id/range/status/material?；未就绪notes=null，不假造音乐。记忆来自对应base纯定位，桥标记独立，当前编辑与播放对象不变。capabilities.bridge仅v2可用；generate_final仍false。bridge_state.remaining_gaps等于当前请求的基础剩余空缺，capabilities为Outcome能力（不在READY则can_plan_connections=false）；界面不从音乐saved或原候选数推断就绪。运行中显式保存BRIDGE任务允许，关闭/新建/打开仍需明确取消后保护保存。
+
+后台只计算纯对象；主线程锁事务成功后，再启动生成。Controller.begin_bridge_generation认证已锁Plan完整ID/version/hash及活动Token，原子将phase改为BRIDGE_GENERATION，不消耗Token；phase表示生成请求已开始，线程启动失败立即fail_bridge并保锁。前端不能自行推断阶段，lock_bridge绝不走generic DONE终态清理。工作消息封装完整Token、stage_id（DECISION或GENERATION:plan_id:version:hash）和该stage内单调event_seq；decision的迟到进度不能覆盖generation，取消A再开始B的同内容也不能通过。UI只显示后端真实阶段和已用时间，不虚构百分比/预计耗时。多个生成结果按同一队列送主线程，先独立认证，再显示CONTENT_READY；回调/线程启动异常经fail_bridge保锁并退出busy，不永久RUNNING。
+
+三栏、单画布内显示桥决定/位置已保护/生成中/就绪/失败/失效；none与失败文字不同。候选只读预览使用后端preview的真实保护，失败锁不是普通可补空缺。可退出预览返回编辑且恢复选择与滚动；P4基础预览和P5桥预览互斥。不增加第四栏或弹窗流程，不提供最终应用/完整方案试听/成品导出。素材和旧成品的共用播放器与逐格式导出保持原契约。
+
+### 11.8 所有权、依赖与验收
+
+lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览）、curve_workflow/curve_store/curve_session公共扩展、story_engine主流程与对应新test_curve_bridges.py；必要版本兼容改curve_project，保留P4来源闭包/纯恢复/P3兼容。算法只改curve_bridge_music.py、curve_melody的统一桥乐句能力、对应test_curve_bridge_music.py及仓库外样例；不改schema/UI/story_engine。前端只改shared新增curve_bridge_ui.py、curve_ui/curve_canvas必要接线、独立test_curve_p5_ui.py，保留删除键修复；必要配对适配器先报告，不改音乐/schema/播放器。不能交叉写同一公共文件。P5冻结契约先同步；lead接口实现提交并通知后worker更新，不各自猜字段。
+
+必测十五项：无效／未完成／STALE／篡改基础候选；current无gap；单合法候选和局部remaining_gaps；2/3/4及长区域selected与自然none；悬挂生成前所有锁已登记且原子失败；一就绪一失败；手動桥加none；相邻／单侧／不同key／休止；记忆主题手工留白跨界长音；改pitch/start/duration/extra/延音/origin/lineage/hash拒绝；取消重复迟到编辑undo不复活；保存重开全算法禁用；实际音乐可复现；无P6连接／最终边界／旧planner调用；精确tick不量化、不可表达时拒绝输出。
+
+提供固定输入基础拼接与bridge后actual notes/来源、窗位置和none理由、锁挂起/部分失败/就绪证据；实际LMMS和设备串行，声音只称P5桥对照，非最终连接作品。后端／专项／完整/check_frontends/diff全部按范围运行；两主题×1020×700及更大窗口程序化Tk，视觉截图、实体Mac鼠标键盘／触控板、人工听感、Windows实机分开记载。契约与实现各最多5轮，匹配RUN/TASK/ROUND/HEAD和完整代码指纹的独立PASS方可交付。完成P5停止，不进入P6、不推送发布或安装模型。
+
+
+### 11.9 已收前端评审后的补充／音乐账本形状（DRAFT）
+
+- 失败结果分派在独立p5 bridge子对象验证，不送P0 Record桥结果的非空素材校验；旧Record规则完全保留。Plan不承担mutable FAILED状态；attempt失败与各锁及结果READY分轴，防止一桥失败令已认证兄弟结果无效。原P4候选放置只在base_project作用域解析，不拿当前input_project替代。
+- 新自动完整桥为phrase，独立children为block，phrase_id指向最终phrase.id；继承手动kind=bridge保持原形状，其children可以为空且不强行切新子块。新自动全主动留白窗口不得被选择为作曲窗口，不用empty notes掩盖生成失败。
+- `curve_melody.compose_bridge_phrase(request,window,joint_boundary_conditions,should_cancel=None)`返回未处理的phrase，普通derive六方法及已有bridge受保护规则不改。request已包含seed/预算/轨迹；不在音乐模块读Session/文件/Tk。window.context精确左右上下文为`{placement_id,notes:Note[]}`或null（几何最近未被本计划覆盖的实际放置）；相邻桥端点来自Joint而非被替换的基础端点。motif_note_ids只能引用窗内或这两个实际邻接上下文的发声ID，不任意选库内无关来源。
+- Bridge基础generation精确必需字段沿9.2，加method=bridge_phrase，parameters含target_ticks、实际节奏／动机方法，base_notes为实际motif父音符快照。operations含每个输出音符唯一的cell：`{operation:"bridge-motif-cell",input_note_id,parent_ref:{placement_id,component_path:ID[],material_snapshot_id,note_id},output_note_id,motif_index,cycle_index,rule,from_pitch,to_pitch,start_tick,duration_tick}`。rule为opening/sequence/answer/rhythm/arrival；onset/duration相对完整句。input_note_id是父实际绝对发声ID；parent_ref指向其真实放置／实际变体snapshot／本地note及基准组合occurrence路径，重复嵌套使用不能借同来源的其他叶。from_pitch和origin/lineage独立回指真实父音符，output_note_id与音符严格一一，变化后slice=null，后端不只验证字符串血缘存在。每桥音乐流由Request内容、窗口、冻结共同条件及seed派生，生成顺序或兄弟失败不能改变它。结构／来源篡改而只更新hash仍应拒绝。
+- emotion_processing精确形状`{pass_count:1,algorithm_version,segments:[{range:Range,emotion,seed,variant:Material}]}`。range/情绪恰等Plan情绪轨迹；每个variant从同一base_material调用已有P3规则，保护区外段和共同端点，最后只采纳起点归属该段的音符。原强度点不改，不从其他segment结果继续处理，不绕过已有桥保护。静态验证核对P3参数、base_notes、实际差异、来源／发声、操作和幅度，不调用emotion算法。
+- 最终material.generation.method=bridge_emotion_once，保存完整base_notes、算法/参数/seed/key、音符操作和segments输入身份；provenance保留实际父快照。Result.operations为base generation逐音符账本；情绪账本在emotion_processing，不把P3变化说成原始作曲。joint端点在所有情绪步骤保持pitch/start/duration。
+- P5的can_plan_connections仅表示可供未来P6重新捕获的合法就绪输入，P5本身不调用P6。存在remaining_gaps时只允许resolved_ranges范围的未来规划，can_export_final/can_apply/can_audition始终false，不能因none提升为最终乐谱。
+- 验收补充：第二个窗冲突整批锁不发布；锁后线程启动异常释放busy但保锁；保存部分成功、禁用所有音乐生成/情绪/重算/渲染后恢复；取消阶段切换与同内容新任务不相互覆盖；P4/P5互斥预览的删除键／控制点／情绪／素材批次均不可编辑；播放中锁、失败、切预览不抢播。
+
+
+已收算法初审确认：现有P0 Record的FAILED父计划不能包含READY子结果，P3 emotion对已有kind=bridge严格保护；P5采用独立阶段对象分派及未处理phrase→一次情绪→最终phrase/子块，保留这些历史门禁。inherited_bridge_ids覆盖全部原活动bridge锁，手动锁原plan_id/version不重绑；新attempt只复制当前基础自身保护，不复制其他旧P5attempt的失败锁到新活动作用域。全部自动窗与共同端点统一发布；reverse-order实际音乐须相同。CONTRACT_REVIEW尚未独立PASS。
+
+
+### 11.10 双角色ROUND2整合与最终计算约定（DRAFT）
+
+- `max_notes`为每个新自动桥base_material的实际作曲音符上限，每产生一音符之前检查并协作取消。最终情绪保持音符数量，children/segment快照不重复计数，继承桥不计；超限失败，不截短，不按兄弟成功/失败重分配。生成顺序反转不改变实际音乐。
+- 指纹固定使用第8.3 canonical/digest。Request域`emoblocks.bridge-request.v1`取完整Request；Plan域`emoblocks.bridge-plan.v1`取删除plan_fingerprint的完整Plan；Result域`emoblocks.bridge-content.v1`取`{range,blank_mask,notes}`；Outcome域`emoblocks.bridge-splice.v1`取`{total_ticks,notes}`。notes为实际绝对Note全字段（包括velocity），排序(start_tick,pitch,duration_tick,id)；mask排序(start_tick,end_tick)。失败/取消未完成音乐指纹null。保护结构指纹沿旧域并排除velocity，初始range_lock_fingerprint沿model.protection_summary；就绪摘要另列，不能混用。
+- BridgeOverlay精确形状`{id,range:Range,protection_id,status:RANGE_LOCKED|CONTENT_READY,result_status:null|READY|FAILED|CANCELLED,material:Material|null,error:Error|null}`。保护轴取实际对应Protection，结果轴取已认证Result；没有结果时后三字段null。整体失败不把保护退回未锁状态，范围不是普通空缺。
+- 所有Result的plan_id/version/fingerprint（包括inherited）绑定本次P5包装Plan；继承Protection的原plan_id/version与内容不改。继承认证不得要求旧锁计划等于新包装计划。手动桥直接核对真实放置及原保护；历史自动桥只在原计划与实际結果已READY且可解析时继承为READY，否则保锁并在本次结果返回BRIDGE_NOT_READY。
+- 音乐随机流排除request_id/snapshot_id/session_id/plan_id/version及bridge随机ID；以base_fingerprint、seed、窗口范围和共同边界的音乐字段（tick、pitch/start/duration、relation，排除ID）派生。身份可以每次新建，固定音乐输入/参数/seed的实际音高时间必须一致；情绪segment seed同样采用该音乐种子规则，不依赖生成顺序、墙钟或失败项。
+- lead可扩展curve_candidates中既有静态情绪验证的复用入口（保留原P4调用及平静语义），供P5纯验证完整P3快照；不得调用emotion_variant或改变P4来源/完成门禁。普通六方法、已有kind=bridge完整保护及旧Attempt验证保持原样。
+- 前端必要时可修改curve_completion_ui的预览互斥接线；基础/P5控件使用现有三栏内分阶段折叠显示，避免同时堆叠压缩唯一画布。1020×700仍保持画布/底部播放可达，主题及展开不写音乐工程。frontend需检查配对适配器并保留最新Mac删除键行为。
+
+以上为两个只读评审ROUND2的具体修订，未增加P6能力或音乐格式。独立verifier尚未审查；DRAFT不能作为功能开发授权。

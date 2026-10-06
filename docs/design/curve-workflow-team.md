@@ -1,9 +1,9 @@
 # 强度画布 v2 r3 团队与阶段协议
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p4
+CONTRACT_REV=curve-workflow-v2-r3-p5
 
-产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23历史正文为 **FROZEN**；当前P4第10节为 **FROZEN**（P4-CONTRACT ROUND1 PASS）。P0独立检查 ROUND=2 PASS。用户已启动P0–P1：先完成两角色只读设计评审、整合并冻结提交verifier；PASS后标记FROZEN并同步，再由lead实施P1。P1完成复核后停止，不进入P2。
+产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23/p4正文为 **FROZEN**；当前P5第11节为 **DRAFT**。历史P0独立ROUND2、P4实施ROUND3均PASS，原阶段记录保留；用户已启动P5，只读评审、独立契约冻结后才按文件归属实施，完成P5停止，不进入P6。
 
 ## 角色与文件所有权
 
@@ -87,3 +87,8 @@ P0与P1提交、匹配指纹的verifier结论、自动验证及未验项。P0审
 ## P4启动补充
 
 P3最终ROUND3 PASS已现场核对，用户授权P4。公共契约第10节p4先DRAFT，两角色只读评审、lead整合、verifier独立检查后冻结。文件归属及接口见10.7/10.8；算法/前端待冻结后并行，不相互派单。基础候选只暂存，不接P5 bridge或P7最终应用/试听。契约与实现各最多5轮，冻结期不写集成目录。完成P4停止；历史P0–P3的门禁、轮次、保护兼容和待人工验证保留。
+
+
+## P5 启动补充（DRAFT）
+
+用户已授权P5，P4最终ROUND3 PASS的实际输出、HEAD与前后指纹已核对。已验证的Mac删除键修复六文件单独提交为c767fe6，保留P4所有修复和待人工验收。当前第11节p5补充契约DRAFT，算法/前端只读评审后由lead整合，再经verifier独立PASS冻结。实现只到bridge位置原子锁定、完整乐句、独立就绪认证与暂存；失败保锁，none新版本；不进入P6，不实现连接、最终应用、完整方案试听或正式整曲导出。旧规范正文和数据所属版本不重写。契约和实施分别最多五轮，冻结期间不写集成源码；各角色范围与接口详见契约第11节。
