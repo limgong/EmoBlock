@@ -129,6 +129,10 @@ class ConnectionUI:
         if bridge_attempt_id is None:
             if parent['status']!='READY' or not parent['capabilities'].get('can_plan_connections',False):return False
             bridge_attempt_id = parent['attempt_id']
+        self.start_button.state(['disabled'])
+        self.label.configure(text='正在验证Bridge就绪输入…')
+        app.tell('正在验证Bridge快照和保护；通过后开始连接规划。')
+        app.root.update_idletasks()
         try:
             captured = app.controller.capture_connection(bridge_attempt_id=bridge_attempt_id)
         except Exception as exc:

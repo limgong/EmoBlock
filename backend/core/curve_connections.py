@@ -103,6 +103,10 @@ def validate_bridge_ref(ref):
 
 def actual_layout(ref):
     validate_bridge_ref(ref)
+    return _actual_layout(ref)
+
+
+def _actual_layout(ref):
     request = ref['request']; project = request['base_project']
     view = b.preview(request, ref['plan'], ref['protections'], ref['results'], ref['outcome'])
     return dict(total_ticks=project['total_ticks'], bpm=project['bpm'], notes=copy.deepcopy(ref['outcome']['notes']),
@@ -121,7 +125,7 @@ def make_request(project, bridge_ref, token=None, seed=41, values=None, plan_id=
     for key in ('request_id', 'snapshot_id', 'session_id'): m.ident(token[key])
     m.integer(token['edit_revision'])
     if token['input_fingerprint'] != m.fingerprint(project): m.reject('连接输入快照已失效。', 'STALE_SNAPSHOT')
-    layout = actual_layout(bridge_ref)
+    layout = _actual_layout(bridge_ref)
     m.notes_check(layout['notes'], layout['total_ticks'], m.source_index(layout['base_project']['sources']))
     b.monotone_notes(layout['notes'])
     return dict(schema='emoblocks.connection-request.v1', spec_rev=m.SPEC_REV, contract_rev=REV,

@@ -535,7 +535,6 @@ class Controller:
         parent = self._bridge_attempt(self._bridge_id if bridge_attempt_id is None else bridge_attempt_id)
         if parent is None or parent['state'] != 'READY':
             model.reject('请先计算当前有效且全部内容就绪的bridge计划。', 'BRIDGE_NOT_READY')
-        curve_store.validate_bundle(self._current_bundle())
         old = parent['bridge']
         ref = dict(attempt_id=parent['id'], request=copy.deepcopy(old['request']), plan=copy.deepcopy(old['plan']),
                    protections=copy.deepcopy(parent['protections']), results=copy.deepcopy(old['results']), outcome=copy.deepcopy(old['outcome']))
@@ -543,7 +542,12 @@ class Controller:
         preliminary = curve_connections.make_request(self.project, ref, seed=seed, values=parameters, plan_version=version)
         captured = self.session.capture(preliminary['request_id'], contract_rev=curve_connections.REV); token = captured['token']
         try:
-            request = curve_connections.make_request(captured['project'], ref, token, seed, parameters, preliminary['plan_id'], version)
+            if captured['project'] != preliminary['input_project']:
+                model.reject('捕获期间输入已变化，请重新计算。', 'STALE_SNAPSHOT')
+            request = copy.deepcopy(preliminary)
+            request.update({k: token[k] for k in ('request_id', 'snapshot_id', 'session_id', 'edit_revision', 'input_fingerprint')})
+            # Full registry, parent, snapshot and request validation below is
+            # the single publication gate; nothing is visible before it passes.
             attempt = dict(id=request['request_id'], snapshot_id=request['snapshot_id'], input_fingerprint=request['input_fingerprint'],
                 state='RUNNING', records=[], protections=copy.deepcopy(ref['protections']), staged_materials=[], error=None,
                 connection=dict(schema='emoblocks.connection-attempt.v1', spec_rev=model.SPEC_REV, contract_rev=curve_connections.REV,

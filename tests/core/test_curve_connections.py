@@ -308,3 +308,10 @@ class ConnectionServiceTests(unittest.TestCase):
         self.assertEqual(req['actual_layout']['remaining_gaps'],[])
         self.assertEqual(proposal(req,((480,960),))['windows'][0]['original_notes'],[])
         with self.assertRaises(m.ProjectError):c.plan_connection(cap['token'],proposal(req,((480,960),)))
+
+    def test_bad_parent_registry_rejects_before_publication_and_cleans_token(self):
+        c=ready_bridge();c._bundle['snapshots'][0]['content_fingerprint']='tampered-registry'
+        before=copy.deepcopy(c._bundle);music=c.project;history=copy.deepcopy((c.session._undo,c.session._redo))
+        with self.assertRaises(m.ProjectError):c.capture_connection()
+        self.assertEqual(c._bundle,before);self.assertEqual(c.project,music);self.assertEqual((c.session._undo,c.session._redo),history)
+        self.assertEqual(c._jobs,{});self.assertEqual(c.session._requests,{});self.assertIsNone(c._connection_id)
