@@ -46,6 +46,15 @@ def simulated_render(folder):
 
 
 class FinalGateTests(unittest.TestCase):
+    def test_registry_cache_rejects_changed_content_and_retains_no_data(self):
+        request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));result=f.apply_boundaries(request,plan);score=f.make_score(request,plan,result)
+        facts=[rec.fact('boundary_request',request),rec.fact('boundary_plan',plan,[f.ref(request)]),rec.fact('boundary_result',result,[f.ref(request),f.ref(plan)]),rec.fact('final_score',score,[f.ref(request),f.ref(plan),f.ref(result)])]
+        rec.validate_facts(facts);rec.validate_facts(copy.deepcopy(facts))
+        changed=copy.deepcopy(facts);changed[-1]['data']['notes'][0]['pitch']+=1
+        with self.assertRaises(m.ProjectError):rec.validate_facts(changed)
+        self.assertLessEqual(len(rec._VALID_FACT_REGISTRIES),16)
+        self.assertTrue(all(isinstance(key,str) and len(key)==64 for key in rec._VALID_FACT_REGISTRIES))
+
     def test_validation_scope_never_authenticates_changed_bytes_or_leaks(self):
         request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
         with m.validation_scope():
