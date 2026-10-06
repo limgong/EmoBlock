@@ -23,6 +23,7 @@ from curve_cards import MaterialCards
 from curve_canvas import CurveCanvas, snap_tick
 from curve_completion_ui import CompletionUI
 from curve_bridge_ui import BridgeUI
+from curve_connection_ui import ConnectionUI
 
 METHODS = [('variant','局部变化'),('answer','回答句'),('counter','副旋律规则'),
            ('rhythm','节奏重组'),('develop','动机发展'),('density','疏密变化')]
@@ -123,9 +124,9 @@ class CurvePage(ttk.Frame):
             hint(button,lambda e=emotion:'将所选放置设为'+EMOTION_NAMES[e]+'；从基础快照处理，不改素材库。',app.show_detail)
         self.memory_label = ttk.Label(self.right,style='Curve.Muted.TLabel',wraplength=360,takefocus=True)
         self.memory_label.pack(fill='x',pady=(4,0))
-        hint(self.memory_label,app.memory_description,app.show_detail)
-        self.memory_label.bind('<Button-1>',lambda _:app.show_detail(app.memory_description()))
-        self.memory_label.bind('<Return>',lambda _:app.show_detail(app.memory_description()))
+        hint(self.memory_label,app.current_memory_description,app.show_detail)
+        self.memory_label.bind('<Button-1>',lambda _:app.show_detail(app.current_memory_description()))
+        self.memory_label.bind('<Return>',lambda _:app.show_detail(app.current_memory_description()))
         self.timeline = CurveCanvas(self.right,app)
         self.timeline.pack(fill='both',expand=True,pady=(4,0))
 
@@ -268,6 +269,7 @@ class CurveApplication:
             self.show_detail('可用“导入旋律”选择文件。文件拖入未启用：'+str(exc))
         self.completion = CompletionUI(self)
         self.bridge = BridgeUI(self)
+        self.connection = ConnectionUI(self)
         ui_platform.setup_window(root,self)
         for event in ui_platform.EDIT_SHORTCUT_EVENTS:
             root.bind(event,self.edit_shortcut,add='+')
@@ -286,6 +288,7 @@ class CurveApplication:
         return (not self.jobs and self.state_data['access_mode']=='editable'
                 and not (getattr(self,'completion',None) and self.completion.preview_candidate)
                 and not (getattr(self,'bridge',None) and self.bridge.preview is not None)
+                and not (getattr(self,'connection',None) and self.connection.preview is not None)
                 and self.state_data['capabilities'].get('edit',True))
 
     def can_edit(self, capability):
@@ -379,6 +382,7 @@ class CurveApplication:
         self.save_label.configure(text=saved_text)
         self.completion.refresh()
         self.bridge.refresh()
+        self.connection.refresh()
         sources = project['sources'] if project else []
         materials = project['materials'] if project else []
         if self.selected_source_id not in {v['id'] for v in sources}:
@@ -399,7 +403,8 @@ class CurveApplication:
                 self.page.source_list.selection_set(i)
         self.page.draw_source()
         self.page.cards.render(materials)
-        bridge_preview = self.bridge.preview
+        connection_preview = self.connection.preview
+        bridge_preview = connection_preview if connection_preview is not None else self.bridge.preview
         private = self.private_preview()
         if not private and self.selected_target and self.selected_target[0]=='placement':
             if not project or self.selected_target[1] not in {v['id'] for v in project['placements']}:
@@ -410,7 +415,7 @@ class CurveApplication:
                                          wraplength=max(220,self.page.right.winfo_width()-20))
         self.page.timeline.set_project(private['project'] if private else project,
                                        readonly=bool(private),memory_info=private['memory_info'] if private else None,
-                                       bridge_preview=bridge_preview)
+                                       bridge_preview=bridge_preview,connection_preview=connection_preview)
         if project:
             self.page.grid_count.set(str(project['grid_count']))
         self.history = self.controller.history_items()
@@ -428,7 +433,7 @@ class CurveApplication:
         for text,button in self.edit_buttons:
             enabled = self.editable
             if text=='保存快照':
-                enabled = self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE') for j in self.jobs.values())
+                enabled = self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION') for j in self.jobs.values())
             if text=='撤销':enabled = enabled and self.state_data['can_undo']
             if text=='重做':enabled = enabled and self.state_data['can_redo']
             button.state(['!disabled'] if enabled else ['disabled'])
@@ -439,22 +444,49 @@ class CurveApplication:
         self.layout_sources()
 
     def preview_memory_description(self):
-        info = self.private_preview()['memory_info']
+        preview = self.private_preview()
+        info = preview['memory_info']
         if not info:return '候选记忆状态不可用。'
         if info['state']=='PENDING_GAP':return '候选记忆待落位 · 峰值处仍为空缺。'
         if info['state']=='PRESERVE_BLANK':return '候选记忆保留主动留白。'
-        region = info['range']
-        return '候选记忆 · '+('已保护' if info['protection_id'] else '目标未落保护')+f' · {region["start_tick"]}–{region["end_tick"]} tick'
+        protections = preview.get('protections',preview['project']['protections'])
+        protection = next((p for p in protections if p['id']==info['protection_id']
+            and p['kind']=='memory' and p['placement_id']==info['placement_id'] and p['status']=='CONTENT_READY'),None)
+        region = protection or info['range']
+        return '候选记忆 · '+('已保护；用户可返回编辑' if protection else '目标未落保护')+f' · {region["start_tick"]}–{region["end_tick"]} tick'
+
+    def current_memory_description(self):
+        return self.preview_memory_description() if self.private_preview() is not None else self.memory_description()
 
     def private_preview(self):
+        connection = getattr(self,'connection',None)
+        if connection and connection.preview is not None:return connection.preview
         bridge = getattr(self,'bridge',None)
         if bridge and bridge.preview is not None:return bridge.preview
         completion = getattr(self,'completion',None)
         return completion.preview_candidate if completion else None
 
     def exit_private_preview(self):
-        if self.bridge.preview is not None:self.bridge.exit_preview()
+        if self.connection.preview is not None:self.connection.exit_preview()
+        elif self.bridge.preview is not None:self.bridge.exit_preview()
         elif self.completion.preview_candidate:self.completion.exit_preview()
+
+    def show_curve_stage(self, stage):
+        if stage=='连接':self.connection.show()
+        elif stage=='Bridge':self.bridge.show()
+        else:
+            self.cancel_interaction()
+            self.connection.restore_view()
+            self.connection.visible = False
+            self.bridge.restore_view()
+            self.bridge.visible = False
+            self.completion.restore_view()
+            self.refresh()
+
+    def describe_bridge_overlay(self, overlay):
+        if self.connection.preview is not None:
+            return self.bridge.describe_overlay(overlay,self.connection.state['request']['bridge_ref'])
+        return self.bridge.describe_overlay(overlay)
 
     def edit(self, action, **args):
         if not self.editable:
@@ -541,6 +573,7 @@ class CurveApplication:
     def drain_jobs(self):
         self.completion.drain()
         self.bridge.drain()
+        self.connection.drain()
         while True:
             try:
                 token,success,payload = self.messages.get_nowait()
@@ -569,6 +602,7 @@ class CurveApplication:
     def cancel_jobs(self):
         self.completion.cancel()
         self.bridge.cancel()
+        self.connection.cancel()
         for job in list(self.jobs.values()):
             self.controller.cancel_job(job['token'])
         self.jobs.clear()
@@ -923,7 +957,7 @@ class CurveApplication:
             return self.safe(lambda:ui_platform.open_folder(self.last_export['path'].parent))
 
     def save_project(self):
-        if self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE') for j in self.jobs.values()):
+        if self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION') for j in self.jobs.values()):
             path = self.controller.save_snapshot()
             self.refresh()
             self.tell('工程快照已保存：'+str(path))
@@ -931,6 +965,8 @@ class CurveApplication:
 
     def _switched(self):
         self.jobs.clear()
+        self.connection.restore_view()
+        self.connection.visible = False
         self.bridge.restore_view()
         self.bridge.visible = False
         self.bridge.choice.set('')
@@ -1027,6 +1063,7 @@ class CurveApplication:
             return
         self.drain_jobs()
         self.bridge.update_elapsed()
+        self.connection.update_elapsed()
         self.safe(self.update_transport)
         self.timer = self.root.after(80,self.tick)
 
@@ -1051,7 +1088,7 @@ class CurveApplication:
     def destroyed(self, event):
         if event.widget==self.root and not self.closed:
             for job in self.jobs.values():
-                if job['kind'] in ('COMPLETION','BRIDGE'):job['cancel'].set()
+                if job['kind'] in ('COMPLETION','BRIDGE','CONNECTION'):job['cancel'].set()
             self.closed = True
             if hasattr(self,'timer'):self.root.after_cancel(self.timer)
             if self.card_scroll_timer is not None:self.root.after_cancel(self.card_scroll_timer)

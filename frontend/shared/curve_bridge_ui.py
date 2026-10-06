@@ -57,15 +57,17 @@ class BridgeUI:
         self.label.bind('<Return>', lambda _: app.show_detail(self.description()))
 
     def show(self):
+        connection = getattr(self.app,'connection',None)
+        if connection:
+            connection.restore_view()
+            connection.visible = False
         self.visible = True
         self.app.completion.restore_view()
         self.app.refresh()
         self.app.show_detail(self.description())
 
     def show_completion(self):
-        self.restore_view()
-        self.visible = False
-        self.app.refresh()
+        self.app.show_curve_stage('补全')
 
     def active_job(self):
         return next((j for j in self.app.jobs.values() if j['kind']=='BRIDGE'
@@ -116,7 +118,8 @@ class BridgeUI:
         else:
             self.cancel_button.pack_forget()
             self.start_button.pack(side='left')
-        if self.visible:
+        connection = getattr(app,'connection',None)
+        if self.visible and not (connection and connection.visible):
             self.panel.pack(fill='x',before=app.page.memory_label,pady=(4,0))
             completion.panel.pack_forget()
         else:self.panel.pack_forget()
@@ -151,6 +154,8 @@ class BridgeUI:
             app.cancel_interaction()
             self.restore_view()
             app.completion.restore_view()
+            app.connection.restore_view()
+            app.connection.visible = False
             self.visible = True
             app.refresh()
             app.tell(self.status_text())
@@ -259,6 +264,8 @@ class BridgeUI:
         if self.state['preview'] is None or self.state['status']=='STALE':return
         self.app.cancel_interaction()
         self.app.completion.restore_view()
+        self.app.connection.restore_view()
+        self.app.connection.visible = False
         canvas = self.app.page.timeline
         self.bookmark = dict(selected=canvas.selected_id,scroll=canvas.canvas.xview()[0],mode=canvas.mode)
         self.preview = copy.deepcopy(self.state['preview'])
@@ -281,8 +288,9 @@ class BridgeUI:
         self.restore_view()
         self.app.refresh()
 
-    def describe_overlay(self, overlay):
-        plan = self.state['plan']
+    def describe_overlay(self, overlay, bridge_ref=None):
+        facts = self.state if bridge_ref is None else bridge_ref
+        plan = facts['plan']
         region = overlay['range']
         parts = [f'Bridge {overlay["id"]} · {region["start_tick"]}–{region["end_tick"]} tick',
                  '内容已就绪、范围已保护' if overlay['status']=='CONTENT_READY' else '范围已保护，尚未生成就绪音乐',
@@ -306,7 +314,7 @@ class BridgeUI:
             parts.extend(w['message'] for w in generation.get('warnings',[]))
             if (generation.get('accompaniment_hints') or {}).get('status')=='suggested-not-rendered':
                 parts.append('编配仅为建议，尚未渲染。')
-        result = next((r for r in self.state['results'] if r['bridge_id']==overlay['id']),None)
+        result = next((r for r in facts['results'] if r['bridge_id']==overlay['id']),None)
         if result and result['emotion_processing']:
             for segment in result['emotion_processing']['segments']:
                 generation = segment['variant']['generation'] or {}
