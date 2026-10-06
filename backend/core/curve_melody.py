@@ -1,4 +1,4 @@
-"""P2 deterministic melody rules; no editing, emotion processing or arrangement.
+"""Deterministic ordinary melody rules and P5 whole-phrase bridge composition.
 
 Times are integer ticks at PPQ=480. Source references are resolved by the
 workflow when applying a batch; standalone derivation checks their shape only.
@@ -9,6 +9,7 @@ import math
 import random
 
 import curve_project as model
+import intensity_curve
 
 PPQ = 480
 BAR = 4 * PPQ
@@ -25,6 +26,211 @@ DEFAULTS = {
     'develop': {'sequence_step': 1},
     'density': {'direction': 'denser', 'max_splits': 2},
 }
+
+BRIDGE_VERSION = 'curve-bridge-v1'
+
+
+def _bridge_parent_table(project):
+    """Resolve actual emissions, including transformed combo notes, to captures."""
+    table = {}
+    for placement in project['placements']:
+        actual = placement['emotion_variant'] or placement['base_snapshot']
+        for local in actual['notes']:
+            path = []; component = placement['base_snapshot']; offset = 0
+            while component['kind'] == 'combination':
+                child = next(c for c in component['children']
+                    if offset + c['offset_tick'] <= local['start_tick']
+                    < offset + c['offset_tick'] + c['snapshot']['length_ticks'])
+                path.append(child['occurrence_id']); offset += child['offset_tick']
+                component = child['snapshot']
+            absolute = dict(copy.deepcopy(local), id=placement['id'] + ':' + local['id'],
+                            start_tick=placement['start_tick'] + local['start_tick'])
+            if absolute['id'] in table:
+                _fail('INVALID_CANDIDATE', '实际发声身份重复，不能认证桥动机。')
+            table[absolute['id']] = dict(note=absolute, snapshot=actual,
+                parent_ref=dict(placement_id=placement['id'], component_path=path,
+                    material_snapshot_id=actual['id'], note_id=local['id']))
+    return table
+
+
+def _bridge_seed(request, window, joints):
+    musical_joints = [dict(tick=j['tick'], relation=j['relation'],
+        left_endpoint=j['left_endpoint'], right_endpoint=j['right_endpoint']) for j in joints
+        if window['id'] in (j['left_bridge_id'], j['right_bridge_id'])]
+    musical_joints.sort(key=model.canonical)
+    projection = dict(base_fingerprint=request['base_fingerprint'], seed=request['seed'],
+        range={k: window[k] for k in ('start_tick', 'end_tick')}, joints=musical_joints)
+    return int(model.digest('emoblocks.bridge-music-seed.v1', projection)[:8], 16)
+
+
+def _bridge_endpoints(window, joints):
+    entry = exit_ = None
+    for joint in joints:
+        if joint['right_bridge_id'] == window['id']:
+            if entry is not None:
+                _fail('PROTECTION_CONFLICT', '桥入口共同条件重复。')
+            entry = joint['right_endpoint']
+        if joint['left_bridge_id'] == window['id']:
+            if exit_ is not None:
+                _fail('PROTECTION_CONFLICT', '桥出口共同条件重复。')
+            exit_ = joint['left_endpoint']
+    return entry, exit_
+
+
+def compose_bridge_phrase(request, window, joint_boundary_conditions, should_cancel=None):
+    """P5 fresh motif/answer/sequence phrase with exact rests and joint anchors.
+
+    No lock or project edits. Every emitted note has exactly one concrete
+    captured parent. The per-bridge note budget fails rather than truncating.
+    """
+    def check():
+        if should_cancel is not None and should_cancel():
+            _fail('CANCELLED', '完整桥乐句构作已取消。')
+    check()
+    model.canonical(request); model.validate(request['base_project'])
+    start, end = window['start_tick'], window['end_tick']
+    length = end - start
+    model.integer(length, 1)
+    parents = _bridge_parent_table(request['base_project'])
+    ids = window['context']['motif_note_ids']
+    if not ids or len(ids) != len(set(ids)) or any(i not in parents for i in ids):
+        _fail('BRIDGE_GENERATION_FAILED', '桥没有可追溯的实际动机父音符。')
+    motif = [parents[i] for i in ids]
+    if not any(r['start_tick'] <= start < end <= r['end_tick'] for r in request['resolved_ranges']):
+        _fail('PROTECTION_CONFLICT', '完整桥句不能跨未解决范围。')
+    for protection in request['base_project']['protections']:
+        guards = model.protection_ranges(protection) + [dict(start_tick=n['start_tick'], end_tick=n['start_tick']+n['duration_tick']) for n in protection['notes']]
+        if any(model.intersects(window, r) for r in guards):
+            _fail('PROTECTION_CONFLICT', '完整桥句与原独立保护层冲突。')
+    allowed = {i for i, p in parents.items() if model.intersects(window,
+        dict(start_tick=p['note']['start_tick'], end_tick=p['note']['start_tick']+p['note']['duration_tick']))}
+    for side in ('left', 'right'):
+        allowed.update(n['id'] for n in (window['context'][side] or {}).get('notes', []))
+    if not set(ids) <= allowed:
+        _fail('INVALID_CANDIDATE', '完整句动机不能借无关实际来源。')
+    key = _key(dict(provenance=dict(key_context=window['context']['key_context']), generation=None),
+               [p['note'] for p in motif])
+    scale = _scale(key)
+    seed = _bridge_seed(request, window, joint_boundary_conditions)
+    rng = random.Random(seed)
+    masks = [dict(start_tick=r['start_tick'] - start, end_tick=r['end_tick'] - start)
+             for r in window['blank_mask']]
+    for mask in masks:
+        model.range_check(mask, length)
+    endpoints = _bridge_endpoints(window, joint_boundary_conditions)
+    reserved = []
+    for spec in endpoints:
+        if spec is None:
+            continue
+        model.shape(spec, 'pitch start_tick duration_tick')
+        model.integer(spec['pitch'], 0, 127); model.integer(spec['duration_tick'], 1)
+        a = spec['start_tick'] - start; b = a + spec['duration_tick']
+        if not 0 <= a < b <= length or any(model.intersects(dict(start_tick=a, end_tick=b), m) for m in masks):
+            _fail('PROTECTION_CONFLICT', '共同端点越窗或进入主动留白。')
+        if spec not in reserved:
+            reserved.append(spec)
+    if any(model.intersects(dict(start_tick=a['start_tick'], end_tick=a['start_tick']+a['duration_tick']),
+                            dict(start_tick=b['start_tick'], end_tick=b['start_tick']+b['duration_tick']))
+           for i, a in enumerate(reserved) for b in reserved[i+1:]):
+        _fail('PROTECTION_CONFLICT', '共同入口与出口重叠。')
+    exact_values = [start, end] + [v for m in window['blank_mask'] for v in m.values()]
+    exact_values += [v for spec in reserved for k, v in spec.items() if k != 'pitch']
+    exact_values += [v for p in motif for k, v in p['note'].items() if k in ('start_tick', 'duration_tick')]
+    unit = 10 if all(v % 10 == 0 for v in exact_values) else 1
+    rhythm = [max(unit, min(960, p['note']['duration_tick'])) for p in motif]
+    input_projection = dict(base_fingerprint=request['base_fingerprint'], range=dict(start_tick=start, end_tick=end),
+        motif=[p['note'] for p in motif], key=key, blank_mask=window['blank_mask'],
+        endpoints=endpoints, seed=seed, algorithm_version=BRIDGE_VERSION)
+    input_hash = model.digest('emoblocks.bridge-compose-input.v1', input_projection)
+    ident = _id('bridge-phrase', input_hash)
+    notes = []; cells = []
+    budget = request['parameters']['max_notes']; model.integer(budget, 1, 4096)
+
+    def emit(parent_index, pitch, onset, duration, rule, cycle):
+        check()
+        if len(notes) >= budget:
+            _fail('BRIDGE_GENERATION_FAILED', '本桥作曲音符预算耗尽；不截短乐句。')
+        parent = motif[parent_index % len(motif)]
+        original = parent['note']; index = len(notes)
+        note = dict(copy.deepcopy(original), id=_id('bridge-note', [ident, index]), pitch=pitch,
+            start_tick=onset, duration_tick=duration, slice=None,
+            lineage=list(dict.fromkeys(original['lineage'] + [original['id']])))
+        notes.append(note)
+        cells.append(dict(operation='bridge-motif-cell', input_note_id=original['id'],
+            parent_ref=copy.deepcopy(parent['parent_ref']), output_note_id=note['id'],
+            motif_index=parent_index % len(motif), cycle_index=cycle, rule=rule,
+            from_pitch=original['pitch'], to_pitch=pitch, start_tick=onset, duration_tick=duration))
+
+    # Reserve actual endpoint notes, including their whole supports, before
+    # constructing the interior. This is not endpoint pitch interpolation.
+    for spec in reserved:
+        is_entry = spec == endpoints[0]
+        emit(0 if is_entry else len(motif)-1, spec['pitch'], spec['start_tick']-start,
+             spec['duration_tick'], 'opening' if is_entry else 'arrival', 0)
+    blocked = masks + [dict(start_tick=s['start_tick']-start,
+                            end_tick=s['start_tick']-start+s['duration_tick']) for s in reserved]
+    entry, exit_ = endpoints
+    low = entry['start_tick'] - start if entry else 0
+    high = exit_['start_tick'] - start + exit_['duration_tick'] if exit_ else length
+    if low > 0: blocked.append(dict(start_tick=0, end_tick=low))
+    if high < length: blocked.append(dict(start_tick=high, end_tick=length))
+    cursor = 0; step = 0
+    while cursor < length:
+        check()
+        covering = [m['end_tick'] for m in blocked if m['start_tick'] <= cursor < m['end_tick']]
+        if covering:
+            cursor = max(covering); continue
+        boundary = min([length] + [m['start_tick'] for m in blocked if m['start_tick'] > cursor])
+        motif_index = step % len(motif); cycle = step // len(motif)
+        parent_pitch = motif[motif_index]['note']['pitch']
+        cell = rhythm[motif_index]
+        rule = 'opening'
+        if cursor >= length * 3 // 4:
+            rule = 'arrival'
+            stable = [p for p in scale if p % 12 in (key['tonic'], (key['tonic']+7)%12)]
+            pitch = min(stable, key=lambda p: (abs(p-parent_pitch), p))
+            cell = min(960, max(cell, 240))
+        elif cycle or cursor >= length // 4:
+            development = max(1, cycle, cursor*4//length)
+            if cursor < length // 2 or development % 2:
+                rule = 'answer'
+                axis = _degree(scale, motif[0]['note']['pitch'])
+                degree = 2*axis - _degree(scale, parent_pitch) + rng.choice((0, 1))
+                pitch = scale[max(0, min(len(scale)-1, degree))]
+            else:
+                rule = 'sequence'
+                level = intensity_curve.evaluate([dict(time=p['tick'], level=p['level']) for p in request['base_project']['intensity_points']], start+cursor)
+                pitch = _step(scale, parent_pitch, (1 if level >= .5 else -1) * (1+development%3))
+            if development % 3 == 0:
+                rule = 'rhythm'; cell = max(unit, (cell//2//unit)*unit)
+        else:
+            pitch = parent_pitch
+        cell = min(cell, boundary-cursor)
+        duration = cell
+        # Phrase-level reply articulation and the final entry space are
+        # explicit rests. No changes are made at every fourbeat child edge.
+        if rule in ('answer', 'rhythm') and cell >= 4*unit:
+            duration -= unit * min(12, max(1, cell//(8*unit)))
+        if exit_ is None and cursor+cell == length and window['context']['right'] and cell >= 4*unit:
+            duration = min(duration, cell-unit*min(12, max(1, cell//(4*unit))))
+        emit(motif_index, pitch, cursor, duration, rule, cycle)
+        cursor += cell; step += 1
+    paired = sorted(zip(notes, cells), key=lambda pair: pair[0]['start_tick'])
+    notes = [p[0] for p in paired]; cells = [p[1] for p in paired]
+    if not notes:
+        _fail('BRIDGE_GENERATION_FAILED', '桥没有实际音符，不能视为完成。')
+    result = dict(id=ident, label='桥完整乐句', kind='phrase', length_ticks=length, notes=notes,
+        provenance=dict(source_start_tick=None, key_context=key,
+            parent_snapshots={p['parent_ref']['placement_id']:copy.deepcopy(p['snapshot']) for p in motif}),
+        generation=dict(method='bridge_phrase', parameters=dict(target_ticks=length,
+            rhythm_method='captured-motif-cells-with-reply-rests', motif_method='opening-answer-sequence-arrival',
+            rule_unit_ticks=unit), seed=seed, rng_version=RNG_VERSION, algorithm_version=BRIDGE_VERSION,
+            input_fingerprint=input_hash,
+            input_material_ids=list(dict.fromkeys(p['snapshot']['id'] for p in motif)),
+            base_notes=[copy.deepcopy(p['note']) for p in motif], key_context=key, operations=cells),
+        phrase_id=None, children=[])
+    music_signature(result)
+    return result
 
 
 def _fail(code, message):

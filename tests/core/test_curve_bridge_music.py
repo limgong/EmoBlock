@@ -1,0 +1,390 @@
+"""P5 real phrase/lineage tests using independent frozen Request/Plan fixtures.
+
+The plan helper models published data, not Controller transaction authorization.
+Actual phase/late-token/restore/authentication acceptance belongs to lead tests.
+"""
+import copy
+import unittest
+from unittest.mock import patch
+
+import curve_bridge_music as bridge
+import curve_emotion as emotion
+import curve_melody as melody
+import curve_project as m
+
+
+def fixture(blocks=4, rough=True, emotions=None, tail=0, tonic=0):
+    p = m.new_project(blocks); p['project_id'] = 'p5-music-fixture'
+    source_notes = []; length = p['total_ticks'] - tail
+    for index in range(blocks):
+        start = index*1920; duration = min(1920, length-start)
+        if duration <= 0:
+            continue
+        notes = []
+        for j, onset in enumerate(range(0, duration, 240)):
+            pitch = ((60 if j % 2 == 0 else 84) if rough else (60, 62, 64, 67)[j % 4]) + tonic
+            sid = 'source:%d:%d' % (index, j)
+            note = dict(id='note:%d:%d' % (index, j), pitch=pitch, start_tick=onset,
+                duration_tick=min(240, duration-onset), velocity=80,
+                origin=dict(source_id='S', track_id='track', source_note_id=sid), lineage=[], slice=None)
+            notes.append(note); source_notes.append(dict(copy.deepcopy(note), id=sid, start_tick=start+onset))
+        material = dict(id='material:%d' % index, label='fixture', kind='phrase', length_ticks=duration,
+            notes=notes, provenance=dict(source_id='S', source_start_tick=start,
+                key_context=dict(tonic=tonic, mode='major', confidence=1., method='fixture-explicit')),
+            generation=None, phrase_id=None, children=[])
+        p['materials'].append(material)
+        p['placements'].append(dict(id='place:%d' % index, material_id=material['id'], base_snapshot=copy.deepcopy(material),
+            start_tick=start, length_ticks=duration, emotion=(emotions or ['calm']*blocks)[index], emotion_variant=None))
+    p['sources'] = [dict(id='S', label='source', length_ticks=p['total_ticks'], notes=source_notes, provenance=dict(track_id='track'))]
+    if tail:
+        p['blank_regions'] = [dict(id='tail-rest', start_tick=length, end_tick=p['total_ticks'], reason='主动留白')]
+    m.validate(p)
+    return p
+
+
+def request(p=None, parameters=None, seed=31):
+    p = copy.deepcopy(fixture() if p is None else p); fp = m.fingerprint(p)
+    gaps = m.gaps(p); cursor = 0; resolved = []
+    for gap in gaps:
+        if cursor < gap['start_tick']:
+            resolved.append(dict(start_tick=cursor, end_tick=gap['start_tick']))
+        cursor = gap['end_tick']
+    if cursor < p['total_ticks']:
+        resolved.append(dict(start_tick=cursor, end_tick=p['total_ticks']))
+    ranges = sorted({(r['start_tick'], r['end_tick']) for v in p['protections'] for r in m.protection_ranges(v)})
+    return dict(schema='emoblocks.bridge-request.v1', spec_rev=m.SPEC_REV, contract_rev=bridge.CONTRACT_REV,
+        request_id='request', snapshot_id='snapshot', session_id='session', edit_revision=0,
+        input_contract_rev=p['contract_rev'], input_fingerprint=fp, input_project=p,
+        input_kind='current_complete', completion_ref=None, base_project=copy.deepcopy(p), base_fingerprint=fp,
+        resolved_ranges=resolved, remaining_gaps=[dict(id=m.digest('emoblocks.gap.v1',dict(input_fingerprint=fp,range=r)),**r) for r in gaps], base_notes=sorted(
+            [n for v in p['placements'] for n in m.placed_notes(v)], key=lambda n:(n['start_tick'], n['pitch'], n['duration_tick'], n['id'])),
+        protection_summary=dict(fingerprint=m.protection_summary(p['protections']), ranges=[dict(start_tick=a, end_tick=b) for a,b in ranges]),
+        blank_regions=copy.deepcopy(p['blank_regions']), plan_id='plan', plan_version=1,
+        seed=seed, algorithm_version=bridge.ALGORITHM_VERSION,
+        parameters=dict(dict(policy='auto', max_windows=2, max_window_blocks=8, max_window_tests=128, max_notes=512), **(parameters or {})))
+
+
+def window(req, start, end, ident='window', other_ranges=()):
+    places = sorted(req['base_project']['placements'], key=lambda p:p['start_tick'])
+    regions = [dict(start_tick=start, end_tick=end)] + list(other_ranges)
+    touched = [p for p in places if start < p['start_tick']+p['length_ticks'] and p['start_tick'] < end]
+    outside = [p for p in places if not any(r['start_tick'] < p['start_tick']+p['length_ticks'] and p['start_tick'] < r['end_tick'] for r in regions)]
+    lefts = [p for p in outside if p['start_tick']+p['length_ticks'] <= start]
+    rights = [p for p in outside if p['start_tick'] >= end]
+    left = lefts[-1] if lefts else None; right = rights[0] if rights else None
+    inner = [n for n in req['base_notes'] if start <= n['start_tick'] < end]
+    return dict(id=ident, start_tick=start, end_tick=end, placement_ids=[p['id'] for p in touched],
+        context=dict(left=dict(placement_id=left['id'], notes=m.placed_notes(left)) if left else None,
+            right=dict(placement_id=right['id'], notes=m.placed_notes(right)) if right else None,
+            motif_note_ids=[n['id'] for n in inner[:6]],
+            key_context=copy.deepcopy(touched[0]['base_snapshot']['provenance']['key_context'])),
+        emotion_segments=[dict(start_tick=max(start,p['start_tick']), end_tick=min(end,p['start_tick']+p['length_ticks']), emotion=p['emotion']) for p in touched],
+        blank_mask=[dict(start_tick=max(start,b['start_tick']),end_tick=min(end,b['end_tick'])) for b in req['blank_regions'] if start < b['end_tick'] and b['start_tick'] < end])
+
+
+def locked_plan(req, windows=(), joints=()):
+    # Independently reconstruct the documented transaction output.
+    inherited = [p for p in req['base_project']['protections'] if p['kind'] == 'bridge']
+    locks = copy.deepcopy(req['base_project']['protections'])
+    refs = [dict(bridge_id=w['id'], protection_id='lock:'+w['id']) for w in windows]
+    refs += [dict(bridge_id=p['owner_id'],protection_id=p['id']) for p in inherited]
+    for w, ref in zip(windows, refs):
+        locks.append(dict(id=ref['protection_id'], kind='bridge', owner_id=w['id'], placement_id=None, component_path=[],
+            start_tick=w['start_tick'],end_tick=w['end_tick'],status='RANGE_LOCKED', origin='automatic', plan_id=req['plan_id'],
+            plan_version=req['plan_version'], input_fingerprint=req['input_fingerprint'], notes=[],structure_fingerprint=None,blank_mask=copy.deepcopy(w['blank_mask'])))
+    plan = dict(schema='emoblocks.bridge-plan.v1',spec_rev=m.SPEC_REV,contract_rev=bridge.CONTRACT_REV,
+        id=req['plan_id'],version=req['plan_version'],request_id=req['request_id'],snapshot_id=req['snapshot_id'],
+        input_fingerprint=req['input_fingerprint'],base_fingerprint=req['base_fingerprint'],candidate_id=None,
+        request_fingerprint=m.digest('emoblocks.bridge-request.v1',req), decision='selected' if windows else 'none',
+        windows=copy.deepcopy(list(windows)),inherited_bridge_ids=[p['owner_id'] for p in inherited],protection_refs=refs,
+        reasons=[dict(code='FIXTURE',message='冻结测试计划',details={})],assessments=[],joint_boundary_conditions=copy.deepcopy(list(joints)),
+        search=dict(tested_windows=len(windows),termination='EXHAUSTED'),range_lock_fingerprint=m.protection_summary(locks))
+    plan['plan_fingerprint'] = m.digest('emoblocks.bridge-plan.v1',plan)
+    return plan
+
+
+def rehash(plan):
+    plan['plan_fingerprint'] = m.digest('emoblocks.bridge-plan.v1',{k:v for k,v in plan.items() if k != 'plan_fingerprint'})
+    return plan
+
+
+def music(result):
+    return [(n['pitch'],n['start_tick'],n['duration_tick']) for n in result['notes']]
+
+
+class BridgeMusicTests(unittest.TestCase):
+    def test_selected_two_three_four_long_and_natural_none(self):
+        for count in (2,3,4,8):
+            with self.subTest(count=count):
+                req = request(fixture(count)); original = copy.deepcopy(req)
+                proposal = bridge.decide(req)
+                self.assertEqual('selected',proposal['decision'])
+                self.assertEqual((0,count*1920), (proposal['windows'][0]['start_tick'],proposal['windows'][0]['end_tick']))
+                self.assertTrue(any(a.get('benefit',0) and a['benefit'] > 0 for a in proposal['assessments']))
+                self.assertEqual(req,original)
+                self.assertLessEqual(proposal['search']['tested_windows'],128)
+                # Explicit whole-length windows must all be musically generatable.
+                w = window(req,0,count*1920)
+                result = bridge.generate(req,locked_plan(req,[w]))
+                self.assertEqual('SUCCEEDED',result['status'],result)
+                self.assertEqual(count, len(result['results'][0]['children']))
+        for count in (2,3,4,8):
+            req=request(fixture(count,rough=False))
+            self.assertEqual('none',bridge.decide(req)['decision'])
+
+    def test_exact_length_source_ledger_development_and_no_base_mutation(self):
+        req=request(fixture(3)); w=window(req,0,5760); plan=locked_plan(req,[w]); before=copy.deepcopy((req,plan))
+        row=bridge.generate(req,plan)['results'][0]; base=row['base_material']
+        self.assertEqual('phrase',row['material']['kind']); self.assertEqual(5760,base['length_ticks'])
+        self.assertEqual(len(base['notes']),len(row['operations']))
+        rules={c['rule'] for c in row['operations']}
+        self.assertTrue({'opening','answer','arrival'} <= rules)
+        self.assertNotEqual(music(row),[(n['pitch'],n['start_tick'],n['duration_tick']) for n in req['base_notes']])
+        parents={n['id']:n for n in req['base_notes']}
+        for c,n in zip(row['operations'],base['notes']):
+            parent=parents[c['input_note_id']]
+            self.assertEqual(n['origin'],parent['origin']); self.assertIn(parent['id'],n['lineage'])
+            self.assertEqual((n['pitch'],n['start_tick'],n['duration_tick']),(c['to_pitch'],c['start_tick'],c['duration_tick']))
+            self.assertIsNone(n['slice'])
+        self.assertEqual(before,(req,plan))
+        for child in row['children']:
+            self.assertEqual(row['material']['id'],child['phrase_id'])
+        self.assertEqual('lock:window',row['protection_id'])
+
+    def test_new_uuid_reverse_order_and_joint_endpoint_invariance(self):
+        req=request(fixture(4,emotions=['hope','sad','crisis','resolve']))
+        first=window(req,0,3840,'A',[dict(start_tick=3840,end_tick=7680)])
+        second=window(req,3840,7680,'B',[dict(start_tick=0,end_tick=3840)])
+        joint=dict(id='joint',left_bridge_id='A',right_bridge_id='B',tick=3840,relation='shared-tonic',
+            reasons=[],left_endpoint=dict(pitch=60,start_tick=3720,duration_tick=120),right_endpoint=dict(pitch=60,start_tick=3840,duration_tick=120))
+        plan=locked_plan(req,[first,second],[joint]); rows=bridge.generate(req,plan)['results']
+        self.assertEqual((60,3720,120),music(rows[0])[-1]); self.assertEqual((60,3840,120),music(rows[1])[0])
+        reverse=locked_plan(req,[second,first],[joint]); backwards=bridge.generate(req,reverse)['results']
+        self.assertEqual({r['bridge_id']:music(r) for r in rows},{r['bridge_id']:music(r) for r in backwards})
+        other=copy.deepcopy(req)
+        other.update(request_id='request2',snapshot_id='snapshot2',session_id='session2',plan_id='plan2',plan_version=17)
+        new_windows=copy.deepcopy([first,second]); new_windows[0]['id']='AA';new_windows[1]['id']='BB'
+        new_joint=dict(joint,id='joint2',left_bridge_id='AA',right_bridge_id='BB')
+        replay=bridge.generate(other,locked_plan(other,new_windows,[new_joint]))['results']
+        self.assertEqual([music(r) for r in rows],[music(r) for r in replay])
+
+    def test_each_emotion_segment_same_base_and_note_owned_once(self):
+        req=request(fixture(3,emotions=['hope','crisis','sad'])); w=window(req,0,5760)
+        row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+        self.assertEqual(1,row['emotion_processing']['pass_count'])
+        base=row['base_material']; selected=[]
+        for segment in row['emotion_processing']['segments']:
+            variant=segment['variant']; generation=variant['generation']
+            self.assertEqual(base['notes'],generation['base_notes'])
+            self.assertEqual([base['id']],generation['input_material_ids'])
+            self.assertEqual(segment['emotion'],generation['emotion'])
+            selected += [n for n in variant['notes'] if segment['range']['start_tick'] <= n['start_tick'] < segment['range']['end_tick']]
+        self.assertEqual(sorted(selected,key=lambda n:(n['start_tick'],n['id'])),row['material']['notes'])
+        self.assertEqual(len(base['notes']),len(selected))
+
+    def test_one_sided_non_c_key_and_actual_rest_mask(self):
+        req=request(fixture(4,tail=240,tonic=2)); w=window(req,3840,7680)
+        self.assertIsNotNone(w['context']['left']);self.assertIsNone(w['context']['right'])
+        row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+        self.assertEqual(2,row['base_material']['generation']['key_context']['tonic'])
+        self.assertTrue(all(n['start_tick']+n['duration_tick'] <= 7440 for n in row['notes']))
+        # Real interior blank, not fabricated completion or cropped source.
+        p=fixture(4); p['placements'].pop(1)
+        p['blank_regions']=[dict(id='rest',start_tick=1920,end_tick=3840,reason='主动留白')];m.validate(p)
+        req=request(p);row=bridge.generate(req,locked_plan(req,[window(req,0,7680)]))['results'][0]
+        self.assertTrue(all(not (n['start_tick'] < 3840 and n['start_tick']+n['duration_tick'] > 1920) for n in row['notes']))
+
+    def test_exact_one_tick_and_240_tail_children_without_quantizing(self):
+        req=request(fixture(3)); w=window(req,0,4080)
+        # Need a boundary not cutting the captured 3840..4080 actual note.
+        row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+        self.assertEqual([1920,1920,240],[c['length_ticks'] for c in row['children']])
+        req=request(fixture(2)); w=window(req,0,1)
+        # Original note must fit whole support. A 1tick actual source event is
+        # legal; the rest of this placed phrase is an internal rest, not gap.
+        for project in (req['input_project'],req['base_project']):
+            project['placements'][0]['base_snapshot']['notes']=project['placements'][0]['base_snapshot']['notes'][:1]
+            project['placements'][0]['base_snapshot']['notes'][0]['duration_tick']=1
+        req=request(req['base_project']);w=window(req,0,1)
+        row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+        self.assertEqual([(60,0,1)],music(row));self.assertEqual(1,row['children'][0]['length_ticks'])
+
+    def test_long_note_boundary_is_not_a_fourbeat_transition(self):
+        p=fixture(2)
+        actual=p['placements'][0]['base_snapshot']
+        actual['notes']=[dict(n,start_tick=i*300,duration_tick=300) for i,n in enumerate(actual['notes'][:6])]
+        req=request(p)
+        bad=window(req,0,1700)
+        with self.assertRaises(m.ProjectError):bridge.generate(req,locked_plan(req,[bad]))
+        whole=window(req,0,3840);row=bridge.generate(req,locked_plan(req,[whole]))['results'][0]
+        self.assertTrue(any(n['start_tick'] < 1920 < n['start_tick']+n['duration_tick'] for n in row['base_material']['notes']) or
+            not any(n['start_tick']==1920 for n in row['base_material']['notes']))
+
+    def test_all_blank_and_policy_none_are_real_no_bridge_versions(self):
+        p=m.new_project(4);p['project_id']='blank';p['blank_regions']=[dict(id='all',start_tick=0,end_tick=p['total_ticks'],reason='主动留白')]
+        req=request(p);proposal=bridge.decide(req)
+        self.assertEqual('none',proposal['decision']);self.assertTrue(proposal['reasons'])
+        self.assertEqual('SUCCEEDED',bridge.generate(req,locked_plan(req))['status'])
+        req=request();req['parameters']['policy']='none'
+        proposal=bridge.decide(req);self.assertEqual('POLICY_NONE',proposal['search']['termination'])
+        self.assertEqual([],bridge.generate(req,locked_plan(req))['results'])
+
+    def test_manual_bridge_none_inherits_identity_and_original_lock(self):
+        p=fixture(2);place=p['placements'][0];place['base_snapshot']['kind']='bridge'
+        p['materials'][0]['kind']='bridge';m.register_manual_bridge(p,place);m.validate(p)
+        req=request(p);plan=locked_plan(req);before=copy.deepcopy(req)
+        with patch.object(emotion,'emotion_variant',side_effect=AssertionError('no inherited recomposition')):
+            raw=bridge.generate(req,plan)
+        row=raw['results'][0]
+        self.assertEqual('SUCCEEDED',raw['status']);self.assertEqual('inherited',row['origin'])
+        self.assertEqual(m.placed_notes(place),row['notes']);self.assertEqual([],row['children'])
+        self.assertEqual(plan['id'],row['plan_id']);self.assertNotEqual(row['plan_id'],p['protections'][0]['plan_id'])
+        self.assertEqual(before,req)
+        # Existing P3 bridge protection is never weakened by P5.
+        with self.assertRaises(m.ProjectError):emotion.emotion_variant(place['base_snapshot'],'hope',p['intensity_points'],0,[])
+
+    def test_protection_layers_and_pending_bridge_lock_are_not_writable(self):
+        p=fixture(4)
+        lock=dict(id='protected',kind='manual',owner_id='user',placement_id=None,component_path=[],start_tick=0,end_tick=3840,
+            status='RANGE_LOCKED',origin='manual',plan_id=None,plan_version=None,input_fingerprint='original',notes=[],structure_fingerprint=None,blank_mask=[])
+        p['protections']=[lock];m.validate(p)
+        for kind in ('manual','theme','memory'):
+            p['protections'][0]['kind']=kind;req=request(p)
+            with self.assertRaises(m.ProjectError):bridge.generate(req,locked_plan(req,[window(req,0,3840)]))
+            proposal=bridge.decide(req)
+            self.assertTrue(all(w['start_tick'] >= 3840 for w in proposal['windows']))
+
+    def test_public_lock_mapping_and_plan_tampering_rejected_even_rehashed(self):
+        req=request();w=window(req,0,3840);plan=locked_plan(req,[w])
+        mutations=[lambda p:p['protection_refs'].clear(),lambda p:p['protection_refs'].append(p['protection_refs'][0]),
+            lambda p:p['protection_refs'][0].update(protection_id='wrong-lock'),lambda p:p.update(version=7),
+            lambda p:p['windows'][0].update(blank_mask=[dict(start_tick=0,end_tick=120)]),
+            lambda p:p['windows'][0]['context'].update(motif_note_ids=['unrelated'])]
+        for mutate in mutations:
+            altered=copy.deepcopy(plan);mutate(altered);rehash(altered)
+            with self.subTest(plan=altered):
+                with self.assertRaises(m.ProjectError):bridge.generate(req,altered)
+
+    def test_invalid_stale_incomplete_input_and_bad_parameters_are_errors_not_none(self):
+        req=request();invalid=copy.deepcopy(req);invalid['base_fingerprint']='stale'
+        with self.assertRaises(m.ProjectError):bridge.decide(invalid)
+        p=fixture();p['placements'].pop(1)
+        with self.assertRaises(m.ProjectError):bridge.decide(request(p))
+        for key,value in [('max_notes',True),('max_window_tests',2049),('seed',-1)]:
+            bad=copy.deepcopy(req)
+            if key=='seed':bad[key]=value
+            else:bad['parameters'][key]=value
+            with self.assertRaises(m.ProjectError):bridge.decide(bad)
+
+    def test_finite_search_cancel_and_per_bridge_budget_no_truncation(self):
+        req=request();req['parameters']['max_window_tests']=1
+        proposal=bridge.decide(req);self.assertEqual(1,proposal['search']['tested_windows']);self.assertEqual('WINDOW_BUDGET',proposal['search']['termination'])
+        with self.assertRaises(m.ProjectError) as error:bridge.decide(req,lambda:True)
+        self.assertEqual('CANCELLED',error.exception.code)
+        req=request();req['parameters']['max_notes']=1;w=window(req,0,3840)
+        raw=bridge.generate(req,locked_plan(req,[w]));row=raw['results'][0]
+        self.assertEqual('FAILED',raw['status']);self.assertEqual([],row['notes']);self.assertIsNone(row['base_material'])
+        raw=bridge.generate(req,locked_plan(req,[w]),lambda:True)
+        self.assertEqual('CANCELLED',raw['status']);self.assertEqual('CANCELLED',raw['results'][0]['status'])
+
+    def test_partial_failure_retains_ready_stream_and_all_terminal_identities(self):
+        req=request(fixture(4));ranges=[dict(start_tick=0,end_tick=3840),dict(start_tick=3840,end_tick=7680)]
+        windows=[window(req,r['start_tick'],r['end_tick'],str(i),[ranges[1-i]]) for i,r in enumerate(ranges)]
+        joints=bridge._joint_conditions(windows);plan=locked_plan(req,windows,joints);before=copy.deepcopy(plan)
+        original=melody.compose_bridge_phrase
+        def failing(request,window,*args,**kw):
+            if window['id']=='1':raise m.ProjectError('BRIDGE_GENERATION_FAILED','second failed')
+            return original(request,window,*args,**kw)
+        streamed=[];events=[]
+        with patch.object(melody,'compose_bridge_phrase',side_effect=failing):
+            raw=bridge.generate(req,plan,on_result=streamed.append,on_progress=events.append)
+        self.assertEqual('FAILED',raw['status']);self.assertEqual(['READY','FAILED'],[r['status'] for r in raw['results']])
+        self.assertEqual(raw['results'],streamed);self.assertEqual(before,plan)
+        self.assertEqual([1,2,3],[e['event_seq'] for e in events])
+        self.assertTrue(all(e['phase']=='BRIDGE_GENERATION' for e in events))
+        with self.assertRaises(RuntimeError):bridge.generate(req,plan,on_result=lambda r:(_ for _ in ()).throw(RuntimeError('queue failed')))
+
+    def test_ledger_mutations_fail_locally_not_just_a_changed_hash(self):
+        req=request();w=window(req,0,3840);base=melody.compose_bridge_phrase(req,w,[])
+        mutations=[lambda b:b['notes'][0].update(origin=dict(source_id='S',track_id='track',source_note_id='source:1:0')),
+            lambda b:b['notes'][0]['lineage'].append('fake'),lambda b:b['notes'][0].update(pitch=61),
+            lambda b:b['generation']['operations'][0]['parent_ref'].update(note_id='note:1:0'),
+            lambda b:b['generation']['operations'].pop()]
+        for mutate in mutations:
+            altered=copy.deepcopy(base);mutate(altered)
+            with self.assertRaises(m.ProjectError):bridge._verify_base_music(req,w,altered)
+
+    def test_nested_repeat_component_identity_and_known_origins(self):
+        p=fixture(4);leaf=copy.deepcopy(p['materials'][0])
+        def combo(ident,children):
+            parts=[];notes=[];offset=0
+            for i,c in enumerate(children):
+                parts.append(dict(occurrence_id=ident+':'+str(i),offset_tick=offset,snapshot=copy.deepcopy(c)))
+                count=len(notes)
+                notes.extend(dict(n,id=ident+':n:'+str(count+j),start_tick=n['start_tick']+offset) for j,n in enumerate(c['notes']))
+                offset += c['length_ticks']
+            return dict(id=ident,label=ident,kind='combination',length_ticks=offset,notes=notes,provenance=dict(key_context=leaf['provenance']['key_context']),generation=None,phrase_id=None,children=parts)
+        inner=combo('inner',[leaf,leaf]);outer=combo('outer',[inner,inner]);p['materials'].append(outer)
+        p['placements']=[dict(id='nested',material_id='outer',base_snapshot=copy.deepcopy(outer),start_tick=0,length_ticks=7680,emotion='calm',emotion_variant=None)]
+        req=request(p);w=window(req,0,7680);w['context']['motif_note_ids']=[req['base_notes'][i]['id'] for i in (0,8,16,24)]
+        row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+        paths={tuple(c['parent_ref']['component_path']) for c in row['operations']}
+        self.assertEqual({('outer:0','inner:0'),('outer:0','inner:1'),('outer:1','inner:0'),('outer:1','inner:1')},paths)
+        self.assertEqual('combination',p['placements'][0]['base_snapshot']['kind'])
+        self.assertEqual('phrase',row['material']['kind'])
+
+    def test_generation_never_enters_legacy_planner_or_p6(self):
+        req=request();w=window(req,0,3840)
+        with patch('story_engine.plan_story',create=True,side_effect=AssertionError('legacy forbidden')):
+            raw=bridge.generate(req,locked_plan(req,[w]))
+        self.assertEqual('SUCCEEDED',raw['status'])
+        self.assertNotIn('capabilities',raw);self.assertNotIn('final_score',raw)
+
+    def test_single_p4_candidate_partial_gaps_and_real_source_closure(self):
+        import curve_candidates as candidates
+        from test_curve_candidates import fixture as p4_fixture, proposal, prepared
+        controller=p4_fixture();project=controller.project
+        p4_request=candidates.make_request(project,controller.gap_items()[0]['id'])
+        candidate=prepared(p4_request,[proposal(p4_request)])['candidates'][0]
+        req=request(candidate['project'])
+        req.update(input_kind='completed_candidate',input_project=copy.deepcopy(project),
+            input_fingerprint=m.fingerprint(project),input_contract_rev=project['contract_rev'],
+            completion_ref=dict(attempt_id=p4_request['request_id'],candidate_id=candidate['id'],request=p4_request,candidate=candidate))
+        bridge.decide(req)
+        self.assertEqual([(0,3360)],[(r['start_tick'],r['end_tick']) for r in req['resolved_ranges']])
+        bad=copy.deepcopy(req);bad['completion_ref']['candidate']['notes']=[]
+        with self.assertRaises(m.ProjectError):bridge.decide(bad)
+
+    def test_managed_memory_protects_full_long_onset_before_nominal_range(self):
+        import curve_memory
+        p=fixture(4)
+        # A single phrase has a 1800..2100 note crossing the earliest peak bar.
+        whole=copy.deepcopy(p['materials'][0]);whole.update(id='whole',length_ticks=7680)
+        whole['notes']=[dict(n,id='whole:'+str(i)) for i,n in enumerate([n for place in p['placements'] for n in m.placed_notes(place)])]
+        whole['notes']=[n for n in whole['notes'] if not (1680 <= n['start_tick'] <= 1920)]
+        whole['notes'].append(dict(copy.deepcopy(p['materials'][0]['notes'][0]),id='long',start_tick=1800,duration_tick=300))
+        whole['notes'].sort(key=lambda n:n['start_tick'])
+        p['materials'].append(whole);p['placements']=[dict(id='whole-use',material_id='whole',base_snapshot=whole,start_tick=0,length_ticks=7680,emotion='calm',emotion_variant=None)]
+        p['intensity_points']=[dict(tick=0,level=.2),dict(tick=1920,level=1.),dict(tick=7680,level=.1)]
+        p['protections']=[curve_memory.expected_protection(p)];m.validate(p)
+        req=request(p);w=window(req,0,1920)
+        with self.assertRaises(m.ProjectError):bridge.generate(req,locked_plan(req,[w]))
+        self.assertTrue(any(r['start_tick']==1800 for r in req['protection_summary']['ranges']))
+
+    def test_cancel_inside_note_loop_and_cancel_after_one_ready_preserve_facts(self):
+        req=request();w=window(req,0,3840);calls=[0]
+        def cancel():
+            calls[0]+=1
+            return calls[0] >= 6
+        raw=bridge.generate(req,locked_plan(req,[w]),cancel)
+        self.assertEqual('CANCELLED',raw['status']);self.assertEqual([],raw['results'][0]['notes'])
+        req=request(fixture(4));regions=[dict(start_tick=0,end_tick=3840),dict(start_tick=3840,end_tick=7680)]
+        windows=[window(req,r['start_tick'],r['end_tick'],str(i),[regions[1-i]]) for i,r in enumerate(regions)]
+        plan=locked_plan(req,windows,bridge._joint_conditions(windows));stream=[]
+        raw=bridge.generate(req,plan,lambda:bool(stream),on_result=stream.append)
+        self.assertEqual(['READY','CANCELLED'],[r['status'] for r in raw['results']])
+        self.assertTrue(raw['results'][0]['notes']);self.assertEqual(stream,raw['results'])
+
+
+if __name__ == '__main__':
+    unittest.main()
