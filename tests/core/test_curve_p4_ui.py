@@ -504,3 +504,96 @@ class CurveP4Tests(MappedUIFixture):
         with patch('curve_ui.filedialog.asksaveasfilename',return_value=''):
             self.app.export_history('wav')
         self.assertEqual(self.app.playing_target,playing);self.assertEqual(len(self.app.player.calls),1)
+
+
+class RealFacadeP4Tests(MappedUIFixture):
+    """Real P4 Facade/gates/store; only the algorithm and audio are fixtures."""
+    def setUp(self):
+        super().setUp()
+        import curve_workflow
+        from test_curve_candidates import fixture as gate_fixture, material
+        self.controller=gate_fixture()
+        extra=material('different');extra['notes'][0]['pitch']=67
+        self.controller.edit('add_material',material=extra)
+        self.controller.edit('set_intensity',points=[dict(tick=0,level=.2),dict(tick=1320,level=.9),dict(tick=3840,level=.2)])
+        self.initial_path=Path(self.folder.name)/'initial.json'
+        self.controller.save_snapshot(self.initial_path)
+        self.app.controller=self.controller;self.app.refresh();self.root.update()
+        self.app.completion.select_gap(self.controller.gap_items()[0]['id'])
+        self.curve_workflow=curve_workflow
+        self.gate=threading.Event();self.gate.set();self.started=threading.Event();self.finished=threading.Event()
+        self.algorithm_threads=[]
+        self.addCleanup(self.release_algorithm)
+        from types import SimpleNamespace
+        patcher=patch.dict('sys.modules',curve_completion=SimpleNamespace(propose=self.propose))
+        patcher.start();self.addCleanup(patcher.stop)
+
+    def propose(self, request, should_cancel=None, on_progress=None):
+        from test_curve_candidates import proposal, raw
+        self.algorithm_threads.append(threading.get_ident());self.started.set()
+        on_progress(dict(message='固定提案夹具',expansions=1))
+        try:
+            if not self.gate.wait(5):raise RuntimeError('fixture timeout')
+            return raw([proposal(request,'A1',emotion='hope'),proposal(request,'different',emotion='hope')])
+        finally:self.finished.set()
+
+    def release_algorithm(self):
+        self.gate.set()
+        if self.started.is_set():self.finished.wait(5)
+
+    def musical_state(self):
+        state=self.controller.state()
+        return copy.deepcopy((state['project'],state['is_saved'],state['can_undo'],state['can_redo'],
+                              self.app.selected_target,self.app.playing_target,self.app.player.calls,self.app.player.status()))
+
+    def test_actual_gate_memory_preview_and_saved_bundle_keep_edit_and_player(self):
+        self.app.select_target('material','A1');self.app.prepare_selected();self.finish_jobs();self.app.play_selected()
+        before=self.musical_state();self.app.completion.start();self.finish_jobs()
+        self.assertEqual(self.app.completion.state['status'],'READY');self.assertEqual(len(self.app.completion.candidates),2)
+        self.assertEqual(self.musical_state(),before);self.assertTrue(self.controller.state()['staging_dirty'])
+        self.assertNotEqual(self.algorithm_threads[0],threading.get_ident())
+        self.app.completion.selector.current(0);self.app.completion.enter_preview();self.root.update()
+        info,lock=self.app.page.timeline.memory_overlay()
+        self.assertEqual(info['state'],'BOUND');self.assertEqual((lock['start_tick'],lock['end_tick']),(1200,1440))
+        self.assertIn('旋律未改变',self.app.detail_text.get());self.assertIn('编配仅为建议',self.app.detail_text.get())
+        self.assertIn('3360–3840 tick',self.app.detail_text.get());self.assertEqual(self.musical_state(),before)
+        self.app.completion.exit_preview();self.assertEqual(self.musical_state(),before)
+        saved=Path(self.folder.name)/'ready.json';self.controller.save_snapshot(saved);self.app.refresh()
+        reopened=self.curve_workflow.Controller();reopened.load(saved)
+        self.assertEqual(reopened.project,self.controller.project);self.assertEqual(reopened.completion_state()['status'],'READY')
+        self.assertFalse(self.controller.state()['staging_dirty'])
+
+    def test_real_invalid_finish_false_is_visible_persistent_failure(self):
+        before=self.musical_state()
+        with patch.object(completion_ui,'prepare_completion',return_value={}):
+            self.app.completion.start();self.finish_jobs()
+        state=self.controller.completion_state()
+        self.assertEqual(state['status'],'FAILED');self.assertIsNotNone(state['error'])
+        self.assertTrue(self.app.status_error);self.assertIn(state['error']['message'],self.app.status_text.get())
+        self.assertEqual(self.musical_state(),before);self.assertTrue(self.app.editable)
+        saved=Path(self.folder.name)/'failed.json';self.controller.save_snapshot(saved)
+        reopened=self.curve_workflow.Controller();reopened.load(saved)
+        self.assertEqual(reopened.completion_state()['status'],'FAILED')
+
+    def test_real_thread_start_failure_consumes_token_and_retry_succeeds(self):
+        before=self.musical_state()
+        with patch.object(completion_ui.threading.Thread,'start',side_effect=RuntimeError('thread start denied')):
+            self.assertFalse(self.app.completion.start())
+        self.assertFalse(self.app.jobs);self.assertEqual(self.controller.completion_state()['status'],'FAILED')
+        self.assertTrue(self.app.editable);self.assertEqual(self.musical_state(),before)
+        self.assertTrue(self.app.completion.start());self.finish_jobs()
+        self.assertEqual(self.controller.completion_state()['status'],'READY');self.assertEqual(self.musical_state(),before)
+
+    def test_real_running_save_cancel_and_reopen_are_interrupted_without_restart(self):
+        self.gate.clear();self.app.completion.start();self.assertTrue(self.started.wait(1))
+        before=self.musical_state();saved=Path(self.folder.name)/'running.json'
+        self.controller.save_snapshot(saved);self.app.refresh()
+        self.app.completion.cancel();self.assertEqual(self.controller.completion_state()['status'],'CANCELLED')
+        self.assertTrue(self.controller.state()['staging_dirty']);self.assertEqual(self.musical_state(),before)
+        self.gate.set();self.assertTrue(self.finished.wait(2));self.app.drain_jobs()
+        self.assertEqual(self.controller.completion_state()['status'],'CANCELLED')
+        count=len(self.algorithm_threads)
+        self.app.open_project(saved);self.root.update()
+        self.assertEqual(self.controller.completion_state()['status'],'INTERRUPTED')
+        self.assertTrue(self.controller.state()['staging_dirty']);self.assertEqual(len(self.algorithm_threads),count)
+        self.assertIn('已中断',self.app.completion.label.cget('text'))
