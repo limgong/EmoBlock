@@ -9,8 +9,8 @@ import intensity_curve
 
 SCHEMA = 'emoblocks.assembly.v2'
 SPEC_REV = 'curve-workflow-v2-r3'
-CONTRACT_REV = 'curve-workflow-v2-r3-p23'
-SUPPORTED_CONTRACT_REVS = ('curve-workflow-v2-r3-p0', CONTRACT_REV)
+CONTRACT_REV = 'curve-workflow-v2-r3-p4'
+SUPPORTED_CONTRACT_REVS = ('curve-workflow-v2-r3-p0', 'curve-workflow-v2-r3-p23', CONTRACT_REV)
 PPQ = 480
 BAR = PPQ * 4
 EMOTIONS = ('calm', 'hope', 'sad', 'suspense', 'crisis', 'resolve')
