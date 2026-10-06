@@ -83,6 +83,22 @@ class FinalGateTests(unittest.TestCase):
             with patch.object(engine,'sample_path',side_effect=lambda _,name:root/name):audio.export_score(score,root)
             files={k:audio._file(root/name) for k,name in [('mid','composition.mid'),('mmp','composition.mmp')]}
             audio.validate_outputs(score,files)
+
+    def test_lmms_playback_controls_cannot_change_bound_score(self):
+        import xml.etree.ElementTree as ET
+        request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
+        mutations=[('head','masterpitch','12'),('head','mastervol','0'),('head','timesig_numerator','3'),('.//track','muted','1'),
+                   ('.//instrumenttrack','pitch','100'),('.//instrumenttrack','basenote','60'),('.//tripleoscillator','coarse0','12'),
+                   ('.//tripleoscillator','vol0','0'),('.//tripleoscillator','nested','12'),('.//elvol','amt','0'),('.//fxchain','enabled','1'),('.//note','pan','100'),('.//timeline','lpstate','1')]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for selector,key,value in mutations:
+                audio.export_score(score,root);xml=ET.parse(root/'composition.mmp')
+                if key=='nested':ET.SubElement(xml.find(selector),'coarse0',{'value':value})
+                else:xml.find(selector).set(key,value)
+                xml.write(root/'composition.mmp')
+                files={k:audio._file(root/name) for k,name in [('mid','composition.mid'),('mmp','composition.mmp')]}
+                with self.subTest(selector=selector,key=key),self.assertRaises(m.ProjectError):audio.validate_outputs(score,files)
     def test_registry_cache_rejects_changed_content_and_retains_no_data(self):
         request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));result=f.apply_boundaries(request,plan);score=f.make_score(request,plan,result)
         facts=[rec.fact('boundary_request',request),rec.fact('boundary_plan',plan,[f.ref(request)]),rec.fact('boundary_result',result,[f.ref(request),f.ref(plan)]),rec.fact('final_score',score,[f.ref(request),f.ref(plan),f.ref(result)])]

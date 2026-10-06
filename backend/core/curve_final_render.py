@@ -57,6 +57,15 @@ def export_score(score, folder):
     xml.write(folder/'composition.mmp',encoding='utf-8',xml_declaration=True)
 
 
+def _numeric_xml(element, expected, names=()):
+    """Authenticate the exporter's concrete playback settings, including defaults."""
+    try:
+        valid = element is not None and set(element.attrib)==set(expected)|set(names) and all(float(element.get(key))==value for key,value in expected.items())
+    except (ValueError,TypeError):
+        valid = False
+    if not valid:m.reject('LMMS播放参数与所选乐谱不符。','OUTPUT_BINDING_MISMATCH')
+
+
 def validate_outputs(score, files):
     """Read actual encoded notes, not just the exporter's manifest."""
     import mido
@@ -104,22 +113,44 @@ def validate_outputs(score, files):
         actual.append(sorted(notes))
     if native.ticks_per_beat != m.PPQ or actual != expected: m.reject('MIDI与所选乐谱不一致。','OUTPUT_BINDING_MISMATCH')
     xml = ET.parse(files['mmp']['path']); tracks = xml.findall('.//trackcontainer/track')
-    if len(tracks)!=len(score['layers']) or float(xml.find('head').get('bpm'))!=score['bpm']:m.reject('LMMS声部或速度不符。','OUTPUT_BINDING_MISMATCH')
+    if len(tracks)!=len(score['layers']):m.reject('LMMS声部数量不符。','OUTPUT_BINDING_MISMATCH')
+    _numeric_xml(xml.find('head'),dict(bpm=score['bpm'],mastervol=62,masterpitch=0,timesig_numerator=4,timesig_denominator=4))
+    _numeric_xml(xml.find('.//timeline'),dict(lp0pos=0,lp1pos=score['total_ticks']/10,lpstate=0))
+    if xml.getroot().get('type')!='song' or len(xml.find('head')) or len(xml.find('.//timeline')) or [node.tag for node in xml.getroot()]!=['head','song'] or xml.find('song').attrib or [node.tag for node in xml.find('song')]!=['trackcontainer','timeline','projectnotes'] or any(node.tag!='track' for node in xml.find('.//trackcontainer')):
+        m.reject('LMMS包含未规划的播放或自动化结构。','OUTPUT_BINDING_MISMATCH')
     actual = []
     for index,track in enumerate(tracks):
         layer=score['layers'][index];instrument=track.find('instrumenttrack')
-        if (float(instrument.get('vol')),float(instrument.get('pan')))!=(layer['volume'],layer['pan']):m.reject('LMMS音量或声像不符。','OUTPUT_BINDING_MISMATCH')
+        _numeric_xml(track,dict(type=0,muted=0,solo=0),('name',))
+        _numeric_xml(instrument,dict(vol=layer['volume'],pan=layer['pan'],pitch=0,basenote=57,fxch=0,usemasterpitch=1))
+        effects=instrument.find('fxchain');_numeric_xml(effects,dict(enabled=0,numofeffects=0))
+        if len(effects):m.reject('LMMS包含未规划的音效。','OUTPUT_BINDING_MISMATCH')
         drum = track.find('.//audiofileprocessor') is not None
         if drum!=bool(layer['drum']):m.reject('LMMS乐器角色不符。','OUTPUT_BINDING_MISMATCH')
+        plugin=instrument.find('instrument');plugin_name='audiofileprocessor' if drum else 'tripleoscillator'
+        if plugin is None or plugin.attrib!={'name':plugin_name} or [node.tag for node in plugin]!=[plugin_name] or [node.tag for node in instrument]!=(['instrument','fxchain'] if drum else ['instrument','eldata','fxchain']):
+            m.reject('LMMS包含未规划的乐器结构。','OUTPUT_BINDING_MISMATCH')
         if drum:
             if Path(track.find('.//audiofileprocessor').get('src')).name!=layer['drum']:m.reject('LMMS鼓采样不符。','OUTPUT_BINDING_MISMATCH')
+            _numeric_xml(plugin[0],dict(amp=100,interp=1,sframe=0,eframe=1,lframe=0,reversed=0),('src',))
+            if len(plugin[0]):m.reject('LMMS包含未规划的采样控制。','OUTPUT_BINDING_MISMATCH')
         else:
             oscillator=track.find('.//tripleoscillator');envelope=track.find('.//elvol')
             wave_type,attack,release,sustain,_,_=engine.PRESETS[layer['preset']]
-            if oscillator is None or int(oscillator.get('wavetype0'))!=wave_type or (float(envelope.get('att')),float(envelope.get('rel')),float(envelope.get('sustain')))!=(attack,release,sustain):m.reject('LMMS音色与乐谱不符。','OUTPUT_BINDING_MISMATCH')
+            _numeric_xml(oscillator,dict(vol0=100,vol1=12 if layer['preset']=='brass' else 0,vol2=0,coarse0=0,coarse1=0,finel0=0,finer0=0,finel1=-4,finer1=4,pan0=0,wavetype0=wave_type,wavetype1=wave_type))
+            env=instrument.find('eldata');_numeric_xml(env,dict(fwet=1 if layer['preset']=='dark' else 0,ftype=0,fcut=1500,fres=.5))
+            if [node.tag for node in env]!=['elvol']:m.reject('LMMS包含未规划的包络。','OUTPUT_BINDING_MISMATCH')
+            _numeric_xml(envelope,dict(amt=1,att=attack,hold=0,dec=.22,sustain=sustain,rel=release,pdel=0,lamt=0))
+            if len(oscillator) or len(envelope):m.reject('LMMS包含未规划的音色控制。','OUTPUT_BINDING_MISMATCH')
         notes=[]
+        if [node.tag for node in track]!=['instrumenttrack','pattern']:m.reject('LMMS包含未规划的音符或自动化。','OUTPUT_BINDING_MISMATCH')
         for pattern in track.findall('pattern'):
+            _numeric_xml(pattern,dict(type=1,pos=0,len=score['total_ticks']/10,steps=16),('name',))
+            if any(node.tag!='note' for node in pattern):m.reject('LMMS包含未规划的音符控制。','OUTPUT_BINDING_MISMATCH')
             offset=int(pattern.get('pos','0'))*10
+            for note in pattern:
+                _numeric_xml(note,{key:float(note.get(key)) for key in ('key','pos','len','vol')}|{'pan':0})
+                if len(note):m.reject('LMMS包含未规划的音符控制。','OUTPUT_BINDING_MISMATCH')
             notes.extend((offset+int(n.get('pos'))*10,int(n.get('key')),
                           int(n.get('len'))*10,int(n.get('vol'))) for n in pattern.findall('note'))
         actual.append(sorted(notes))
