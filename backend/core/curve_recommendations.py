@@ -434,6 +434,17 @@ class RecommendationFacade:
             old_attempts=m.indexed(old['attempts']);new_attempts=m.indexed(stage['attempts'])
             for ident,row in old_attempts.items():
                 if ident not in new_attempts:m.reject('新进度删除了既有阶段审计。')
+                newer=new_attempts[ident]
+                if row['state'] in ('READY','FAILED','CANCELLED','STALE','INTERRUPTED') and newer['state']!=row['state']:
+                    m.reject('迟到审计改变了已结束的子任务。')
+                for key in ('completion','bridge','connection'):
+                    if key not in row:continue
+                    previous=row[key];following=newer.get(key)
+                    if following is None or following['request']!=previous['request']:m.reject('进度替换了原阶段请求。')
+                    for field in ('plan','outcome'):
+                        if previous.get(field) is not None and previous[field]!=following.get(field):m.reject('进度替换了已认证的阶段事实。')
+                    if any(result not in following.get('results',[]) for result in previous.get('results',[])):
+                        m.reject('进度删除或改写了既有阶段结果。')
                 if 'bridge' in row:
                     newer=new_attempts[ident]
                     if row['bridge']['plan'] is not None and row['bridge']['plan']!=newer['bridge']['plan']:m.reject('进度改变了已锁定桥计划。')

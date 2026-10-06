@@ -171,6 +171,18 @@ class RecommendationTransactionTests(unittest.TestCase):
         missing['outcome_fingerprint']=rec.outcome_fingerprint(missing)
         with self.assertRaises(m.ProjectError):rec.validate_outcome(cap['request'],missing)
 
+    def test_late_authentic_progress_cannot_replace_finished_connection_audit(self):
+        import curve_connections as c
+        controller,cap,out=self.ready();old=copy.deepcopy(controller._recommendation_attempt()['recommendation']['partial_stage_bundle'])
+        changed=copy.deepcopy(old);child=next(a for a in changed['attempts'] if 'connection' in a);stage=child['connection']
+        self.assertFalse(stage['results']);stage['plan']['reasons'][0]['message']='另一条仍合法的理由'
+        stage['plan']['plan_fingerprint']=c.plan_fingerprint(stage['plan'])
+        stage['outcome']=c.make_outcome(stage['request'],stage['plan'],[],'SUCCEEDED')
+        store.validate_bundle(changed)  # Valid independently, but cannot replace a published fact.
+        value=controller._recommendation_attempt()['recommendation']
+        with self.assertRaises(m.ProjectError):controller.record_recommendation_progress(cap['token'],dict(seq=value['last_seq']+1,phase='CONNECTIONS',message='late',candidate_id=None,stage_bundle=changed))
+        self.assertEqual(value['partial_stage_bundle'],old)
+
     def test_missing_other_format_does_not_disable_available_audio_or_export(self):
         controller,cap,out=self.ready();candidate=out['candidates'][0];cid=candidate['id']
         Path(candidate['assets']['final']['files']['mid']['path']).unlink()
