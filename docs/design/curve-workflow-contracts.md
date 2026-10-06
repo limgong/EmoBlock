@@ -1,7 +1,7 @@
 # 强度画布 v2 r3 公共契约草案
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p5
+CONTRACT_REV=curve-workflow-v2-r3-p6
 
 **状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 FROZEN (P5-CONTRACT ROUND2 PASS)，已授权P5范围实现。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
 
@@ -753,3 +753,154 @@ lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览
 已锁后的失败／取消Outcome用实际Plan指纹；保留每条已认证READY及CONTENT_READY，尚未产出项按固定Plan集合登记明确FAILED/CANCELLED事实行（material/base_material/null，notes/children=[]），注明未生成及终止原因，不造音符。终态bridge.results与outcome.results恰为完整必需集合；未验证的错误/额外回复不落库。全部已认证内容恰进入staged_materials，原锁不退级；整体终态仍无P6资格，即使刚好所有内容已READY。运行／中断可保留真实部分集合，未伪造已完成。
 
 STALE保留此前Plan/锁/结果/Outcome/error不变；决策前RUNNING重开INTERRUPTED时plan/results/outcome仍null/[]/null；决策前FAILED/CANCELLED恢复上述终态，不再生成计划。补测计划前线程异常／计算异常／取消保存重开、禁用全部生成函数、重复迟到回调不创建锁或none、旧失败记录不复活；锁后部分成功＋取消/异常仍保留真实音乐。
+
+
+## 12. P6 连接块补充契约（DRAFT）
+
+SPEC_REV=curve-workflow-v2-r3；CONTRACT_REV=curve-workflow-v2-r3-p6。历史p0/p23/p4/p5冻结正文保持原样。本节仅P6，不授予P7最终处理、应用、完整试听或正式导出能力。
+
+### 12.1 输入和身份门禁
+
+音乐Project头仍为所属版本（当前p4），p6仅阶段对象/请求处理版本；打开、查询、保存不迁移。新的ConnectionRequest由当前Session完整Token捕获，引用存储中真实READY的P5 attempt；先纯验证P5 Request/Plan/Outcome、全部保护及P4目标实际完成。P5 parent必须仍READY、输入Project恰等当前捕获Project；输入变化后撤销回同内容也不能复活STALE。保存恢复后的READY事实可由新会话重新捕获，但旧Token无权回调。
+
+`bridge_ref={attempt_id,request,plan,protections,results,outcome}`复制真实P5事实。期望bridge集合精确等Plan.windows[].id＋inherited_bridge_ids，缺失/重复/额外/失败/RANGE_LOCKED/旧版本均拒绝。none必须有有效Plan及理由，仍包含手动/继承桥全部结果。不能根据计数或布尔标识放行。
+
+ActualLayout为纯JSON `{total_ticks,bpm,notes,base_project,bridge_overlays,protections,blank_regions,remaining_gaps}`：notes恰为P5已独立认证Outcome.notes（bridge实际拼接）；base_project保持原基础选择，bridge_overlays保存实际结果及精确范围。分析左右音符必须读notes，禁止用被桥替换的旧基础末音。剩余gap保留，所有连接窗须落在已解决范围；素材内部休止与主动留白不是gap。记忆/主题/手工保护保留原事实，含受保护的休止和跨四拍完整音符支撑。
+
+`ConnectionRequest={schema:"emoblocks.connection-request.v1",spec_rev,contract_rev:p6,
+ request_id,snapshot_id,session_id,edit_revision,input_contract_rev,input_fingerprint,input_project,
+ bridge_ref,actual_layout,layout_fingerprint,protection_summary,plan_id,plan_version,
+ seed,algorithm_version,parameters}`。所有字段必需，新增Plan ID及严格递增版本；输入保护摘要从bridge_ref实际保护重算。Request与原版本Snapshot匹配。候选/请求/桥依赖不变才能规划或回调。
+
+### 12.2 公开接口、提案与计划
+
+意图沿用 `plan_connection_blocks(completed_candidate,ready_bridge_plan,protections,bridge_results)`；当前已有P5包含current_complete和CompletedCandidate两输入，因此实际纯provider统一为 `plan_connection_blocks(request,should_cancel=None,on_progress=None)->ConnectionProposal`，四项输入通过request.bridge_ref完整绑定，不虚构补全候选。
+
+`generate_connection_blocks(request,plan,actual_layout,should_cancel=None,on_progress=None,on_result=None)->ConnectionRawOutcome`。公开输入输出不含Tk/线程/文件句柄；验证器不调用provider。lead facade先认证/发布Plan，随后执行独立生成；story_engine专用P6入口，不路由旧planner、bridge重生成或P7边界。
+
+默认有限预算parameters `{policy:"auto",max_windows:3,max_window_tests:128,max_window_ticks:3840,min_window_ticks:240,max_notes:512}`；上限8/2048/15360/4096（min_window_ticks正整数，不大于max_window_ticks）。种子整数，algorithm_version="curve-connection-v1"。无无限重试；每窗/每音符检查取消，确定性排序以音乐评分、少改写、起点/终点/规则排序。随机流从layout_fingerprint、seed和窗口音乐字段派生，排除请求/计划/窗口随机ID、墙钟和生成顺序。
+
+`ConnectionProposal={schema:"emoblocks.connection-proposal.v1",spec_rev,contract_rev:p6,
+ request_fingerprint,decision:"selected"|"none",none_reason:null|"NOT_NEEDED"|"NO_LEGAL_WINDOW",
+ windows:ConnectionWindow[],reasons:Warning[],assessments:JSON-object[],
+ joint_boundary_conditions:ConnectionJoint[],search:{tested_windows:int,termination:str}}`。
+
+`ConnectionWindow={id,start_tick,end_tick,technique,context:{left:Note|null,right:Note|null,motif_note_ids:ID[]},
+ original_notes:Note[],reasons:Warning[]}`。
+technique为diatonic_guide/motif_reply/density_shift/retain_develop/breath_close；不是P7的边界微调标签。original_notes精确等实际Layout中支撑与窗口相交的音符，全部音符支撑必须完整落窗内；不截断原音符。left/right为排除本批全部窗口后的几何最近实际音符（不能拿旧base端点）。motif_note_ids只能来自原窗及此实际左右上下文。窗口长度至少min_window_ticks，有真实时长发展，不用单音音高修正冒充本阶段。
+
+`ConnectionJoint={id,left_connection_id,right_connection_id,tick,relation,
+ left_endpoint:{pitch,start_tick,duration_tick}|null,right_endpoint:{pitch,start_tick,duration_tick}|null}`；相接窗口必须恰有一条共同条件，tick为共享边界，端点落各自窗口，null表示对应边界休止；生成逐项兑现。非相接窗口不得伪造共同条件；无互等或取已覆盖旧端点。全部窗先统一互斥/依赖校验。
+
+`ConnectionBlockPlan={schema:"emoblocks.connection-plan.v1",spec_rev,contract_rev:p6,
+ id,version,request_id,snapshot_id,request_fingerprint,bridge_plan_id,bridge_plan_version,
+ bridge_plan_fingerprint,layout_fingerprint,protection_summary_fingerprint,
+ decision,none_reason,windows,reasons,assessments,joint_boundary_conditions,search,plan_fingerprint}`。
+计划发布为单后端事务；非法第二窗整批拒绝，不留下半计划。连接分配不能修改桥锁。none要明确原因和真实分析；异常是FAILED，不可变none。
+
+必要性联合实际动机、调性、音程/音域、节奏密度、句尾休止、情绪、强度趋势和桥已完成衔接；收益接近优先保留。无窗口时保留音乐交P7考虑轻量处理，不释放锁；不识别主副歌、不默认鼓填充。窗口可以替换较长片段，理由须说明保留/替换取舍。
+
+### 12.3 独立保护及音乐结果认证
+
+保护禁写域是原锁名义范围＋全部受保护音符的完整支撑＋主动留白＋未解决gap。半开区间相接允许；完全包围、部分侵入、跨桥均拒绝。即使原音符起点在窗外，延音相交也不可切断。range合法而生成音符延入桥仍拒绝。桥的pitch/start/duration及完整结构、内容休止保持；允许的力度/音色/伴奏不授权P6修改主旋律结构。本阶段默认保留保护区实际音符全部字段。
+
+每条实际连接结果为
+`ConnectionBlockResult={schema:"emoblocks.connection-result.v1",spec_rev,contract_rev:p6,
+ request_id,snapshot_id,request_fingerprint,plan_id,plan_version,plan_fingerprint,
+ connection_id,range,status:"READY"|"FAILED"|"CANCELLED",original_notes,notes,
+ operations,content_fingerprint,error}`。
+READY notes是绝对tick、合法单旋律、nonempty并在窗内；失败notes/operations为空、content_fingerprint=null，error为Warning形状。原音乐含自然休止可保留/发展，但不能侵入主动留白；无需作曲的窗口不得用empty READY伪装成功。
+
+逐音符operations精确对应notes：`{operation:"connection-motif-cell",input_note_id,output_note_id,
+ rule,from_pitch,to_pitch,start_tick,duration_tick}`；input_note_id是真实窗/左右动机父音符ID；rule为窗口technique或preserve。变换音符origin三字段、完整lineage回指该实际父音符，改变pitch/time必须清除slice，不借无关来源/清空来源。preserve必须逐字段等真实父音符，可保留原ID及slice；派生新ID不得冒用原发声身份。来源验证不只检查合法库ID，逐父音符实物认证，不通过重新生成来验证。
+
+全局拼接仅移除各窗original_notes并加实际连接notes，其他音符逐字段不变。独立校验原布局/实际桥/所有保护休止与完整支撑、留白、互斥、固定总长及共同边界，不信impact声明。新增/删除/移位/延长/缩短全部从实际前后音乐判定；Result不能自报较小范围掩盖越权。
+
+`ConnectionRawOutcome={schema:"emoblocks.connection-raw-outcome.v1",spec_rev,contract_rev:p6,
+ request_fingerprint,plan_id,plan_version,status:"SUCCEEDED"|"FAILED"|"CANCELLED",results,error}`。
+results必须精确覆盖Plan.windows IDs；缺失/重复/额外不就绪。流式认证允许真实部分成功暂存，终态失败保留成功事实，未生成项明确FAILED/CANCELLED。
+
+`ConnectionOutcome={schema:"emoblocks.connection-outcome.v1",spec_rev,contract_rev:p6,
+ request_fingerprint,plan_id,plan_version,plan_fingerprint,status,results,notes,content_fingerprint,
+ layout_fingerprint,protection_summary,remaining_gaps,error,capabilities}`；SUCCEEDED才能有实际拼接notes/内容摘要；未发布Plan失败允许plan_fingerprint=null，其余失败不可伪造none。
+capabilities精确 `{score_scope:"CONNECTION_STAGE",can_plan_boundaries:bool,can_apply:false,can_audition:false,can_export_final:false}`；只有当前READY且全部实际结果就绪允许未来P7捕获，remaining_gaps仍不能整曲完成。
+
+### 12.4 指纹、状态、保存与失效
+
+canonical/digest沿8.3（UTF8 canonical JSON排序key、有限数字）。Request域emoblocks.connection-request.v1取完整对象；Layout域emoblocks.connection-layout.v1取完整ActualLayout；Plan域emoblocks.connection-plan.v1取删自身plan_fingerprint完整对象；Result域emoblocks.connection-content.v1取 `{range,notes}`；Outcome域emoblocks.connection-splice.v1取 `{total_ticks,notes}`。notes固定(start_tick,pitch,duration_tick,id)排序；保护摘要沿model.protection_summary，不混同原桥初始锁摘要/就绪摘要/旋律结构摘要。
+
+Attempt外形沿P4/P5八字段＋`connection`；私有stage `{schema:"emoblocks.connection-attempt.v1",spec_rev,contract_rev:p6,request,phase,plan,results,outcome}`。
+phase为CONNECTION_PLANNING→CONNECTION_PLANNED→CONNECTION_GENERATION→CONNECTIONS_READY；attempt.state RUNNING/READY/FAILED/CANCELLED/INTERRUPTED/STALE。records和staged_materials均[]，protections恰等P5实际保护事实（连接结果独立notes，不占当前库或显示编号）。
+
+capture/发布/认证/结束全为原子Bundle验证事务。输入Snapshot原版本；bridge_ref必须解析真实父attempt，活动子不能消费失效父。音乐编辑/undo/redo标旧P4/P5/P6持久STALE，保留全部记录/锁/结果；新重试有新Request/Plan与递增version。取消消费Token，失败和重复/迟到结果无权写入终态；有效同一流式结果重复是幂等no-op，冲突重复失败并保留先前实际结果。线程启动和回调异常释放busy，不清桥锁。
+
+计划前失败/取消：plan=null、results=[]、outcome为对应失败/取消，plan_fingerprint=null、notes/content=null，真实错误；计划后失败保留Plan及全部bridge保护，部分连接READY保留，不授予P7。INTERRUPTED保留Plan/实际部分，不凭空补终态音符；STALE保留既有事实不重活。保存恢复只验证持久化事实和指纹，不调用任何规划/生成/情绪/记忆重算/渲染/线程；RUNNING恢复INTERRUPTED且staging_dirty=true。音乐saved、库、编号、undo和播放器完全隔离；staging_dirty沿自动保存保护，失败停止切换/关闭。
+
+### 12.5 前端接口与可用能力
+
+Controller新增 `capture_connection(bridge_attempt_id=None,seed=41,parameters=None)` 返回 `{status:"STARTED",token,request}`；`plan_connection(token,proposal)` 返回实际认证Plan；`begin_connection_generation(token,plan)`；`record_connection_result(token,result)`；`finish_connection(token,raw)`；`fail_connection(token,error)`；`cancel_connection(token)`；`connection_state()`。
+state沿bridge模式，额外 `phase/status/message/request/plan/protections/results/outcome/capabilities/preview`；preview为 `{project,overlays,protections,memory_info,notes,connection_overlays}`，前五项沿P5实际只读桥预览，notes为P5实际音乐或READY连接拼接；connection_overlays每项 `{id,range,status,result_status,notes,reasons,error}`。桥/记忆标识始终可辨，连接不能视觉遮盖。没有Plan时preview=null；失败Plan保留真实范围与失败，不能显示可普通补全gap。
+
+三栏候选区域分阶段折叠，唯一画布只读显示影响与理由；P4/P5/P6预览互斥，退出恢复当前编辑选择/滚动。规划→计划→生成→就绪/none原因/失败/失效，进度真实阶段及elapsed，不假百分比。UI不推断锁、不抢播放器或选素材，不增BPM/画笔/弹窗工作流，不开放最终应用/完整试听/整曲导出。Tk和Facade事务都在主线程，worker只纯计算；队列绑定完整Token＋stage＋计划指纹，不让过期回应切状态。
+
+### 12.6 文件归属和验收
+
+lead独占curve_connections.py（新增纯认证）、curve_workflow/curve_store/curve_session、story_engine及test_curve_connections.py。算法只改新增curve_connection_music.py和test_curve_connection_music.py，仓库外音乐样例；不改公共schema/UI/主流程。前端只改新增curve_connection_ui.py、curve_ui/curve_canvas以及P4/P5互斥接线必要改动、test_curve_p6_ui.py；检查双端适配但不改播放器契约。已有保护兼容与删除键行为全部保留。公共接口先提交同步，worker不猜字段。
+
+必须覆盖：真实P5父和目标/候选校验、无自动但手动READY、旧末音与桥实际不同、三类侵入、合法窗超边音符、两侧无空间、全局冲突和相邻端点、长音记忆/组合/短尾/留白/内部休止、伪自报影响、迟到取消重试重复、纯恢复、快照隔离、独立保护校验与音乐确定性。固定样例保存基础/桥/连接三个actual notes、来源/摘要、理由/范围；真实LMMS串行连续渲染且标尚未最终块间处理，设备串行。双主题三尺寸实际映射Tk坐标与截图/人工/Windows各自报告，不用模拟替代实测。契约/实施独立各最多5轮，匹配实际HEAD和前后同指纹PASS。P6完成停止，不进入P7。
+
+
+### 12.7 双角色只读评审整合：精确形状与计算（DRAFT）
+
+本节细化12.1–12.5的字段，不修改任何历史冻结版本。两个角色ROUND1只读FAIL提出的接口缺口统一如下，worker不得另猜字段：
+
+- ActualLayout.bridge_overlays为11.10精确BridgeOverlay[]（由bridge_ref自身事实纯构造，不借当前BridgeUI）。原BridgeResult[]在bridge_ref.results；base_project恰等bridge_ref.request.base_project，notes恰等bridge_ref.outcome.notes，protections恰等bridge_ref.protections，blank_regions/remaining_gaps等该P5输入事实。P6当前编辑等P5 request.input_project，不误要求等私有基础候选。
+- Request.protection_summary精确`{fingerprint:str,ranges:Range[]}`。fingerprint=model.protection_summary(P5实际protections)；ranges为所有锁名义范围与其notes完整支撑的排序合并并集（所有保护类型，不只是memory）。blank/gap独立在actual_layout中，不能借ranges漏掉它们。Outcome.protection_summary沿P5为同一fingerprint字符串。
+- Window增加`key_context:{tonic:int0..11,mode:"major"|"minor",confidence:0..1,method:str}`及`parameters:{target_ticks:positive-int,unit_ticks:1|10}`；target_ticks=end-start，unit_ticks为1或10，10只能在原窗/实际上下文起点与时值全为10的倍数时用，否则必须1。数据层不量化；输出不可表达仍明确拒绝。调内pitch_classes为tonic加major[0,2,4,5,7,9,11]或minor[0,2,3,5,7,8,10]取模12。
+- Result增加`generation:null|Generation`，READY必须Generation；失败为null且仍保存准确Plan.original_notes。Generation精确字段沿9.2：`{method:"connection_phrase",parameters,seed,rng_version:"python.random-v3",algorithm_version,input_fingerprint,input_material_ids,base_notes,key_context,operations}`。parameters/key_context恰等Window；base_notes为motif_note_ids按顺序映射的实际父Notes；operations与Result.operations相同。input_material_ids排序去重来自每个实际父快照。
+- operations增加`parent_ref:{kind:"bridge"|"placement",owner_id,component_path:ID[],material_snapshot_id,note_id}`。先从bridge_ref.results[].notes精确解析父发声（唯一bridge），对应Result.material的本地note_id、snapshot和空组件路径；否则从base_project placement实际emotion_variant或base_snapshot解析，并沿P5 parent_ref几何/occurrence路径找到组件。源三字段精确等实际父origin；派生lineage=list(dict.fromkeys(parent.lineage+[parent.id]))，slice=null；派生ID不得等输入任何实际发声ID。preserve必须是original_notes成员且Notes全字段相同，操作parent_ref仍按真实归属认证。整个Layout/结果发声ID唯一，新增结果不能借受保护发声ID。
+
+音乐随机流与认证摘要分开：
+
+```text
+music_projection={total_ticks,bpm,
+ notes:[{pitch,start_tick,duration_tick,velocity}]按音乐字段排序,
+ intensity_points:[{tick,level}],
+ emotion_segments:[{start_tick,end_tick,emotion}]按时间排序,
+ protection_ranges:Range[]排序合并,blank_regions:Range[]排序合并,
+ remaining_gaps:Range[]排序合并}
+```
+
+emotion_segments来自base_project所有放置的时间/情绪，intensity_points沿真实Project形状直接复制；不含任何ID/名称/计划/种子/来源身份。music_fingerprint=digest("emoblocks.connection-music.v1",music_projection)。每窗seed=int(digest("emoblocks.connection-music-seed.v1", `{music_fingerprint,seed:Request.seed,range,technique,parameters,key_context,joints}`)[:8],16)；joints取相关共同条件删除id与左右connection_id并按canonical排序。完整layout_fingerprint仍只用于认证，绝不播种。
+
+Generation.input_fingerprint=digest("emoblocks.connection-compose-input.v1", `{layout_fingerprint,range,technique,parameters,key_context,motif:base_notes,joints,seed,algorithm_version}`)。这些纯helper由lead提供，算法复用；不通过回放随机作曲认证保存数据。Request.seed是0..2**32-1整数，bool拒绝；policy仅auto或none（none仅显式保留，reason NOT_NEEDED，不能代替错误）。max_notes为每窗实际输出总音符上限，含preserve，不含日志；超限失败，不截短或按生成顺序挪预算。其它预算拒绝bool，max_window_tests≤2048、max_windows≤8、max_window_ticks≤15360、max_notes≤4096。
+
+### 12.8 实际发展、端点与保护比较（DRAFT）
+
+所有READY窗口至少两个发声，actual `(pitch,start_tick,duration_tick)`音乐序列必须不同于original_notes；ID/名称/血缘/seed/velocity/标签差异都不算发展。纯单音改高、全preserve或只换ID一律不能READY。不重新执行全轮情绪算法。以下静态规则是必要条件，不宣称听感质量：
+
+- diatonic_guide：全部输出音高在key_context音阶，至少两个攻击；有right时最后音高到right的距离不大于第一音高到right的距离。
+- motif_reply：至少三个攻击、至少两个不同音高，派生音符至少引用两个不同的实际motif父发声；调内输出。
+- density_shift：至少两个攻击，攻击数与original_notes不同，调内输出。
+- retain_develop：原窗前半结束的音符逐字段保留，至少一条后半起音的派生音符，后半pitch/time序列确有变化。
+- breath_close：至少两个攻击，末音结束≤end-max(1,min(120,(end-start)//8))，有真实句尾休止。
+
+Plan中的Joint非null端点恰等READY结果第一/最后音符pitch/start/duration；left null表示末音end<left_window.end，right null表示首音start>right_window.start。每个相接边界恰一Joint，冻结后生成反序也必须兑现；不引用被本批其他窗替换的旧端点。
+
+保护记录原样保留，结构认证沿已有排除velocity规则，不能恢复旧力度。P6前后保护/区外的全字段比较基准始终是ActualLayout.notes中的P5实际发声（例如原锁80、合法实际100，none保留100）。名义范围保护休止，跨界note完整支撑同样禁写。失败锁/手动保护/历史审计不删除或放宽。
+
+规划预算耗尽且未证明不存在合法有收益窗口时返回结构化SEARCH_BUDGET_EXHAUSTED失败，不写none_reason=NO_LEGAL_WINDOW；已有合法selected方案可返回预算终止提示。自然无需连接和确实无合法窗口分别NOT_NEEDED与NO_LEGAL_WINDOW，均有对应具体assessment/reason。同一句的内部四拍分界不自动触发连接，须有真实音乐关系需要。
+
+### 12.9 Facade、队列和预览返回（DRAFT）
+
+Controller.state().capabilities.connection=not readonly，仅表示可请求该阶段，实际父门禁在capture。capture_connection(None)只解析Controller当前_bridge_id，失效/失败就拒绝，不静默回退旧父；显式bridge_attempt_id可以选择仍READY父。返回`{status:"STARTED",token,request,attempt_id}`且attempt_id=request_id。所有预留版本（包含计划前失败/取消）都参加严格max+1。
+
+plan_connection返回认证Plan（无效抛ProjectError，调用方fail关闭任务）；begin/record/finish/fail/cancel返回bool。非法流式Result返回false且持久FAILED/error；完全相同重复Result返回false保持RUNNING，不误判为失败；冲突重复终止并保留原结果。首个生成失败停止后续作曲，终态补齐Plan全部ID失败行，保留此前实际READY；raw必须逐字段一致于已认证结果。生成回调异常传播给Facade，不吞异常或伪none。
+
+connection_state精确`{status,phase,attempt_id,request,plan,protections,results,outcome,preview,remaining_gaps,capabilities,error,message}`。IDLE为phase/attempt_id/request/plan/outcome/preview/error=null，protections/results/remaining_gaps=[]，message非空，capabilities默认false。其它status用attempt.state；capabilities.can_plan_boundaries仅当前READY为true，STALE/FAILED即使保留旧SUCCEEDED事实也false。
+
+preview的桥部分严格由本次request.bridge_ref生成；没有Plan时preview=null。整体READY时notes为认证连接拼接，其余为P5实际notes，部分成功通过connection_overlays展示。每项覆盖层精确`{id,range,status:"ALLOCATED"|"CONTENT_READY",result_status:null|"READY"|"FAILED"|"CANCELLED",notes:Note[],reasons:Warning[],error:Warning|null}`；id/range/reasons恰等Window；READY才CONTENT_READY和实际notes，其他为空。不声称连接窗口是bridge RANGE_LOCKED。
+
+队列绑定完整p6 Token、PLANNING或`GENERATION:plan_id:version:fingerprint`及阶段内单调整数seq。progress是非空可读字符串，纯provider调用on_progress(message)；没有百分比/假阶段。Plan发布不消费Token；begin成功后才启动生成线程，线程启动异常走专属fail。所有Tk/Facade在主线程，worker只计算纯输入；终态/取消/阶段错配/乱序迟到都不可更新状态。generic finish_job拒绝CONNECTION，cancel_job转专属取消；保存白名单、Store中断暂存标记及STALE传播正式扩展CONNECTION。保存运行中事实可用，恢复不重启线程。
+
+两个角色只读评审问题已整合，仍DRAFT，待独立契约验收；未开始功能实现。

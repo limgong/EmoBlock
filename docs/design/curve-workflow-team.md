@@ -1,7 +1,7 @@
 # 强度画布 v2 r3 团队与阶段协议
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p5
+CONTRACT_REV=curve-workflow-v2-r3-p6
 
 产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23/p4正文为 **FROZEN**；当前P5第11节为 **FROZEN**（独立ROUND2 PASS）。历史P0独立ROUND2、P4实施ROUND3均PASS，原阶段记录保留；用户已启动P5，只读评审、独立契约冻结后才按文件归属实施，完成P5停止，不进入P6。
 
@@ -94,3 +94,8 @@ P3最终ROUND3 PASS已现场核对，用户授权P4。公共契约第10节p4先D
 用户已授权P5，P4最终ROUND3 PASS的实际输出、HEAD与前后指纹已核对。已验证的Mac删除键修复六文件单独提交为c767fe6，保留P4所有修复和待人工验收。当前第11节p5补充契约DRAFT，算法/前端只读评审后由lead整合，再经verifier独立PASS冻结。实现只到bridge位置原子锁定、完整乐句、独立就绪认证与暂存；失败保锁，none新版本；不进入P6，不实现连接、最终应用、完整方案试听或正式整曲导出。旧规范正文和数据所属版本不重写。契约和实施分别最多五轮，冻结期间不写集成源码；各角色范围与接口详见契约第11节。
 
 P5契约独立ROUND2 PASS：受检HEAD=9901766，前后指纹186d265ad323c9b7152fcfc220dbd06ac6a892f68eb6a85461c8947774455273；lead现场核对同一RUN/TASK/ROUND及HEAD/指纹，只修改状态标为FROZEN，规范正文未改。worker同步后按11.8派工，实现仍须独立验收。
+
+
+## P6 启动（DRAFT）
+
+P5实施ROUND2实际独立PASS已核对：HEAD=8706f96fa9c8aecdbb613f115547f64255da9b3c，192文件前后指纹c733742fd431bfd27e751ca51bda3ad1bb2fa3414d1ce36d7b928490af8ccbd3；集成与两个worker源码一致且干净。用户明确授权P6，历史规范和验收保留。第12节p6为DRAFT，算法/前端只读评审与verifier独立PASS后才冻结实现；只处理真实就绪桥保护外连接，不进入P7，不开放最终方案应用/试听/导出。四角色及本轮记录在仓库外运行目录，使用已有Python和独立数据，文件所有权/验收见12.6。
