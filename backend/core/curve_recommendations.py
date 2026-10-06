@@ -79,6 +79,7 @@ def resolve(facts,ref,kind=None):
     return row['data']
 
 
+@m.validated_operation
 def validate_facts(facts, stage_bundle=None, owned_ids=None):
     rows=index_facts(facts);seen=set();visiting=set()
     def visit(ident,depth=0):
@@ -283,6 +284,7 @@ def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_pro
     value['outcome_fingerprint']=outcome_fingerprint(value);validate_outcome(request,value);return value
 
 
+@m.validated_operation
 def validate_outcome(request,value):
     validate_request(request);m.shape(value,OUTCOME_FIELDS);final.version(value,'emoblocks.recommendation-outcome.v1')
     if value['request_fingerprint']!=request['request_fingerprint'] or value['outcome_fingerprint']!=outcome_fingerprint(value):m.reject('完整推荐身份或内容指纹不一致。','STALE_SNAPSHOT')
@@ -340,6 +342,7 @@ def prepare_candidate_mode(request,candidate_id,mode,source_facts,should_cancel=
     return dict(candidate_id=candidate_id,mode=mode,final_score=fs,comparison_score=comparison,assets=pair,error=None)
 
 
+@m.validated_operation
 def validate_p7_bundle(bundle):
     import curve_store
     m.canonical(bundle);m.shape(bundle,'schema spec_rev contract_rev project snapshots attempts results final_facts')
@@ -435,6 +438,7 @@ class RecommendationFacade:
         self._staging_dirty=True
         return dict(accepted=True,continue_processing=active)
 
+    @m.validated_operation
     def finish_recommendations(self,token,outcome):
         attempt=self._recommendation_attempt(token.get('request_id'))
         if attempt is None or not self.accepts(token) or attempt['state']!='RUNNING':return False
@@ -498,6 +502,7 @@ class RecommendationFacade:
             candidate_ref=dict(id=candidate_id,version=1,fingerprint=candidate_id),mode=mode,final_score_ref=copy.deepcopy(member['final_score_ref']),
             comparison_score_ref=copy.deepcopy(member['comparison_score_ref']),asset_pair_fingerprint=m.digest('emoblocks.asset-pair.v1',{k:final.ref(v) for k,v in pair.items()}))
 
+    @m.validated_operation
     def apply_recommendation(self,candidate_id,transaction_id=None,mode=None,confirmation_ref=None):
         from curve_application import prepare_application,accepted_state
         attempt,candidate=self._candidate(candidate_id);value=attempt['recommendation'];mode=mode or value['request']['mode'];transaction_id=transaction_id or 'apply:'+candidate_id

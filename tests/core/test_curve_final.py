@@ -46,6 +46,28 @@ def simulated_render(folder):
 
 
 class FinalGateTests(unittest.TestCase):
+    def test_validation_scope_never_authenticates_changed_bytes_or_leaks(self):
+        request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
+        with m.validation_scope():
+            f.validate_final_score(request,plan,score)
+            bad=copy.deepcopy(score);bad['notes'][0]['pitch']+=1;bad['score_fingerprint']=f.score_fingerprint(bad);bad['id']=bad['score_fingerprint']
+            with self.assertRaises(m.ProjectError):f.validate_final_score(request,plan,bad)
+            p=copy.deepcopy(request['actual_layout']['base_project']);m.validate(p);p['bpm']=0
+            with self.assertRaises(m.ProjectError):m.validate(p)
+        self.assertIsNone(m._VALIDATION_CONTEXT.get())
+
+    def test_accepted_bridge_material_reuse_registers_manual_protection(self):
+        source=ready_bridge(complete(),[(3840,7680)])
+        material=source._bridge_attempt(source._bridge_id)['bridge']['results'][0]['material']
+        project=m.new_project();project['contract_rev']=f.REV;project['sources']=copy.deepcopy(source.project['sources'])
+        controller=w.Controller(project);controller.edit('add_material',material=material)
+        controller.edit('place',material_id=material['id'],start_tick=0,placement_id='manual-reuse')
+        lock=next(p for p in controller.project['protections'] if p['kind']=='bridge')
+        self.assertEqual(lock['origin'],'manual');self.assertEqual(lock['notes'],m.placed_notes(controller.project['placements'][0]))
+        controller.edit('move',placement_id='manual-reuse',start_tick=3840)
+        lock=next(p for p in controller.project['protections'] if p['kind']=='bridge')
+        self.assertEqual(lock['start_tick'],3840);self.assertEqual(lock['plan_version'],2)
+
     def test_encoded_expression_tampering_is_rejected(self):
         import mido
         import xml.etree.ElementTree as ET

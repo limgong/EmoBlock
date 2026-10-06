@@ -6,6 +6,7 @@ import math
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import wraps
 
 import intensity_curve
 
@@ -17,6 +18,7 @@ PPQ = 480
 BAR = PPQ * 4
 EMOTIONS = ('calm', 'hope', 'sad', 'suspense', 'crisis', 'resolve')
 _IDENTITY_CONTEXT = ContextVar('curve_private_identity', default=None)
+_VALIDATION_CONTEXT = ContextVar('curve_pure_validation', default=None)
 RECORD_FIELDS = {
     'bridge_plan': 'candidate_id candidate_fingerprint automatic_decision bridge_ids manual_bridge_ids ranges reasons joint_boundary_conditions',
     'bridge_result': 'bridge_id plan_id plan_version protection_id material_snapshot validation',
@@ -53,6 +55,26 @@ def deterministic_ids(namespace):
     token = _IDENTITY_CONTEXT.set(dict(namespace=namespace,serial=0,validated_projects=set()))
     try: yield
     finally: _IDENTITY_CONTEXT.reset(token)
+
+
+@contextmanager
+def validation_scope():
+    """Bounded, operation-local pure checks; changed bytes always get a new key."""
+    existing=_VALIDATION_CONTEXT.get()
+    if existing is not None:
+        yield existing
+        return
+    context=dict(validated_projects=set(),final_checks={})
+    token=_VALIDATION_CONTEXT.set(context)
+    try:yield context
+    finally:_VALIDATION_CONTEXT.reset(token)
+
+
+def validated_operation(fn):
+    @wraps(fn)
+    def wrapped(*args,**kwargs):
+        with validation_scope():return fn(*args,**kwargs)
+    return wrapped
 
 
 def canonical(value):
@@ -628,6 +650,11 @@ def register_manual_bridge(project, placement, old_version=0):
         manual_bridge_ids=[placement['id']], ranges=[], reasons=['manual placement'], joint_boundary_conditions=[])))
 
 
+def manual_bridge_material(project, material):
+    return material['kind']=='bridge' or (project['contract_rev']=='curve-workflow-v2-r3-p7'
+        and (material.get('generation') or {}).get('method')=='bridge_emotion_once')
+
+
 def _edit(project, action, recompute=None, **args):
     validate(project)
     result = copy.deepcopy(project)
@@ -704,14 +731,14 @@ def _edit(project, action, recompute=None, **args):
             placement_id = r.get('placement_id')
             existing = next((p for p in project['placements'] if p['id'] == placement_id), None)
             own_manual_bridge = (placement_id is not None and existing is not None
-                and existing['base_snapshot']['kind'] == 'bridge'
+                and manual_bridge_material(project, existing['base_snapshot'])
                 and action in ('move', 'delete', 'set_emotion')
                 and lock['kind'] == 'bridge' and lock['origin'] == 'manual'
                 and lock['placement_id'] == placement_id)
             if any(intersects(r, domain) for domain in protection_ranges(lock)) and not own_manual_bridge:
                 reject('该范围已受保护，请先通过新的计划更新保护。', 'PROTECTION_CONFLICT')
     invalidate_records(result, project)
-    if action == 'place' and placement['base_snapshot']['kind'] == 'bridge':
+    if action == 'place' and manual_bridge_material(result, placement['base_snapshot']):
         register_manual_bridge(result, placement)
     elif action in ('move', 'delete', 'set_emotion'):
         affected = {args['placement_id']} if action in ('move', 'delete') else set(args['placement_ids'])
@@ -722,7 +749,7 @@ def _edit(project, action, recompute=None, **args):
         result['protections'] = [p for p in result['protections'] if p not in removed]
         if action != 'delete':
             for p in result['placements']:
-                if p['id'] in affected and p['base_snapshot']['kind'] == 'bridge':
+                if p['id'] in affected and manual_bridge_material(result, p['base_snapshot']):
                     register_manual_bridge(result, p, max((q['plan_version'] or 0 for q in removed if q['placement_id'] == p['id']), default=0))
     result['contract_rev'] = project['contract_rev'] if project['contract_rev'] == 'curve-workflow-v2-r3-p7' else CONTRACT_REV
     if recompute is not None:
@@ -808,11 +835,11 @@ def edit(project, action, recompute=None, **args):
 
 
 def validate(project):
-    context = _IDENTITY_CONTEXT.get()
+    context = _VALIDATION_CONTEXT.get() or _IDENTITY_CONTEXT.get()
     key = digest('emoblocks.validation-cache.v1',project) if context is not None else None
     if context is not None and key in context['validated_projects']: return
     try:
         _validate(project)
-        if context is not None: context['validated_projects'].add(key)
+        if context is not None and len(context['validated_projects'])<128: context['validated_projects'].add(key)
     except (KeyError, TypeError, AttributeError, RecursionError) as exc:
         raise ProjectError('INVALID_PROJECT', '工程损坏或字段类型无效。') from exc
