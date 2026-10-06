@@ -79,8 +79,11 @@ def validate_outputs(score, files):
     channels=iter([channel for channel in range(16) if channel!=9])
     for index,track in enumerate(native.tracks[1:]):
         layer=score['layers'][index];channel=9 if layer['drum'] else next(channels)
-        programs=[(event.channel,event.program) for event in track if event.type=='program_change']
-        if programs!=[(channel,engine.PRESETS[layer['preset']][4])]:m.reject('MIDI音色或通道绑定不符。','OUTPUT_BINDING_MISMATCH')
+        program_tick=0;programs=[]
+        for event in track:
+            program_tick+=event.time
+            if event.type=='program_change':programs.append((program_tick,event.channel,event.program))
+        if programs!=[(0,channel,engine.PRESETS[layer['preset']][4])]:m.reject('MIDI音色、起始程序或通道绑定不符。','OUTPUT_BINDING_MISMATCH')
         tick = 0; active = {}; notes = []
         for event in track:
             tick += event.time

@@ -51,12 +51,14 @@ class FinalGateTests(unittest.TestCase):
         request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
-            for mutation in ('notes_to_drums','program_channel','cross_track_tempo','controller','pitchwheel'):
+            for mutation in ('notes_to_drums','program_channel','delayed_program','cross_track_tempo','controller','pitchwheel'):
                 audio.export_score(score,root);midi=mido.MidiFile(root/'composition.mid');track=midi.tracks[1]
                 if mutation=='notes_to_drums':
                     for event in track:
                         if event.type in ('note_on','note_off'):event.channel=9
                 elif mutation=='program_channel':next(e for e in track if e.type=='program_change').channel=9
+                elif mutation=='delayed_program':
+                    program=next(e for e in track if e.type=='program_change');track.remove(program);track.insert(len(track)-1,program)
                 elif mutation=='cross_track_tempo':track.insert(0,mido.MetaMessage('set_tempo',tempo=1000000))
                 elif mutation=='controller':track.insert(0,mido.Message('control_change',channel=0,control=7,value=0))
                 else:track.insert(0,mido.Message('pitchwheel',channel=0,pitch=8191))
