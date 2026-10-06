@@ -1,4 +1,4 @@
-"""P2 desktop UI. The frozen Facade owns every musical transaction.
+"""Desktop UI. The frozen Facade owns every musical transaction.
 
 The provider is imported only on construction without an injected controller,
 or when a pure preparation service is explicitly requested. No legacy editor
@@ -18,7 +18,7 @@ import ui_platform
 from audio_player import WavePlayer
 from file_drop import FileDrop
 from scroll_input import touchpad_deltas, scroll_canvas_pixels
-from curve_theme import Theme, font, hint
+from curve_theme import Theme, font, hint, EMOTION_NAMES
 from curve_cards import MaterialCards
 from curve_canvas import CurveCanvas, snap_tick
 
@@ -33,6 +33,10 @@ def _provider():
 def snapshot_key(kind, snapshot):
     payload = json.dumps(snapshot,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)
     return kind+':'+hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def audition_key(kind, snapshot, bpm):
+    return snapshot_key(kind,dict(snapshot=snapshot,bpm=bpm))
 
 
 class CurvePage(ttk.Frame):
@@ -104,13 +108,24 @@ class CurvePage(ttk.Frame):
             b = ttk.Button(controls,text=text,style='Curve.TButton',command=lambda f=format_:app.export_history(f))
             b.pack(side='left',padx=2,pady=4)
             self.export_buttons[format_] = b
+        self.emotion_panel = ttk.Frame(self.right,style='Curve.Panel.TFrame')
+        self.emotion_title = ttk.Label(self.emotion_panel,style='Curve.Muted.TLabel')
+        self.emotion_title.grid(row=0,column=0,columnspan=6,sticky='w')
+        self.emotion_buttons = {}
+        for index,(emotion,text) in enumerate(EMOTION_NAMES.items()):
+            button = ttk.Button(self.emotion_panel,text=text,style='Curve.TButton',
+                                command=lambda e=emotion:app.set_emotion(e))
+            button.grid(row=1,column=index,sticky='ew',padx=2,pady=2)
+            self.emotion_panel.columnconfigure(index,weight=1)
+            self.emotion_buttons[emotion] = button
+            hint(button,lambda e=emotion:'将所选放置设为'+EMOTION_NAMES[e]+'；从基础快照处理，不改素材库。',app.show_detail)
+        self.memory_label = ttk.Label(self.right,style='Curve.Muted.TLabel',wraplength=360,takefocus=True)
+        self.memory_label.pack(fill='x',pady=(4,0))
+        hint(self.memory_label,app.memory_description,app.show_detail)
+        self.memory_label.bind('<Button-1>',lambda _:app.show_detail(app.memory_description()))
+        self.memory_label.bind('<Return>',lambda _:app.show_detail(app.memory_description()))
         self.timeline = CurveCanvas(self.right,app)
-        self.timeline.pack(fill='both',expand=True,pady=(10,4))
-        self.final_button = ttk.Button(self.right,text='整曲生成尚未接通',style='Curve.TButton',state='disabled')
-        self.timeline.pack_forget()
-        self.final_button.pack(side='bottom',anchor='e')
-        ttk.Label(self.right,text='当前支持素材创作与试听；整曲生成尚未接通。',style='Curve.Muted.TLabel',wraplength=360).pack(side='bottom',anchor='w')
-        self.timeline.pack(fill='both',expand=True,pady=(10,4))
+        self.timeline.pack(fill='both',expand=True,pady=(4,0))
 
     def source_selected(self, event=None):
         ids = self.source_list.curselection()
@@ -164,6 +179,8 @@ class CurveApplication:
         self.card_scroll_timer = None
         self.status_error = False
         self.source_user_collapsed = None
+        self.history_expanded = False
+        self.last_export = None
         self.state_data = self.controller.state()
         root.title('EmoBlocks · 旋律与强度')
         root.minsize(1020,700)
@@ -194,6 +211,11 @@ class CurveApplication:
         self.theme_button = ttk.Button(brand,text='黑暗主题',style='Curve.TButton',command=self.toggle_theme)
         self.theme_button.pack(side='right',padx=4)
         self.page = CurvePage(self.shell,self)
+        self.history_button = ttk.Button(actions,text='已有成品',style='Curve.TButton',command=self.toggle_history)
+        self.history_button.pack(side='left',padx=2)
+        self.page.final_button = ttk.Button(actions,text='整曲生成尚未接通',style='Curve.TButton',state='disabled')
+        self.page.final_button.pack(side='left',padx=2)
+        hint(self.page.final_button,'当前支持素材创作与试听；整曲生成尚未接通。',self.show_detail)
         self.page.grid(row=1,column=0,sticky='nsew')
         footer = ttk.Frame(self.shell,style='Curve.Panel.TFrame',padding=10)
         footer.grid(row=2,column=0,sticky='ew',pady=(10,0))
@@ -212,6 +234,16 @@ class CurveApplication:
         self.show_detail(self.detail_text.get())
         self.transport_label = ttk.Label(footer,text='尚未播放 · 未选择试听对象',style='Curve.Panel.TLabel')
         self.transport_label.pack(anchor='w')
+        export_row = ttk.Frame(brand,style='Curve.TFrame')
+        self.export_receipt = tk.Text(export_row,height=2,width=1,wrap='word',font=font(),borderwidth=0,
+                                      highlightthickness=0,state='disabled',takefocus=True)
+        self.export_receipt.pack(side='left',fill='x',expand=True)
+        export_scroll = ttk.Scrollbar(export_row,command=self.export_receipt.yview)
+        export_scroll.pack(side='left',fill='y')
+        self.export_receipt.configure(yscrollcommand=export_scroll.set)
+        self.export_folder_button = ttk.Button(export_row,text='打开导出位置',style='Curve.TButton',command=self.open_export_folder)
+        self.export_folder_button.pack(side='right')
+        self.export_row = export_row
         controls = ttk.Frame(footer,style='Curve.Panel.TFrame')
         controls.pack(fill='x',pady=(4,0))
         self.prepare_button = ttk.Button(controls,text='准备试听',style='Curve.TButton',command=lambda:self.safe(self.prepare_selected))
@@ -249,6 +281,64 @@ class CurveApplication:
     def editable(self):
         return (not self.jobs and self.state_data['access_mode']=='editable'
                 and self.state_data['capabilities'].get('edit',True))
+
+    def can_edit(self, capability):
+        return self.editable and self.state_data['capabilities'].get(capability,False)
+
+    def selected_placement(self):
+        project = self.state_data['project']
+        if not project or not self.selected_target or self.selected_target[0]!='placement':return None
+        return next((p for p in project['placements'] if p['id']==self.selected_target[1]),None)
+
+    def update_emotions(self):
+        placement = self.selected_placement()
+        if not placement:
+            self.page.emotion_panel.pack_forget()
+            return
+        self.page.emotion_panel.pack(fill='x',before=self.page.memory_label,pady=(4,0))
+        self.page.emotion_title.configure(text='所选积木 · '+EMOTION_NAMES[placement['emotion']])
+        for emotion,button in self.page.emotion_buttons.items():
+            button.configure(style='Curve.Primary.TButton' if placement['emotion']==emotion else 'Curve.TButton')
+            button.state(['!disabled'] if self.can_edit('emotion') else ['disabled'])
+
+    def set_emotion(self, emotion):
+        placement = self.selected_placement()
+        if not placement or not self.can_edit('emotion'):return False
+        changed = self.edit('set_emotion',placement_ids=[placement['id']],emotion=emotion)
+        if self.status_error:return changed
+        placement = self.selected_placement()
+        generation = (placement['emotion_variant'] or {}).get('generation') or {}
+        detail = ''
+        if generation:
+            messages = [w['message'] for w in generation.get('warnings',[])]
+            text = '情绪已设置 · '+('旋律已轻改。' if generation.get('melody_changed',False) else '旋律未改变。')
+            if messages:text += ' '+'；'.join(messages)
+            if (generation.get('accompaniment_hints') or {}).get('status')=='suggested-not-rendered':
+                detail = ' 编配仅为建议，尚未渲染。'
+        else:
+            text = '情绪已设置 · 使用基础旋律。'
+        self.tell(text)
+        self.show_detail(text+detail+' 素材试听仍为中性单旋律。')
+        return changed
+
+    def memory_description(self, compact=False):
+        info = self.state_data['memory_info']
+        if not info or not self.state_data['capabilities'].get('memory',False):return '记忆状态尚未接通。'
+        if info['state']=='PENDING_GAP':return '记忆待落位 · 峰值处为空缺，尚无音乐保护。'
+        if info['state']=='PRESERVE_BLANK':return '记忆保留留白 · 峰值处为主动留白，不填入主旋律。'
+        project = self.state_data['project']
+        protection = next((p for p in project['protections'] if p['id']==info['protection_id']
+                           and p['kind']=='memory' and p['placement_id']==info['placement_id']
+                           and p['status']=='CONTENT_READY'),None) if project else None
+        region = protection or info['range']
+        span = f'{region["start_tick"]}–{region["end_tick"]} tick' if region else '范围未落位'
+        status = ('音高与节奏已保护' if compact else '音高与节奏已保护；用户仍可编辑') if protection else '目标未落保护'
+        path = ' / '.join(info['component_path'])
+        return '记忆积木 · '+status+' · '+span+(' · 组件 '+path if path and not compact else '')
+
+    def toggle_history(self):
+        self.history_expanded = not self.history_expanded
+        self.refresh()
 
     def safe(self, fn):
         try:
@@ -288,6 +378,7 @@ class CurveApplication:
         p = self.theme.colors
         self.status_label.configure(foreground=p['error' if self.status_error else 'ink'])
         self.detail_label.configure(bg=p['panel'],fg=p['muted'])
+        self.export_receipt.configure(bg=p['panel'],fg=p['ink'])
         for listing in (self.page.source_list,self.page.history_list):
             listing.configure(bg=p['inset'],fg=p['ink'],selectbackground=p['selected'],selectforeground=p['ink'],
                               highlightbackground=p['line'],highlightcolor=p['accent'])
@@ -298,6 +389,12 @@ class CurveApplication:
                 self.page.source_list.selection_set(i)
         self.page.draw_source()
         self.page.cards.render(materials)
+        if self.selected_target and self.selected_target[0]=='placement':
+            if not project or self.selected_target[1] not in {v['id'] for v in project['placements']}:
+                self.selected_target = None
+            else:self.page.timeline.selected_id = self.selected_target[1]
+        self.update_emotions()
+        self.page.memory_label.configure(text=self.memory_description(compact=True),wraplength=max(220,self.page.right.winfo_width()-20))
         self.page.timeline.set_project(project)
         if project:
             self.page.grid_count.set(str(project['grid_count']))
@@ -308,10 +405,11 @@ class CurveApplication:
             self.page.history_list.insert('end',f'{item["label"]} · {availability}')
             if item['id']==self.selected_history_id:
                 self.page.history_list.selection_set(i)
-        if self.history:
+        if self.history and (self.history_expanded or self.state_data['access_mode']!='editable'):
             self.page.history_panel.pack(fill='x',before=self.page.timeline,pady=(8,0))
         else:
             self.page.history_panel.pack_forget()
+        self.history_button.configure(text=f'已有成品 ({len(self.history)})')
         for text,button in self.edit_buttons:
             enabled = self.editable
             if text=='撤销':enabled = enabled and self.state_data['can_undo']
@@ -346,7 +444,7 @@ class CurveApplication:
         self.edit('resize',grid_count=count)
 
     def undo(self):
-        if self.material_drag or self.page.timeline.drag:
+        if self.material_drag or self.page.timeline.drag or self.page.timeline.intensity_draft:
             self.cancel_interaction()
             return
         if self.editable:
@@ -365,7 +463,9 @@ class CurveApplication:
         if kind=='material':self.selected_material_id = ident
         if kind=='source':self.selected_source_id = ident
         if kind=='history':self.selected_history_id = ident
+        if kind=='placement':self.page.timeline.selected_id = ident
         if redraw and kind=='material':self.page.cards.render()
+        self.update_emotions()
         self.update_transport()
 
     def source_detail(self):
@@ -390,7 +490,7 @@ class CurveApplication:
             return False
         captured = self.controller.capture_job(kind,target)
         token,snapshot = copy.deepcopy(captured['token']),copy.deepcopy(captured['snapshot'])
-        self.jobs[token['request_id']] = dict(token=token,done=done,kind=kind)
+        self.jobs[token['request_id']] = dict(token=token,done=done,kind=kind,snapshot=snapshot)
         self.cancel_interaction()
         self.tell('正在准备'+{'IMPORT':'导入','DERIVE':'新旋律','AUDITION':'试听','COMBINE':'组合'}[kind]+'…')
         self.refresh()
@@ -417,7 +517,7 @@ class CurveApplication:
                     self.tell('准备结果已过期，请重新准备。')
                     continue
                 if success:
-                    job['done'](payload,token)
+                    job['done'](payload,token,job['snapshot'])
                     self.controller.finish_job(token)
                 else:
                     self.controller.finish_job(token)
@@ -436,7 +536,7 @@ class CurveApplication:
         self.refresh()
         self.tell('准备已取消 · 工程和当前播放保持原状。')
 
-    def apply_batch(self, batch, token):
+    def apply_batch(self, batch, token, snapshot=None):
         self.controller.apply_batch(batch,token)
         warnings = batch['warnings']
         self.tell('素材已加入 · 一次撤销可恢复。'+(' '+ '；'.join(w['message'] for w in warnings) if warnings else ''))
@@ -490,15 +590,17 @@ class CurveApplication:
         if kind=='history':
             self.tell('历史音频无需准备；请明确点击播放。')
             return
-        key = snapshot_key(kind,target)
-        if self._ready_asset(key):
-            self.tell('试听已就绪 · 请明确点击播放。')
+        key = audition_key(kind,target,self.state_data['project']['bpm'])
+        ready = self._ready_asset(key)
+        if ready:
+            self.tell(f'试听已就绪 · 预计正文 {ready["body_seconds"]:.1f} 秒 / 实际音频 {ready["audio_seconds"]:.1f} 秒 · 请明确播放。')
             return
-        def done(asset,token):
+        def done(asset,token,snapshot):
+            key = audition_key(kind,snapshot['target'],snapshot['project']['bpm'])
             self._cache_asset(key,asset)
-            self.tell('试听已就绪 · 当前播放器未改变，请点击播放。')
+            self.tell(f'试听已就绪 · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒 · 请明确播放。')
         return self._start_job('AUDITION',dict(kind=kind,id=ident),
-                              lambda snap:_provider().render_audition(snap['target']),done)
+                              lambda snap:_provider().render_audition(snap['target'],bpm=snap['project']['bpm']),done)
 
     def prepare_selected(self):
         if self.selected_target:
@@ -518,7 +620,7 @@ class CurveApplication:
                 return False
             asset = dict(wav_path=target['paths']['wav'],audio_seconds=target['audio_seconds'],body_seconds=target['body_seconds'])
         else:
-            asset = self._ready_asset(snapshot_key(kind,target))
+            asset = self._ready_asset(audition_key(kind,target,self.state_data['project']['bpm']))
             if not asset:
                 self.tell('该对象尚未就绪，请先准备试听。')
                 return False
@@ -542,7 +644,7 @@ class CurveApplication:
             return
         kind,ident = self.selected_target
         if kind=='draft':
-            key = snapshot_key('draft',self.combo_inputs)
+            key = audition_key('draft',self.combo_inputs,self.state_data['project']['bpm'])
             asset = self._ready_asset(key)
             if asset:
                 return self.start_playback(asset,('draft',key),'组合草稿')
@@ -587,7 +689,10 @@ class CurveApplication:
                 target = self.resolve(*selected)
                 label = target['label'] if target else '选择已失效'
         prefix = {'playing':'播放中','paused':'已暂停','stopped':'已结束','closed':'已停止'}.get(mode,mode)
-        self.transport_label.configure(text=f'{prefix}：{playing} · {position:.1f}/{self.play_duration:.1f} 秒   |   已选：{label}')
+        asset = self.playing_target['asset'] if self.playing_target else None
+        durations = f' · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
+        self.transport_label.configure(text=f'{prefix}：{playing} · {position:.1f}/{self.play_duration:.1f} 秒{durations}   |   已选：{label}',
+                                       wraplength=max(400,self.root.winfo_width()-50))
         self.cancel_button.state(['!disabled'] if self.jobs else ['disabled'])
 
     def begin_material_drag(self, event, material, card):
@@ -711,18 +816,20 @@ class CurveApplication:
             return
         inputs = copy.deepcopy(self.combo_inputs)
         label = self.page.combo_name.get().strip()
-        key = snapshot_key('draft',inputs)
-        if audition and self._ready_asset(key):
-            self.tell('组合试听已就绪 · 请明确点击底部播放。')
+        key = audition_key('draft',inputs,self.state_data['project']['bpm'])
+        ready = self._ready_asset(key) if audition else None
+        if ready:
+            self.tell(f'组合试听已就绪 · 预计正文 {ready["body_seconds"]:.1f} 秒 / 实际音频 {ready["audio_seconds"]:.1f} 秒 · 请明确播放。')
             return
         def work(snapshot):
             material = _provider().combine(snapshot['project'],inputs,label)
-            if audition:return _provider().render_audition(material)
+            if audition:return _provider().render_audition(material,bpm=snapshot['project']['bpm'])
             return dict(sources=[],materials=[material],warnings=[])
-        def done(payload,token):
+        def done(payload,token,snapshot):
             if audition:
+                key = audition_key('draft',inputs,snapshot['project']['bpm'])
                 self._cache_asset(key,payload)
-                self.tell('组合试听已就绪 · 请明确点击底部播放。')
+                self.tell(f'组合试听已就绪 · 预计正文 {payload["body_seconds"]:.1f} 秒 / 实际音频 {payload["audio_seconds"]:.1f} 秒 · 请明确播放。')
             else:
                 self.apply_batch(payload,token)
                 self.combo_inputs = []
@@ -757,7 +864,23 @@ class CurveApplication:
         destination = filedialog.asksaveasfilename(parent=self.root,defaultextension='.'+format_,
                                                   initialfile='EmoBlocks.'+format_,filetypes=[(format_.upper(),'*.'+format_)])
         if destination:
-            self.safe(lambda:self.controller.export_history(ident,format_,destination))
+            label = item['label']
+            def export():
+                path = Path(self.controller.export_history(ident,format_,destination)).resolve()
+                self.last_export = dict(id=ident,label=label,format=format_,path=path)
+                self.export_receipt.configure(state='normal')
+                self.export_receipt.delete('1.0','end')
+                display_format = {'wav':'WAV','mid':'MIDI','mmp':'MMP'}[format_]
+                self.export_receipt.insert('1.0',f'已导出版本：{label} [{ident}] · {display_format}\n{path}')
+                self.export_receipt.configure(state='disabled')
+                self.export_row.pack(side='left',fill='both',expand=True,padx=8)
+                self.tell('导出成功 · 版本、格式和完整目标位置见页眉。')
+                return path
+            self.safe(export)
+
+    def open_export_folder(self):
+        if self.last_export:
+            return self.safe(lambda:ui_platform.open_folder(self.last_export['path'].parent))
 
     def save_project(self):
         if not self.jobs and self.state_data['access_mode']=='editable':
@@ -804,6 +927,7 @@ class CurveApplication:
         self.layout_sources()
         width = max(400,event.width-50)
         self.status_label.configure(wraplength=width)
+        self.page.memory_label.configure(wraplength=max(220,self.page.right.winfo_width()-20))
         self.page.draw_source()
 
     def toggle_theme(self):
