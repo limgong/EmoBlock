@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import tkinter as tk
 from tkinter import ttk
 import intensity_curve
+import ui_platform
 from curve_theme import rounded, font, hint, EMOTION_COLORS, EMOTION_NAMES, EMOTION_INK
 
 
@@ -56,8 +57,10 @@ class CurveCanvas(ttk.Frame):
         self.canvas.bind('<Motion>',self.hover)
         for event, handler in (('<Configure>', self.draw), ('<ButtonPress-1>', self.press),
                                ('<B1-Motion>', self.motion), ('<ButtonRelease-1>', self.release),
-                               ('<Escape>', self.cancel), ('<Delete>', self.delete_selected)):
+                               ('<Escape>', self.cancel)):
             self.canvas.bind(event, handler)
+        for event in ui_platform.DELETE_SHORTCUT_EVENTS:
+            self.canvas.bind(event, self.delete_selected)
         self.bind('<Destroy>', self.destroyed, add='+')
 
     def set_project(self, project, readonly=False, memory_info=None):
@@ -279,7 +282,7 @@ class CurveCanvas(ttk.Frame):
         if ident:
             self.app.select_target('placement', ident)
             placement = next(p for p in self.project['placements'] if p['id']==ident)
-            self.app.show_detail(placement['base_snapshot']['label']+' · 点击仅选择；拖动移动，Delete 删除')
+            self.app.show_detail(placement['base_snapshot']['label']+' · 点击仅选择；拖动移动，'+ui_platform.DELETE_LABEL+' 删除')
             if self.app.editable:
                 self.drag = dict(id=ident,start_root=(event.x_root,event.y_root),
                                  offset=x-self.x(placement['start_tick']),length=placement['length_ticks'],active=False)

@@ -5,6 +5,8 @@ from pathlib import Path
 NATIVE_CHROME=False
 CONTEXT_EVENTS=('<Button-3>',)
 EDIT_SHORTCUT_EVENTS=('<Control-z>','<Control-y>')
+DELETE_SHORTCUT_EVENTS=('<Delete>',)
+DELETE_LABEL='Delete'
 UNDO_LABEL='Ctrl+Z';REDO_LABEL='Ctrl+Y'
 def create_root():return tk.Tk()
 def font_family(name):return name

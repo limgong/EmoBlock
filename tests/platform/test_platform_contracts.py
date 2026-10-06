@@ -67,6 +67,20 @@ class PlatformContracts(unittest.TestCase):
                 if 'Command' in sequence and root.tk.call('tk','windowingsystem')!='aqua':continue
                 root.bind(sequence,lambda e:None)  # sequence must be valid Tk syntax
         finally:root.destroy()
+
+    def test_canvas_delete_shortcuts_per_platform(self):
+        self.assertEqual(mac_ui.DELETE_SHORTCUT_EVENTS, ('<BackSpace>', '<Delete>'))
+        self.assertEqual(win_ui.DELETE_SHORTCUT_EVENTS, ('<Delete>',))
+        self.assertIn('⌫', mac_ui.DELETE_LABEL)
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        try:
+            canvas = tk.Canvas(root)
+            for adapter in (mac_ui, win_ui):
+                for sequence in adapter.DELETE_SHORTCUT_EVENTS:
+                    canvas.bind(sequence, lambda event: 'break')
+        finally:
+            root.destroy()
     def test_range_rejects_invalid(self):
         for a,b in ((2,1),(-1,1),(0,11),(1,1),(float('nan'),2)):
             with self.assertRaises(ValueError):mac.playback_range(10,a,b)

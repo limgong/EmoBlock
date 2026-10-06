@@ -5,6 +5,8 @@ from pathlib import Path
 NATIVE_CHROME=True
 CONTEXT_EVENTS=('<Button-2>','<Button-3>','<Control-Button-1>')
 EDIT_SHORTCUT_EVENTS=('<Command-z>','<Command-Z>')  # Z also arrives with Caps Lock; Shift decides
+DELETE_SHORTCUT_EVENTS=('<BackSpace>','<Delete>')  # delete and fn+delete respectively
+DELETE_LABEL='delete ⌫ / fn+delete'
 UNDO_LABEL='⌘Z';REDO_LABEL='⇧⌘Z'
 def create_root():
     try:
