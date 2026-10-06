@@ -315,3 +315,28 @@ class ConnectionServiceTests(unittest.TestCase):
         with self.assertRaises(m.ProjectError):c.capture_connection()
         self.assertEqual(c._bundle,before);self.assertEqual(c.project,music);self.assertEqual((c.session._undo,c.session._redo),history)
         self.assertEqual(c._jobs,{});self.assertEqual(c.session._requests,{});self.assertIsNone(c._connection_id)
+
+    def test_multiple_original_notes_with_only_one_pitch_edit_cannot_be_ready(self):
+        for changed_index in (0, 1):
+            c=ready_bridge();before=c.project;history=copy.deepcopy((c.session._undo,c.session._redo));parent=c.bridge_state()
+            cap,plan=begin(c,((1920,5760),));req=cap['request'];win=plan['windows'][0]
+            originals=copy.deepcopy(win['original_notes']);notes=copy.deepcopy(originals)
+            changed=notes[changed_index];source=originals[changed_index]
+            changed.update(id='one-pitch-only-'+str(changed_index),pitch=62,
+                lineage=list(dict.fromkeys(source['lineage']+[source['id']])),slice=None)
+            operations=[dict(operation='connection-motif-cell',input_note_id=p['id'],parent_ref=n.parent_ref(req,p['id']),
+                output_note_id=x['id'],rule=win['technique'] if i==changed_index else 'preserve',from_pitch=p['pitch'],
+                to_pitch=x['pitch'],start_tick=x['start_tick'],duration_tick=x['duration_tick']) for i,(p,x) in enumerate(zip(originals,notes))]
+            row=dict(**n.result_header(req,plan,win['id']),status='READY',notes=notes,operations=operations,
+                generation=n.generation_data(req,plan,win,operations),content_fingerprint=n.content_fingerprint(
+                    {k:win[k] for k in ('start_tick','end_tick')},notes),error=None)
+            with self.subTest(changed_index=changed_index),self.assertRaises(m.ProjectError) as exc:n.validate_result(req,plan,row)
+            self.assertEqual(exc.exception.code,'NO_CONNECTION_DEVELOPMENT')
+            self.assertFalse(c.finish_connection(cap['token'],n.raw_outcome(req,plan,[row])))
+            self.assertEqual(c.connection_state()['status'],'FAILED');self.assertFalse(c.connection_state()['capabilities']['can_plan_boundaries'])
+            self.assertEqual(c.connection_state()['error']['code'],'NO_CONNECTION_DEVELOPMENT')
+            self.assertEqual(c.project,before);self.assertEqual(c.bridge_state(),parent)
+            self.assertEqual((c.session._undo,c.session._redo),history);self.assertEqual(c._jobs,{})
+            with tempfile.TemporaryDirectory() as directory:
+                path=c.save_snapshot(Path(directory)/'single pitch rejected.json');restored=w.Controller();restored.load(path)
+                self.assertEqual(restored.connection_state()['status'],'FAILED');self.assertFalse(restored.connection_state()['capabilities']['can_plan_boundaries'])

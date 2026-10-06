@@ -339,6 +339,11 @@ def validate_development(window, notes, operations):
     original = window['original_notes']; technique = window['technique']
     if len(notes) < 2 or music_signature(notes) == music_signature(original):
         m.reject('连接必须有真实旋律或节奏发展，不能只换标签或单音改高。', 'NO_CONNECTION_DEVELOPMENT')
+    before = sorted(original, key=lambda n: (n['start_tick'], n['duration_tick']))
+    after = sorted(notes, key=lambda n: (n['start_tick'], n['duration_tick']))
+    same_timing = [(n['start_tick'], n['duration_tick']) for n in before] == [(n['start_tick'], n['duration_tick']) for n in after]
+    if same_timing and sum(a['pitch'] != z['pitch'] for a, z in zip(before, after)) == 1:
+        m.reject('仅修改一个音高属于局部边界调整，不能认证为连接块发展。', 'NO_CONNECTION_DEVELOPMENT')
     if technique in ('diatonic_guide', 'motif_reply', 'density_shift') and any(n['pitch'] % 12 not in scale_pitches(window['key_context']) for n in notes):
         m.reject('连接未兑现调内规则。', 'INVALID_CONNECTION')
     if technique == 'diatonic_guide' and window['context']['right'] and abs(notes[-1]['pitch'] - window['context']['right']['pitch']) > abs(notes[0]['pitch'] - window['context']['right']['pitch']):
