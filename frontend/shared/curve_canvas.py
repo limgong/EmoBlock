@@ -216,7 +216,13 @@ class CurveCanvas(ttk.Frame):
         return self.tick(self.canvas.canvasx(x_root-self.canvas.winfo_rootx())-offset_px)
 
     def hit(self, x, y):
-        return next((ident for ident,(a,t,b,d) in reversed(list(self.boxes.items())) if a<=x<=b and t<=y<=d),None)
+        for ident,(a,t,b,d) in reversed(list(self.boxes.items())):
+            # A subpixel block's 1px outline extends half a pixel on each side.
+            # Match that visible stroke without enlarging its musical geometry.
+            pad = .5 if b-a<1 else 0
+            if a-pad<=x<=b+pad and t<=y<=d:
+                return ident
+        return None
 
     def press(self, event):
         if self.app.material_drag:return
