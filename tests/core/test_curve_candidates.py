@@ -171,6 +171,43 @@ class CandidateTests(unittest.TestCase):
         with patch.object(story_engine,'plan',side_effect=AssertionError('old planner')):
             self.assertTrue(prepared(req,[proposal(req)])['candidates'])
 
+    def test_failed_bridge_gap_lock_cannot_be_cleared_by_completion(self):
+        p=manual_bridge();lock=p['protections'][0];plan=p['records'][0];p['placements']=[]
+        lock.update(placement_id=None,origin='automatic',status='RANGE_LOCKED',notes=[],structure_fingerprint=None)
+        plan.update(status='FAILED');plan['payload'].update(automatic_decision='selected',bridge_ids=['P'],manual_bridge_ids=[],
+            ranges=[dict(start_tick=lock['start_tick'],end_tick=lock['end_tick'])])
+        m.validate(p);before=copy.deepcopy(p)
+        with self.assertRaises(m.ProjectError) as exc:c.make_request(p)
+        self.assertEqual(exc.exception.code,'PROTECTION_CONFLICT');self.assertEqual(p,before)
+
+    def test_candidate_long_note_memory_and_nested_combination_paths(self):
+        from test_curve_memory import fixture as memory_fixture, points
+        long=material('A1',4000,'phrase');p=memory_fixture(long)
+        p=m.edit(p,'resize',grid_count=3)
+        p=m.edit(p,'mark_blank',start_tick=4000,end_tick=5760,blank_id='tail',reason='主动')
+        p=m.edit(p,'set_intensity',points=points(5760,2200))
+        req=c.make_request(p);value=prepared(req,[proposal(req,emotion='hope')]);cand=value['candidates'][0]
+        lock=cand['project']['protections'][-1]
+        self.assertEqual((lock['start_tick'],lock['end_tick']),(1920,3840))
+        self.assertEqual((lock['notes'][0]['start_tick'],lock['notes'][0]['duration_tick']),(0,4000))
+        combo=w.combine(project(),['A1','A1']);p=project();p=m.edit(p,'add_material',material=combo)
+        nested=w.combine(p,[combo['id'], 'A1']);p=m.edit(p,'add_material',material=nested)
+        p=m.edit(p,'mark_blank',start_tick=720,end_tick=p['total_ticks'],blank_id='rest',reason='主动')
+        p=m.edit(p,'set_intensity',points=points(p['total_ticks'],300))
+        req=c.make_request(p);cand=prepared(req,[proposal(req,nested['id'])])['candidates'][0]
+        self.assertEqual(len(cand['memory_info']['component_path']),2)
+        self.assertEqual(cand['memory_info']['range'],dict(start_tick=240,end_tick=480))
+
+    def test_precise_one_tick_and_output_refusal_without_quantizing(self):
+        import curve_audition
+        p=project();one=material('one-tick',1);p=m.edit(p,'add_material',material=one)
+        p=m.edit(p,'mark_blank',start_tick=1,end_tick=p['total_ticks'],blank_id='tail',reason='主动')
+        req=c.make_request(p);cand=prepared(req,[proposal(req,'one-tick')])['candidates'][0]
+        self.assertEqual(cand['project']['placements'][-1]['length_ticks'],1)
+        with self.assertRaises(m.ProjectError) as exc:curve_audition.render_audition(one)
+        self.assertEqual(exc.exception.code,'OUTPUT_TIME_UNREPRESENTABLE')
+        self.assertEqual(cand['notes'][0]['duration_tick'],1)
+
     def test_slice_ties_use_placement_namespace_and_ignore_velocity(self):
         p=project(); sliced=material('sliced',240)
         sliced['notes'][0]['slice']=dict(parent_emission_id='one',offset_tick=0,parent_duration_tick=480)
@@ -236,6 +273,38 @@ class StagingTests(unittest.TestCase):
         job=ctrl.capture_completion();self.assertIsNone(job['token']);self.assertIsNone(job['attempt_id'])
         self.assertEqual(job['immediate_outcome']['status'],'NOT_NEEDED');self.assertEqual(ctrl._bundle,before)
         self.assertTrue(ctrl.state()['is_saved']);self.assertFalse(ctrl.state()['staging_dirty']);self.assertFalse(ctrl.state()['can_undo'])
+
+    def test_memory_recompute_exception_and_stale_running_remain_atomic(self):
+        ctrl=fixture();ctrl.session.mark_saved();job=ctrl.capture_completion();before=ctrl.project
+        with patch.object(curve_memory,'recompute',side_effect=RuntimeError('injected recompute failure')):
+            with self.assertRaises(RuntimeError):prepared(job['request'],[proposal(job['request'])])
+        self.assertTrue(ctrl.fail_completion(job['token'],RuntimeError('injected recompute failure')))
+        self.assertEqual(ctrl.project,before);self.assertTrue(ctrl.state()['is_saved'])
+        next_job=ctrl.capture_completion();ctrl.edit('set_melody_only',value=True);ctrl.undo()
+        self.assertEqual(ctrl.project,before);self.assertEqual(ctrl.completion_state()['status'],'STALE')
+        self.assertFalse(ctrl.accepts(next_job['token']))
+        with tempfile.TemporaryDirectory() as tmp:
+            path=ctrl.save_snapshot(Path(tmp)/'stale.json');loaded=w.Controller();loaded.load(path)
+            self.assertEqual(loaded.completion_state()['status'],'STALE')
+
+    def test_old_attempt_managed_history_long_note_keeps_p3_validation(self):
+        from test_curve_memory import fixture as memory_fixture
+        ctrl=w.Controller(memory_fixture(material(length=4000)))
+        ctrl.edit('place',material_id='A1',start_tick=0,placement_id='long')
+        ctrl.edit('add_material',material=material('bridge',1920,'bridge'))
+        ctrl.edit('place',material_id='bridge',start_tick=5760,placement_id='bridge')
+        ctrl.edit('set_intensity',points=[dict(tick=0,level=.3),dict(tick=15360,level=.2)])
+        p=ctrl.project;b=store.new_bundle(p)
+        b['snapshots']=[dict(id='original',spec_rev=m.SPEC_REV,contract_rev=p['contract_rev'],content_fingerprint=m.fingerprint(p),project=p)]
+        b['attempts']=[dict(id='old-attempt',snapshot_id='original',input_fingerprint=m.fingerprint(p),state='READY',records=copy.deepcopy(p['records']),
+                            protections=copy.deepcopy(p['protections']),staged_materials=[],error=None)]
+        store.validate_bundle(b)
+        with tempfile.TemporaryDirectory() as tmp:
+            path=store.save(b,Path(tmp)/'history.json');loaded=store.load(path)
+            self.assertEqual(loaded['bundle'],b)
+        bad=copy.deepcopy(b);old=bad['attempts'][0]['records'][0]['payload']['audit_context']
+        lock=next(v for v in old['protections'] if m.managed_memory(p,v));lock['notes'][0]['pitch']+=1;lock['structure_fingerprint']=m.structure_fingerprint(lock)
+        with self.assertRaises(m.ProjectError):store.validate_bundle(bad)
 
 
 if __name__ == '__main__':unittest.main()

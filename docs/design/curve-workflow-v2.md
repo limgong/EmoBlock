@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p4
 
-状态：P0–P3已独立PASS；用户启动P4基础补全。产品原文保持r3；p0/p23历史契约FROZEN，公共契约第10节p4先DRAFT评审与独立检查，PASS后冻结再实现。
+状态：P0–P3已独立PASS；用户启动P4基础补全。产品原文保持r3；p0/p23历史契约FROZEN，公共契约第10节p4已独立检查PASS并标记FROZEN，当前实施P4。
 
 本文完整保留 r3 原文。它替代此前固定 A/B/C/D 版本族、先连接后补全、bridge 与连接块共同决策或交错生成、右栏 BPM 控件及独立记忆点标记。旧 `assembly-confirmed-plan.md` 和其他历史文档不能覆盖 r3；旧格式继续独立读取，不迁移为可完整编辑的新工程。
 

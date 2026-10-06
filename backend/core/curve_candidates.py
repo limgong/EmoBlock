@@ -169,6 +169,11 @@ def _material(request, material):
             or provenance['target_ticks'] != material['length_ticks']
             or generation['parameters'].get('target_ticks') != material['length_ticks']):
         m.reject('补全生成方法、基础内容或目标长度不匹配。', 'INVALID_CANDIDATE')
+    m.integer(provenance['target_ticks'], 1)
+    m.integer(generation['parameters']['target_ticks'], 1)
+    m.ident(generation['parameters'].get('rhythm_method'))
+    if generation['input_fingerprint'] != m.digest('emoblocks.completion-input.v1', base):
+        m.reject('新补全素材基础输入指纹不匹配。', 'INVALID_CANDIDATE')
     m.integer(generation['seed'], 0, 2**32-1); m.ident(generation['rng_version']); m.ident(generation['input_fingerprint'])
     if material['phrase_id'] is not None or material['kind'] not in ('block', 'phrase'):
         m.reject('新作曲必须有独立素材身份，不能冒充旧句子块。', 'INVALID_CANDIDATE')
@@ -387,6 +392,10 @@ def _search_check(request, search):
             continue
         m.integer(search[key], 0, request['budget'][limit])
     m.ident(search['termination']); m.ident(search['raw_termination']); _warnings(search['rejections'])
+    raw_states = {'RAW_POOL_LIMIT', 'RAW_POOL_EXHAUSTED', 'EXHAUSTED', 'BUDGET_EXHAUSTED',
+                  'CANCELLED', 'NO_TARGETS', 'PROTECTION_CONFLICT', 'NO_VALID_MATERIAL', 'ERROR', 'UNKNOWN'}
+    if search['raw_termination'] not in raw_states or search['termination'] not in raw_states | {'ENOUGH_CANDIDATES'}:
+        m.reject('补全搜索终止原因不受支持。', 'INVALID_CANDIDATE')
 
 
 def outcome(request, status, candidates=None, search=None, failure=None, shortage=None):
@@ -428,6 +437,10 @@ def validate_outcome(request, value):
     _warnings(value['shortage_reasons']); _search_check(request, value['search'])
     if status == 'INSUFFICIENT' and not value['shortage_reasons']:
         m.reject('候选不足必须说明真实原因。', 'INVALID_CANDIDATE')
+    if (status == 'SUCCEEDED') != (value['search']['termination'] == 'ENOUGH_CANDIDATES'):
+        m.reject('不能按原始提案数或无效候选宣称搜索完成。', 'INVALID_CANDIDATE')
+    if status == 'CANCELLED' and value['search']['termination'] != 'CANCELLED':
+        m.reject('取消结果必须记录实际取消状态。', 'INVALID_CANDIDATE')
     if status in ('FAILED', 'CANCELLED'):
         _warnings([value['error']])
     elif value['error'] is not None:
