@@ -77,3 +77,17 @@ P4 契约经算法/前端只读评审，整合第10.9/10.10节后，P4-CONTRACT 
 集成自测完成后冻结整个目录，P4实施ROUND从1开始，最多5轮；受检HEAD、完整源码/测试/文档指纹、前后核对及verifier明确结论保存在仓库外`P4-R*-freeze.json`、实际pane收件和`verifier/tests/`。本页在冻结前不预写实现PASS；冻结期间不改源码/测试/文档。
 
 P5建议先派只读桥契约评审：仅消费当前输入仍有效的CompletedCandidate；bridge选位即保护锁、就绪后内容指纹、失败保锁中止版本；再由算法实现选位/生成、lead版本与保护门禁、前端锁定/失败状态，最后独立验收。此处仅派工建议，本轮没有启动P5。
+
+## P4实施第一轮FAIL及纯恢复修复
+
+P4 ROUND1独立FAIL：HEAD=cd4adaecf11581c7e045217b0c73c617b453fee7，前后185文件指纹372c48ea6b78d32ba23549141641e53dd457473e32306f14d4bdf2a9020ff94a，lead重算一致。独立完整640/后端432/check_frontends/diff、真实Facade+算法+映射Tk及独立LMMS对照均通过，不能抵消两处契约失败：恢复验证调用了memory.recompute/emotion_variant；provenance实际list而冻结契约要求JSON-object。
+
+修复后生成构建与恢复验证分开：新提案仍调用P3正式重算；validate_request/candidate/outcome及store保存/恢复只验证持久化实际快照。使用P3纯保护定位、范围和完整音符检查，独立校验变体基础快照、发声身份、来源血缘、输入/保护指纹、轻改幅度与时值规则单位、操作记录、实际音符和限制提示，不调用搜索、记忆重算、情绪生成、渲染或线程。当前/历史保护与区外音乐门禁保留，没有通过删除保护或跳过实际音符检查解决。
+
+provenance改为JSON对象，placements保存每目标素材来源与生成记录；列表/错误形状拒绝。不更改冻结规范，不自动迁移不合规R1暂存；其仓库外证据保留，新attempt重新生成合法结果。P0/p23工程、输入快照和旧合法历史仍按自己的版本读取，旧工程不因打开或保存升级。
+
+新增行为覆盖：禁用搜索/recompute/emotion_variant后，合法非平静候选仍能验证、回调暂存、保存、重开和另存；原文件不变；来源/保护/轻改声明/真实音符及更新指纹的极端时值篡改均拒绝；provenance对象和错误类型拒绝。当前52项专项通过；最终完整643项通过（84.516秒）、后端435项通过、check_frontends和diff通过。
+
+第二轮证据以`lead-backend/tests/P4-music-R2/P4-real-smoke.json`、`P4-R2-real-Tk.json`、`P4-R2-fixtures/`为准；第一轮原样保留用于审计。复用同一原始Project/MIDI重新生成，provenance为对象，两套实际音乐仍有上述pitch+rhythm差异，actual LMMS再次3渲染、9份字节一致副本与3次串行Mac设备流，保存重开原编辑/候选完全一致。真实算法+Facade+Tk两主题三尺寸再验通过，当前工程与播放对象不变。六个新合法样例独立重放一致，数据含1/239/240/4080和多gap/theme-c；不把旧不合规attempt伪称已经迁移通过。
+
+P4第二轮沿用原RUN_ID，ROUND递增为2；最终独立结论与前后指纹仍在仓库外记录，不因自测或修复提交预写PASS。截图、人工视觉/听感、物理鼠标/触控板及Windows实机/DPI、第三方软件交互打开仍待验。

@@ -126,6 +126,54 @@ class CandidateTests(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(m.ProjectError):c.validate_candidate(req,bad)
         bad=copy.deepcopy(candidate);bad['project']['placements'][1]['emotion']='hope'
         with self.assertRaises(m.ProjectError):c.validate_candidate(req,bad)
+
+    def test_provenance_is_object_and_stored_emotion_validation_never_generates(self):
+        import curve_emotion
+        ctrl=fixture();job=ctrl.capture_completion(ctrl.gap_items()[0]['id']);req=job['request']
+        value=prepared(req,[proposal(req,emotion='hope')]);candidate=value['candidates'][0]
+        self.assertIsInstance(candidate['provenance'],dict)
+        self.assertEqual(candidate['provenance']['placements'][0]['gap_id'],req['target_gaps'][0]['id'])
+        with (patch.object(curve_memory,'recompute',side_effect=AssertionError('generation on read')),
+              patch.object(curve_emotion,'emotion_variant',side_effect=AssertionError('generation on read')),
+              patch.dict('sys.modules',curve_completion=types.SimpleNamespace(propose=lambda *a,**k:(_ for _ in()).throw(AssertionError('search on read'))))):
+            c.validate_request(req);c.validate_candidate(req,candidate);c.validate_outcome(req,value)
+            self.assertTrue(ctrl.finish_completion(job['token'],value))
+            with tempfile.TemporaryDirectory() as tmp:
+                path=ctrl.save_snapshot(Path(tmp)/'ready.json');before=path.read_bytes()
+                loaded=w.Controller();loaded.load(path);copy_path=loaded.save_snapshot(Path(tmp)/'copy.json')
+                self.assertEqual(store.load(copy_path)['bundle'],store.load(path)['bundle'])
+                self.assertEqual(loaded.completion_state()['outcome'],value)
+                self.assertEqual(path.read_bytes(),before)
+        bad=copy.deepcopy(candidate);bad['provenance']=bad['provenance']['placements']
+        with self.assertRaises(m.ProjectError):c.validate_candidate(req,bad)
+
+    def test_stored_variant_ancestry_actual_music_and_protection_tampering_rejected(self):
+        ctrl=fixture();req=c.make_request(ctrl.project,ctrl.gap_items()[0]['id'])
+        candidate=prepared(req,[proposal(req,emotion='hope')])['candidates'][0]
+        variant=candidate['project']['placements'][-1]['emotion_variant']
+        self.assertTrue(variant['generation']['melody_changed'])
+        for mutate in (lambda v:v['generation'].update(base_notes=[]),
+                       lambda v:v['generation'].update(protection=dict(explicit_note_ids=['fake'],frozen_note_ids=[],ranges=[])),
+                       lambda v:v['generation'].update(melody_changed=False),
+                       lambda v:v['notes'][0].update(pitch=v['notes'][0]['pitch']+12),
+                       lambda v:v['notes'][0].update(lineage=[]),
+                       lambda v:v['generation'].update(operations=[])):
+            bad=copy.deepcopy(candidate);mutate(bad['project']['placements'][-1]['emotion_variant'])
+            bad['content_fingerprint']=m.fingerprint(bad['project'])
+            bad['music_fingerprint']=m.digest('emoblocks.completion-music.v1',c.music_projection(bad['project']))
+            bad['notes']=[n for p in bad['project']['placements'] for n in m.placed_notes(p)]
+            with self.assertRaises(m.ProjectError):c.validate_candidate(req,bad)
+
+    def test_stored_light_variant_cannot_disguise_extreme_shortening_with_updated_hashes(self):
+        ctrl=fixture();req=c.make_request(ctrl.project,ctrl.gap_items()[0]['id'])
+        candidate=prepared(req,[proposal(req,emotion='crisis')])['candidates'][0]
+        variant=candidate['project']['placements'][-1]['emotion_variant'];variant['notes'][0]['duration_tick']=10
+        operation=next(v for v in variant['generation']['operations'] if v['operation']=='local-emotion-melody')
+        operation.update(output_duration_tick=10,shortened_by_tick=230)
+        candidate['content_fingerprint']=m.fingerprint(candidate['project'])
+        candidate['music_fingerprint']=m.digest('emoblocks.completion-music.v1',c.music_projection(candidate['project']))
+        candidate['notes']=[n for p in candidate['project']['placements'] for n in m.placed_notes(p)]
+        with self.assertRaises(m.ProjectError):c.validate_candidate(req,candidate)
         bad=copy.deepcopy(candidate);bad['project']['intensity_points'][1]['level']=.3
         with self.assertRaises(m.ProjectError):c.validate_candidate(req,bad)
 

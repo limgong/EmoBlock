@@ -212,7 +212,95 @@ def _selections(request, selections):
             m.reject('目标仍有未覆盖时间，不能标记完成。', 'INCOMPLETE_TARGET')
 
 
-def _private_project(request, selections):
+def _variant_check(project, placement, variant):
+    """Validate persisted P3 evidence, never regenerate a historical melody."""
+    if placement['emotion'] == 'calm':
+        if variant is not None:
+            m.reject('平静放置应保留基础快照。', 'INVALID_CANDIDATE')
+        return
+    if variant is None:
+        m.reject('新增放置缺少实际情绪快照。', 'INVALID_CANDIDATE')
+    base = placement['base_snapshot']
+    m.material_check(variant, m.source_index(project['sources']))
+    generation = variant['generation']
+    required = {'method', 'emotion', 'parameters', 'seed', 'rng_version', 'algorithm_version',
+                'input_fingerprint', 'input_material_ids', 'base_notes', 'key_context', 'operations',
+                'warnings', 'melody_changed', 'accompaniment_hints', 'protection'}
+    if not isinstance(generation, dict) or not required <= set(generation):
+        m.reject('保存的情绪结果缺少基础输入和保护证据。', 'INVALID_CANDIDATE')
+    if (generation['method'] != 'emotion_variant' or generation['emotion'] != placement['emotion']
+            or generation['base_notes'] != base['notes'] or generation['input_material_ids'] != [base['id']]
+            or variant['length_ticks'] != base['length_ticks'] or variant['phrase_id'] is not None
+            or variant['kind'] != ('phrase' if base['kind'] == 'combination' else base['kind'])
+            or variant['children']):
+        m.reject('保存的情绪结果与本次基础素材不匹配。', 'INVALID_CANDIDATE')
+    if generation['algorithm_version'] != 'curve-emotion-rules-v1':
+        m.reject('保存的情绪算法版本不受支持。', 'UNSUPPORTED_VERSION')
+    params = generation['parameters']; m.shape(params, 'max_changes max_pitch_shift')
+    m.integer(params['max_changes'], 1, 8); m.integer(params['max_pitch_shift'], 1, 4)
+    if type(generation['seed']) is not int:
+        m.reject('保存的情绪种子无效。', 'INVALID_CANDIDATE')
+    m.ident(generation['rng_version'])
+    domains = [dict(start_tick=a, end_tick=b) for a, b in memory.protected_ranges(project['protections'])]
+    relevant = [r for r in domains if m.intersects(r, _range(placement))]
+    protected = memory.base_notes(placement, relevant)
+    prefix = placement['id'] + ':'
+    protected = [dict(n, id=n['id'][len(prefix):]) for n in protected]
+    protected.sort(key=lambda n: n['id'])
+    ranges = _union(relevant)
+    frozen = {n['id'] for n in protected}
+    if generation['protection'] != dict(explicit_note_ids=sorted(frozen), frozen_note_ids=sorted(frozen), ranges=ranges):
+        m.reject('保存的情绪保护摘要不匹配实际保护。', 'PROTECTION_CONFLICT')
+    fingerprint = m.digest('emoblocks.emotion-input.v1', dict(base=base, emotion=placement['emotion'],
+        intensity_points=project['intensity_points'], start_tick=placement['start_tick'],
+        protected_notes=protected, protected_ranges=ranges, seed=generation['seed'], parameters=params,
+        algorithm_version=generation['algorithm_version']))
+    if generation['input_fingerprint'] != fingerprint or variant['id'] != m.digest('emoblocks.emotion-material.v1', fingerprint):
+        m.reject('保存的情绪基础输入指纹不匹配。', 'INVALID_CANDIDATE')
+    actual = m.indexed(variant['notes']); changed = []
+    for original in base['notes']:
+        original_id = original['id']
+        changed_id = m.digest('emoblocks.emotion-note.v1', [variant['id'], original_id])
+        note = actual.pop(original_id, None)
+        if note is None:
+            note = actual.pop(changed_id, None)
+        if note is None:
+            m.reject('情绪结果删除或替换了基础发声身份。', 'INVALID_CANDIDATE')
+        different = any(note[k] != original[k] for k in ('pitch', 'start_tick', 'duration_tick'))
+        if original_id in frozen:
+            if m.structural_notes([note]) != m.structural_notes([original]):
+                m.reject('保存的情绪结果改变完整保护音符。', 'PROTECTION_CONFLICT')
+        elif (note['start_tick'] != original['start_tick'] or not 0 < note['duration_tick'] <= original['duration_tick']
+                or abs(note['pitch'] - original['pitch']) > params['max_pitch_shift']
+                or note['origin'] != original['origin']):
+            m.reject('保存的情绪结果越过轻改范围或基础来源。', 'INVALID_CANDIDATE')
+        if note['duration_tick'] != original['duration_tick'] and (
+                placement['emotion'] not in ('suspense', 'crisis') or original['duration_tick'] % 10
+                or (original['duration_tick'] - note['duration_tick']) % 10
+                or note['duration_tick'] * 4 < original['duration_tick'] * 3):
+            m.reject('保存的时值轻改不符合已记录的规则单位与幅度。', 'INVALID_CANDIDATE')
+        if different:
+            if (note['id'] != changed_id or note['slice'] is not None
+                    or note['lineage'] != list(dict.fromkeys(original['lineage'] + [original_id]))):
+                m.reject('改变的音符缺少本次基础血缘。', 'INVALID_CANDIDATE')
+            changed.append(dict(operation='local-emotion-melody', emotion=placement['emotion'], input_note_id=original_id,
+                from_pitch=original['pitch'], to_pitch=note['pitch'], start_tick=original['start_tick'],
+                original_duration_tick=original['duration_tick'], output_duration_tick=note['duration_tick'],
+                shortened_by_tick=original['duration_tick']-note['duration_tick'], rule_unit_ticks=10))
+        elif any(note[k] != original[k] for k in ('id', 'origin', 'lineage', 'slice')):
+            m.reject('未改写音符的来源与身份必须保持。', 'INVALID_CANDIDATE')
+    claimed_changes = [v for v in m.objects(generation['operations']) if isinstance(v, dict) and v.get('operation') == 'local-emotion-melody']
+    if (actual or len(changed) > params['max_changes'] or type(generation['melody_changed']) is not bool
+            or generation['melody_changed'] != bool(changed) or sorted(changed, key=m.canonical) != sorted(claimed_changes, key=m.canonical)):
+        m.reject('实际情绪音符与轻改记录不一致。', 'INVALID_CANDIDATE')
+    _warnings(generation['warnings'])
+    if not changed and not generation['warnings']:
+        m.reject('未改变旋律时必须保留真实限制提示。', 'INVALID_CANDIDATE')
+    if not isinstance(generation['accompaniment_hints'], dict) or generation['accompaniment_hints'].get('status') != 'suggested-not-rendered':
+        m.reject('基础情绪编配只能是未渲染建议。', 'INVALID_CANDIDATE')
+
+
+def _private_project(request, selections, stored_variants=None):
     _selections(request, selections)
     before = request['project']; project = copy.deepcopy(before)
     project['contract_rev'] = REV
@@ -233,19 +321,24 @@ def _private_project(request, selections):
                          emotion=selection['emotion'], emotion_variant=None)
         project['placements'].append(placement); new.append(identity)
     m.invalidate_records(project, before)
-    output = memory.recompute(copy.deepcopy(before), copy.deepcopy(project))
-    m.shape(output, 'automatic_memory emotion_variants')
     expected_memory = memory.expected_protection(project)
-    if output['automatic_memory'] != expected_memory or set(output['emotion_variants']) != {p['id'] for p in project['placements']}:
-        m.reject('正式记忆重算结果不完整或不匹配。', 'PROTECTION_CONFLICT')
+    if stored_variants is None:
+        output = memory.recompute(copy.deepcopy(before), copy.deepcopy(project))
+        m.shape(output, 'automatic_memory emotion_variants')
+        if output['automatic_memory'] != expected_memory or set(output['emotion_variants']) != {p['id'] for p in project['placements']}:
+            m.reject('正式记忆重算结果不完整或不匹配。', 'PROTECTION_CONFLICT')
+        variants = output['emotion_variants']
+    else:
+        if set(stored_variants) != set(new):
+            m.reject('保存的新增情绪快照与实际放置不匹配。', 'INVALID_CANDIDATE')
+        variants = stored_variants
     project['protections'] = [p for p in project['protections'] if not m.managed_memory(project, p)]
     if expected_memory is not None:
         project['protections'].append(copy.deepcopy(expected_memory))
     for p in project['placements']:
         if p['id'] in new:
-            p['emotion_variant'] = copy.deepcopy(output['emotion_variants'][p['id']])
-            if p['emotion'] != 'calm' and p['emotion_variant'] is None:
-                m.reject('新增放置缺少实际情绪结果。', 'PROTECTION_CONFLICT')
+            p['emotion_variant'] = copy.deepcopy(variants[p['id']])
+            _variant_check(project, p, p['emotion_variant'])
     old_memory = next((p for p in before['protections'] if m.managed_memory(before, p)), None)
     if old_memory:
         old = dict(old_memory); current = dict(expected_memory or {})
@@ -329,10 +422,10 @@ def _union(ranges):
     return result
 
 
-def _candidate(request, proposal):
+def _candidate(request, proposal, stored_variants=None):
     m.shape(proposal, 'id placements score reasons'); m.ident(proposal['id'])
     _score(proposal['score']); _warnings(proposal['reasons'])
-    project, added = _private_project(request, proposal['placements'])
+    project, added = _private_project(request, proposal['placements'], stored_variants)
     new_ids = set(added)
     notes = [n for p in project['placements'] for n in m.placed_notes(p)]
     resolutions = []
@@ -353,9 +446,9 @@ def _candidate(request, proposal):
         emotion_arrangement=[dict(placement_id=p['id'], emotion=p['emotion']) for p in project['placements'] if p['id'] in new_ids],
         memory_info=memory.memory_info(project), protection_summary=m.protection_summary(project['protections']),
         score=copy.deepcopy(proposal['score']), reasons=copy.deepcopy(proposal['reasons']),
-        provenance=[dict(gap_id=v['gap_id'], start_tick=v['start_tick'], material_id=v['material']['id'],
+        provenance=dict(placements=[dict(gap_id=v['gap_id'], start_tick=v['start_tick'], material_id=v['material']['id'],
                          provenance=copy.deepcopy(v['material']['provenance']), generation=copy.deepcopy(v['material']['generation']))
-                    for v in proposal['placements']],
+                    for v in proposal['placements']]),
         content_fingerprint=fingerprint, music_fingerprint=m.digest('emoblocks.completion-music.v1', music_projection(project)),
         capabilities=dict(score_scope='BASE_COMPLETION', target_complete=True, can_audition=False, can_apply=False, can_export_final=False))
     return candidate
@@ -380,7 +473,9 @@ def validate_candidate(request, candidate):
         if gap is None:
             m.reject('候选放置不在原目标范围。', 'INVALID_CANDIDATE')
         selections.append(dict(gap_id=gap['id'], start_tick=p['start_tick'], material=p['base_snapshot'], emotion=p['emotion']))
-    expected = _candidate(request, dict(id='independent-validation', placements=selections, score=candidate['score'], reasons=candidate['reasons']))
+    m.shape(candidate['provenance'], 'placements')
+    stored_variants = {p['id']:copy.deepcopy(p['emotion_variant']) for p in additions}
+    expected = _candidate(request, dict(id='independent-validation', placements=selections, score=candidate['score'], reasons=candidate['reasons']), stored_variants)
     if candidate != expected:
         m.reject('候选与实际基础排布、保护、音乐或派生摘要不一致。', 'INVALID_CANDIDATE')
 
