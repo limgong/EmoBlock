@@ -22,6 +22,8 @@ class CurveCanvas(ttk.Frame):
         super().__init__(parent, style='Curve.Panel.TFrame')
         self.app = app
         self.project = None
+        self.readonly = False
+        self.view_memory_info = None
         self.selected_id = None
         self.scale = .085
         self.margin = 36
@@ -31,16 +33,21 @@ class CurveCanvas(ttk.Frame):
         self.edge_timer = None
         self.intensity_draft = None
         self.point_boxes = []
+        self.gap_boxes = {}
         self.mode = 'points'
         tools = ttk.Frame(self,style='Curve.Panel.TFrame')
         tools.pack(fill='x',pady=(0,4))
         self.mode_buttons = {}
-        for mode,text in (('points','控制点'),('trace','手绘')):
+        for mode,text in (('points','控制点'),('trace','手绘'),('gaps','选空缺')):
             button = ttk.Button(tools,text=text,style='Curve.TButton',command=lambda m=mode:self.set_mode(m))
             button.pack(side='left',padx=(0,4))
             self.mode_buttons[mode] = button
         hint(self.mode_buttons['points'],'点击空白添加控制点；拖动控制点调整时间与强度，Esc 取消。',app.show_detail)
         hint(self.mode_buttons['trace'],'局部手绘保留区外控制点；释放一次提交，Esc 或拖出取消。',app.show_detail)
+        hint(self.mode_buttons['gaps'],'只选择后端查询的精确空缺；默认补全全部，点击不会计算或播放。',app.show_detail)
+        self.all_gaps_button = ttk.Button(tools,text='全部空缺',style='Curve.TButton',
+            command=lambda:app.completion.select_gap(None))
+        self.all_gaps_button.pack(side='left')
         self.canvas = tk.Canvas(self, height=380, highlightthickness=0, takefocus=True, xscrollincrement=1)
         self.canvas.pack(fill='both', expand=True)
         self.scrollbar = ttk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
@@ -53,18 +60,23 @@ class CurveCanvas(ttk.Frame):
             self.canvas.bind(event, handler)
         self.bind('<Destroy>', self.destroyed, add='+')
 
-    def set_project(self, project):
+    def set_project(self, project, readonly=False, memory_info=None):
         if self.intensity_draft and project!=self.project:
             self.cancel()
         self.project = project
+        self.readonly = readonly
+        self.view_memory_info = memory_info
         if not project or self.selected_id not in {p['id'] for p in project['placements']}:
             self.selected_id = None
         self.draw()
         for mode,button in self.mode_buttons.items():
             button.configure(style='Curve.Primary.TButton' if mode==self.mode else 'Curve.TButton')
-            button.state(['!disabled'] if self.app.can_edit('intensity_edit') else ['disabled'])
+            enabled = not readonly and self.app.can_edit('completion' if mode=='gaps' else 'intensity_edit')
+            button.state(['!disabled'] if enabled else ['disabled'])
+        self.all_gaps_button.state(['!disabled'] if not readonly and self.app.can_edit('completion') else ['disabled'])
 
     def set_mode(self, mode):
+        if self.readonly:return
         self.cancel()
         self.mode = mode
         self.set_project(self.project)
@@ -101,6 +113,7 @@ class CurveCanvas(ttk.Frame):
         c.delete('all')
         self.boxes = {}
         self.point_boxes = []
+        self.gap_boxes = {}
         if self.project is None:
             c.configure(scrollregion=(0,0,max(1,c.winfo_width()),max(1,c.winfo_height())))
             c.create_text(24,80,anchor='nw',text='旧工程只读 · 请选择已有成品试听或导出',fill=p['muted'],font=font())
@@ -129,6 +142,15 @@ class CurveCanvas(ttk.Frame):
             if a>cursor:
                 c.create_text((self.x(cursor)+self.x(a))/2,height-48,text='待补全',fill=p['muted'],font=font(8))
             cursor = b
+        completion = getattr(self.app,'completion',None)
+        if completion and not self.readonly:
+            for gap in completion.gaps:
+                a,b = self.x(gap['start_tick']),self.x(gap['end_tick'])
+                self.gap_boxes[gap['id']] = (a,45,b,height-37)
+                selected = completion.selected_gap_id==gap['id']
+                if self.mode=='gaps' or selected:
+                    c.create_rectangle(a,45,b,height-37,outline=p['accent'] if selected else p['line'],
+                                       width=1,dash=() if selected else (3,3),tags='gap-range')
         coords = []
         for tick in range(0,total+1,max(1,total//400)):
             coords.extend((self.x(tick), self.y(self.level(tick))))
@@ -162,13 +184,15 @@ class CurveCanvas(ttk.Frame):
             self.point_boxes.append((index,x,y))
             c.create_oval(x-6,y-6,x+6,y+6,fill=p['panel'],outline=p['accent'],width=1,tags='control-point')
         text = ('手绘 · 释放提交，Esc 取消' if self.mode=='trace' else '控制点 · 点击添加，拖动调整')
+        if self.mode=='gaps':text = '选择精确空缺 · 未选中时处理全部'
         if not self.app.can_edit('intensity_edit'):text = '强度不可编辑'
+        if self.readonly:text = '基础候选只读 · 尚未处理bridge与连接'
         c.create_text(self.margin,height-16,anchor='w',text=text+' · 移动不搬动强度线',fill=p['muted'],font=font(8))
         c.xview_moveto(view)
 
     def memory_overlay(self):
-        info = self.app.state_data['memory_info']
-        if not info or not self.app.state_data['capabilities'].get('memory',False) or info['state']!='BOUND':
+        info = self.view_memory_info if self.readonly else self.app.state_data['memory_info']
+        if not info or (not self.readonly and not self.app.state_data['capabilities'].get('memory',False)) or info['state']!='BOUND':
             return None
         protection = next((p for p in self.project['protections'] if p['id']==info['protection_id']
                            and p['kind']=='memory' and p['placement_id']==info['placement_id']
@@ -206,7 +230,7 @@ class CurveCanvas(ttk.Frame):
             if overlay and self.hit(x,y)==overlay[0]['placement_id']:
                 region = overlay[1] or overlay[0]['range']
                 if region and self.x(region['start_tick'])<=x<=self.x(region['end_tick']):
-                    self.app.show_detail(self.app.memory_description())
+                    self.app.show_detail(self.app.preview_memory_description() if self.readonly else self.app.memory_description())
 
     def contains_root(self, x_root, y_root):
         c = self.canvas
@@ -224,6 +248,12 @@ class CurveCanvas(ttk.Frame):
                 return ident
         return None
 
+    def hit_gap(self, x, y):
+        for ident,(a,t,b,d) in reversed(list(self.gap_boxes.items())):
+            pad = .5 if b-a<1 else 0
+            if a-pad<=x<=b+pad and t<=y<=d:return ident
+        return None
+
     def press(self, event):
         if self.app.material_drag:return
         self.cancel()
@@ -231,6 +261,14 @@ class CurveCanvas(ttk.Frame):
         if not self.project:return
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
+        if self.readonly:
+            ident = self.hit(x,y)
+            if ident:
+                self.selected_id = ident
+                placement = next(p for p in self.project['placements'] if p['id']==ident)
+                self.app.show_detail(self.app.completion.describe_placement(placement)+' · 基础候选只读')
+            self.draw()
+            return
         point_index = next((i for i,a,b in self.point_boxes if abs(x-a)<=10 and abs(y-b)<=10),None)
         if self.app.can_edit('intensity_edit') and (self.mode=='trace' or point_index is not None):
             self.begin_intensity(event,point_index if self.mode=='points' else None)
@@ -245,6 +283,9 @@ class CurveCanvas(ttk.Frame):
             if self.app.editable:
                 self.drag = dict(id=ident,start_root=(event.x_root,event.y_root),
                                  offset=x-self.x(placement['start_tick']),length=placement['length_ticks'],active=False)
+        elif self.mode=='gaps':
+            ident = self.hit_gap(x,y)
+            if ident:self.app.completion.select_gap(ident)
         elif self.app.can_edit('intensity_edit'):
             self.begin_intensity(event,None)
         self.draw()
@@ -374,10 +415,11 @@ class CurveCanvas(ttk.Frame):
         if self.canvas.grab_current()==self.canvas:
             self.canvas.grab_release()
         self.draw()
+        if event is not None and self.readonly:self.app.completion.exit_preview()
         return 'break' if event else None
 
     def delete_selected(self, event=None):
-        if self.selected_id and self.app.editable:
+        if not self.readonly and self.selected_id and self.app.editable:
             self.app.edit('delete',placement_id=self.selected_id)
         return 'break'
 

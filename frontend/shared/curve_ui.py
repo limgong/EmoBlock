@@ -21,6 +21,7 @@ from scroll_input import touchpad_deltas, scroll_canvas_pixels
 from curve_theme import Theme, font, hint, EMOTION_NAMES
 from curve_cards import MaterialCards
 from curve_canvas import CurveCanvas, snap_tick
+from curve_completion_ui import CompletionUI
 
 METHODS = [('variant','局部变化'),('answer','回答句'),('counter','副旋律规则'),
            ('rhythm','节奏重组'),('develop','动机发展'),('density','疏密变化')]
@@ -264,6 +265,7 @@ class CurveApplication:
             self.file_drop = FileDrop(root,self.drop_files)
         except (OSError,tk.TclError) as exc:
             self.show_detail('可用“导入旋律”选择文件。文件拖入未启用：'+str(exc))
+        self.completion = CompletionUI(self)
         ui_platform.setup_window(root,self)
         for event in ui_platform.EDIT_SHORTCUT_EVENTS:
             root.bind(event,self.edit_shortcut,add='+')
@@ -280,6 +282,7 @@ class CurveApplication:
     @property
     def editable(self):
         return (not self.jobs and self.state_data['access_mode']=='editable'
+                and not (getattr(self,'completion',None) and self.completion.preview_candidate)
                 and self.state_data['capabilities'].get('edit',True))
 
     def can_edit(self, capability):
@@ -292,7 +295,7 @@ class CurveApplication:
 
     def update_emotions(self):
         placement = self.selected_placement()
-        if not placement:
+        if not placement or (getattr(self,'completion',None) and self.completion.preview_candidate):
             self.page.emotion_panel.pack_forget()
             return
         self.page.emotion_panel.pack(fill='x',before=self.page.memory_label,pady=(4,0))
@@ -368,7 +371,10 @@ class CurveApplication:
             saved_text = '工程已保存'
         else:
             saved_text = '工程未保存' if self.state_data['saved_path'] else '新工程 · 尚未保存'
+        if self.state_data['capabilities'].get('completion',False):
+            saved_text += ' · 候选暂存'+('未保存' if self.state_data['staging_dirty'] else '已保存')
         self.save_label.configure(text=saved_text)
+        self.completion.refresh()
         sources = project['sources'] if project else []
         materials = project['materials'] if project else []
         if self.selected_source_id not in {v['id'] for v in sources}:
@@ -389,13 +395,16 @@ class CurveApplication:
                 self.page.source_list.selection_set(i)
         self.page.draw_source()
         self.page.cards.render(materials)
-        if self.selected_target and self.selected_target[0]=='placement':
+        candidate = self.completion.preview_candidate
+        if not candidate and self.selected_target and self.selected_target[0]=='placement':
             if not project or self.selected_target[1] not in {v['id'] for v in project['placements']}:
                 self.selected_target = None
             else:self.page.timeline.selected_id = self.selected_target[1]
         self.update_emotions()
-        self.page.memory_label.configure(text=self.memory_description(compact=True),wraplength=max(220,self.page.right.winfo_width()-20))
-        self.page.timeline.set_project(project)
+        self.page.memory_label.configure(text=self.preview_memory_description() if candidate else self.memory_description(compact=True),
+                                         wraplength=max(220,self.page.right.winfo_width()-20))
+        self.page.timeline.set_project(candidate['project'] if candidate else project,
+                                       readonly=bool(candidate),memory_info=candidate['memory_info'] if candidate else None)
         if project:
             self.page.grid_count.set(str(project['grid_count']))
         self.history = self.controller.history_items()
@@ -412,6 +421,8 @@ class CurveApplication:
         self.history_button.configure(text=f'已有成品 ({len(self.history)})')
         for text,button in self.edit_buttons:
             enabled = self.editable
+            if text=='保存快照':
+                enabled = self.state_data['access_mode']=='editable' and all(j['kind']=='COMPLETION' for j in self.jobs.values())
             if text=='撤销':enabled = enabled and self.state_data['can_undo']
             if text=='重做':enabled = enabled and self.state_data['can_redo']
             button.state(['!disabled'] if enabled else ['disabled'])
@@ -420,6 +431,13 @@ class CurveApplication:
         self.update_exports()
         self.update_transport()
         self.layout_sources()
+
+    def preview_memory_description(self):
+        info = self.completion.preview_candidate['memory_info']
+        if info['state']=='PENDING_GAP':return '候选记忆待落位 · 峰值处仍为空缺。'
+        if info['state']=='PRESERVE_BLANK':return '候选记忆保留主动留白。'
+        region = info['range']
+        return '候选记忆 · '+('已保护' if info['protection_id'] else '目标未落保护')+f' · {region["start_tick"]}–{region["end_tick"]} tick'
 
     def edit(self, action, **args):
         if not self.editable:
@@ -504,6 +522,7 @@ class CurveApplication:
         return True
 
     def drain_jobs(self):
+        self.completion.drain()
         while True:
             try:
                 token,success,payload = self.messages.get_nowait()
@@ -530,6 +549,7 @@ class CurveApplication:
                 self.refresh()
 
     def cancel_jobs(self):
+        self.completion.cancel()
         for job in list(self.jobs.values()):
             self.controller.cancel_job(job['token'])
         self.jobs.clear()
@@ -779,6 +799,8 @@ class CurveApplication:
                 widget.grab_release()
         self.material_drag = None
         self.page.timeline.cancel()
+        if event is not None and self.completion.preview_candidate:
+            self.completion.exit_preview()
         return 'break' if event else None
 
     def add_combo(self, source, target_id, side):
@@ -883,7 +905,7 @@ class CurveApplication:
             return self.safe(lambda:ui_platform.open_folder(self.last_export['path'].parent))
 
     def save_project(self):
-        if not self.jobs and self.state_data['access_mode']=='editable':
+        if self.state_data['access_mode']=='editable' and all(j['kind']=='COMPLETION' for j in self.jobs.values()):
             path = self.controller.save_snapshot()
             self.refresh()
             self.tell('工程快照已保存：'+str(path))
@@ -891,6 +913,9 @@ class CurveApplication:
 
     def _switched(self):
         self.jobs.clear()
+        self.completion.restore_view()
+        self.completion.selected_gap_id = None
+        self.completion.choice.set('')
         self.cancel_interaction()
         self.combo_inputs = []
         self.page.combo_panel.pack_forget()
@@ -900,6 +925,9 @@ class CurveApplication:
         self.refresh()
 
     def open_project(self, path=None):
+        if self.jobs:
+            self.tell('请先明确取消当前任务，再打开工程。')
+            return False
         path = path or filedialog.askopenfilename(parent=self.root,filetypes=[('工程快照','*.json')])
         if path:
             self.controller.load(path)
@@ -907,6 +935,9 @@ class CurveApplication:
             self.tell('工程已打开'+(' · 旧工程只读' if self.state_data['access_mode']!='editable' else ''))
 
     def new_project(self):
+        if self.jobs:
+            self.tell('请先明确取消当前任务，再新建工程。')
+            return False
         self.controller.new()
         self._switched()
         self.tell('新的空工程 · 尚未保存。')
@@ -978,6 +1009,9 @@ class CurveApplication:
         self.timer = self.root.after(80,self.tick)
 
     def close(self):
+        if self.jobs:
+            self.tell('请先明确取消当前任务，再关闭窗口。')
+            return False
         try:
             self.controller.autosave_if_needed()
         except Exception as exc:
@@ -994,6 +1028,8 @@ class CurveApplication:
 
     def destroyed(self, event):
         if event.widget==self.root and not self.closed:
+            for job in self.jobs.values():
+                if job['kind']=='COMPLETION':job['cancel'].set()
             self.closed = True
             if hasattr(self,'timer'):self.root.after_cancel(self.timer)
             if self.card_scroll_timer is not None:self.root.after_cancel(self.card_scroll_timer)
