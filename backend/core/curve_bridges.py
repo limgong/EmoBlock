@@ -209,11 +209,13 @@ def parent_ref(request, emission_id):
                 ids = {n['id'], *n['lineage']}
                 parent = next((v for v in base['notes'] if v['id'] in ids), None)
                 if parent is None: m.reject('组合变体缺少具体基础发声。', 'INVALID_BRIDGE')
-                ident = parent['id']; current = base
+                current = base; offset = 0
                 while current['kind'] == 'combination':
-                    child = next((c for c in current['children'] if ident.startswith(c['occurrence_id'] + ':')), None)
+                    child = next((c for c in current['children']
+                        if offset+c['offset_tick']<=parent['start_tick']
+                        <offset+c['offset_tick']+c['snapshot']['length_ticks']),None)
                     if child is None: m.reject('组合动机路径不可解析。', 'INVALID_BRIDGE')
-                    path.append(child['occurrence_id']); ident = ident[len(child['occurrence_id'])+1:]
+                    path.append(child['occurrence_id']);offset+=child['offset_tick']
                     current = child['snapshot']
             return dict(placement_id=place['id'], component_path=path, material_snapshot_id=material['id'], note_id=n['id'])
     m.reject('动机父音符不属于实际基础排布。', 'INVALID_BRIDGE')

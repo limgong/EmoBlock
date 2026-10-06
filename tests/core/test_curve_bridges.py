@@ -155,4 +155,97 @@ class BridgeServiceTests(unittest.TestCase):
         store.validate_bundle(c._current_bundle())
 
 
+class BridgeActualMusicTests(unittest.TestCase):
+    def start(self, count=4):
+        from test_curve_bridge_music import fixture as music_fixture
+        c=w.Controller(music_fixture(count));cap=c.capture_bridge()
+        return c,cap
+
+    def test_public_actual_roundtrip_source_and_reproducibility_no_p6(self):
+        c,cap=self.start();before=c.project;req=cap['request'];token=cap['token']
+        with patch('story_engine.plan',side_effect=AssertionError('old planner')),patch('story_engine.generate',side_effect=AssertionError('final pipeline')):
+            prop=w.decide_bridge(req);plan=c.lock_bridge(token,prop)
+            self.assertEqual(c.bridge_state()['phase'],'BRIDGE_LOCKED');c.begin_bridge_generation(token,plan)
+            result=w.generate_bridges(req,plan);b.validate_raw(req,plan,result)
+        self.assertEqual(prop['decision'],'selected');self.assertEqual(result['status'],'SUCCEEDED')
+        self.assertTrue(c.record_bridge_result(token,result['results'][0]))
+        self.assertTrue(c.finish_bridge(token,result));self.assertEqual(c.project,before)
+        row=result['results'][0];self.assertEqual(row['material']['length_ticks'],plan['windows'][0]['end_tick'])
+        self.assertEqual(row['emotion_processing']['pass_count'],1);self.assertEqual(len(row['children']),4)
+        self.assertEqual(len(row['operations']),len(row['base_material']['notes']))
+        self.assertTrue(any(op['rule'] in ('answer','sequence','rhythm') for op in row['operations']))
+        other=c.capture_bridge();otherplan=c.lock_bridge(other['token'],w.decide_bridge(other['request']))
+        regenerated=w.generate_bridges(other['request'],otherplan)
+        musical=lambda rows:[(n['pitch'],n['start_tick'],n['duration_tick']) for r in rows for n in r['notes']]
+        self.assertEqual(musical(result['results']),musical(regenerated['results']))
+
+    def test_partial_success_failure_retains_content_and_both_locks(self):
+        c,cap=self.start(6);req=cap['request'];token=cap['token']
+        prop=decision(req,[(0,3840),(7680,11520)]);plan=c.lock_bridge(token,prop);c.begin_bridge_generation(token,plan)
+        generated=w.generate_bridges(req,plan);b.validate_raw(req,plan,generated)
+        first=generated['results'][0];self.assertTrue(c.record_bridge_result(token,first))
+        failure=b.error('SYNTHETIC_FAILURE','第二桥模拟失败')
+        second=b.failure_result(req,plan,plan['windows'][1]['id'],failure)
+        self.assertTrue(c.finish_bridge(token,raw(req,plan,[first,second],'FAILED',failure)))
+        state=c.bridge_state();self.assertEqual(state['status'],'FAILED')
+        self.assertEqual([p['status'] for p in state['protections']],['CONTENT_READY','RANGE_LOCKED'])
+        self.assertFalse(state['capabilities']['can_plan_connections']);self.assertEqual(state['results'][0],first)
+        self.assertEqual(c._bridge_attempt(token['request_id'])['staged_materials'][0],first['material'])
+        before=copy.deepcopy(state)
+        self.assertFalse(c.finish_bridge(token,generated));self.assertEqual(c.bridge_state(),before)
+
+    def test_tamper_pitch_time_source_ledger_children_masks_and_hash_rejected(self):
+        c,cap=self.start();req=cap['request'];plan=c.lock_bridge(cap['token'],w.decide_bridge(req))
+        actual=w.generate_bridges(req,plan)['results'][0];b.validate_result(req,plan,actual)
+        changes=[lambda r:r['base_material']['notes'][0].update(pitch=61),
+                 lambda r:r['material']['notes'][0].update(start_tick=1),
+                 lambda r:r['notes'][0].update(duration_tick=1),
+                 lambda r:r['operations'][0]['parent_ref'].update(note_id='wrong'),
+                 lambda r:r['operations'][0].update(input_note_id=req['base_notes'][-1]['id']),
+                 lambda r:r['base_material']['notes'][0].update(lineage=[]),
+                 lambda r:r['base_material']['notes'][0]['origin'].update(source_note_id='source:1:0'),
+                 lambda r:r['base_material']['generation'].update(input_fingerprint='forged'),
+                 lambda r:r['material']['provenance'].update(parent_snapshots={}),
+                 lambda r:r['children'][0]['notes'][0].update(pitch=61),
+                 lambda r:r['emotion_processing']['segments'][0].update(seed=0),
+                 lambda r:r.update(plan_version=plan['version']+1)]
+        for change in changes:
+            bad=copy.deepcopy(actual);change(bad)
+            bad['content_fingerprint']=b.content_fingerprint(bad['range'],plan['windows'][0]['blank_mask'],bad['notes'])
+            with self.subTest(change=change),self.assertRaises(m.ProjectError):b.validate_result(req,plan,bad)
+        for rows in ([],[actual,actual],[dict(actual,bridge_id='extra')]):
+            with self.assertRaises(m.ProjectError):b.validate_raw(req,plan,raw(req,plan,rows))
+
+    def test_ready_persistence_is_pure_and_attempt_tampering_fails(self):
+        c,cap=self.start();req=cap['request'];plan=c.lock_bridge(cap['token'],w.decide_bridge(req));c.begin_bridge_generation(cap['token'],plan)
+        result=w.generate_bridges(req,plan);self.assertTrue(c.finish_bridge(cap['token'],result))
+        with tempfile.TemporaryDirectory() as tmp:
+            path=c.save_snapshot(Path(tmp)/'桥 ready 中文.json')
+            with (patch('curve_bridge_music.decide',side_effect=AssertionError('decision')),
+                  patch('curve_melody.compose_bridge_phrase',side_effect=AssertionError('compose')),
+                  patch('curve_emotion.emotion_variant',side_effect=AssertionError('emotion')),
+                  patch('curve_memory.recompute',side_effect=AssertionError('memory'))):
+                archive=store.load(path)['bundle'];store.validate_bundle(archive)
+            self.assertEqual(archive['attempts'][-1]['bridge']['outcome'],c.bridge_state()['outcome'])
+            bad=copy.deepcopy(archive);bad['attempts'][-1]['protections'][0]['notes'][0]['pitch']+=1
+            with self.assertRaises(m.ProjectError):store.validate_bundle(bad)
+
+    def test_nested_combination_flat_identity_keeps_real_occurrence_path(self):
+        from test_curve_bridge_music import fixture as music_fixture
+        p=music_fixture();first,second=p['materials'][:2]
+        combo=w.combine(p,[first,second]);nested=w.combine(p,[combo,first]);nested['id']='nested'
+        for i,n in enumerate(nested['notes']):n['id']='independent-flat-'+str(i)
+        m.material_check(nested,m.source_index(p['sources']))
+        p['materials'].append(nested);p['placements']=[dict(id='nested-use',material_id=nested['id'],base_snapshot=nested,
+             start_tick=0,length_ticks=nested['length_ticks'],emotion='calm',emotion_variant=None)]
+        p['blank_regions']=[dict(id='endblank',start_tick=nested['length_ticks'],end_tick=p['total_ticks'],reason='主动留白')]
+        c=w.Controller(p);cap=c.capture_bridge();req=cap['request']
+        expected=[combo['children'][0]['occurrence_id'],first['id']]
+        ref=b.parent_ref(req,'nested-use:'+nested['notes'][0]['id'])
+        self.assertEqual(ref['component_path'],[nested['children'][0]['occurrence_id'],combo['children'][0]['occurrence_id']])
+        plan=c.lock_bridge(cap['token'],decision(req,[(0,nested['length_ticks'])]))
+        result=w.generate_bridges(req,plan);b.validate_raw(req,plan,result)
+        self.assertEqual(result['status'],'SUCCEEDED')
+
+
 if __name__=='__main__':unittest.main()
