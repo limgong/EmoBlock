@@ -103,3 +103,12 @@ P5契约独立ROUND2 PASS：受检HEAD=9901766，前后指纹186d265ad323c9b7152
 P5实施ROUND2实际独立PASS已核对：HEAD=8706f96fa9c8aecdbb613f115547f64255da9b3c，192文件前后指纹c733742fd431bfd27e751ca51bda3ad1bb2fa3414d1ce36d7b928490af8ccbd3；集成与两个worker源码一致且干净。用户明确授权P6，历史规范和验收保留。第12节p6为DRAFT，算法/前端只读评审与verifier独立PASS后才冻结实现；只处理真实就绪桥保护外连接，不进入P7，不开放最终方案应用/试听/导出。四角色及本轮记录在仓库外运行目录，使用已有Python和独立数据，文件所有权/验收见12.6。
 
 P6-CONTRACT独立ROUND1 PASS：HEAD=5c70a8c6d0e0b724831a0f82a4139fe66b5f1138，193文件前后指纹1dd4d9914e45d51853de7b89dd24936502c273f0deba2b29b173e90098df90e2。lead核对实际pane与review一致，仅更新状态FROZEN，正文规则不改；worker安全同步后按12.6范围实现P6，停止于P7之前。
+
+
+## P7启动补充
+
+P6实施ROUND2的实际独立PASS、HEAD及完整199文件前后指纹已经现场核对。P7新RUN保留旧验收与人工待验，复用既有四角色/worktree/依赖。第13节p7先DRAFT，算法/前端已完成两轮只读建议，lead整合13.10–13.16；接下来独立契约ROUND1，PASS后才能FROZEN和派功能，不能以worker设计建议当验收。
+
+lead独占公共curve_final/curve_recommendations/curve_final_render/curve_application服务、curve_project/session/store/workflow、story_engine主流程；旧completion/bridge/connection的p7来源读取适配仅lead改，旧音乐规则/输入校验不放宽。算法只新增curve_boundary_music及专项；前端shared RecommendationUI、唯一Canvas/共用player和既有stage互斥接线及对应tests；具体ALLOW_FILES在任务中，不并发写同模块。
+
+契约和实现各最多5轮，冻结时整目录不得写；修复重新冻结，明确RUN/TASK/ROUND/HEAD/前后同完整指纹PASS。候选mode只编配/渲染，不重作曲；单gap局部可听/确认不可正式整曲导出；确认同谱/一次undo/幂等、接受绑定不自失效。实际LMMS及设备串行，完整试听与应用本轮必须真接通，人工听感/Windows和截图仍分别待验，不以P8为理由交假音频。完成P7停止，不派P8。
