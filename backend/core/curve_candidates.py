@@ -59,7 +59,7 @@ def _contexts(project, targets):
         left = max(lefts, key=lambda p: (_range(p)['end_tick'], p['id'])) if lefts else None
         right = min(rights, key=lambda p: (p['start_tick'], p['id'])) if rights else None
         result.append(dict(gap_id=gap['id'], left=copy.deepcopy(left), right=copy.deepcopy(right),
-                           left_notes=m.placed_notes(left) if left else [], right_notes=m.placed_notes(right) if right else []))
+                           left_notes=__import__('curve_application').context_notes(project,left), right_notes=__import__('curve_application').context_notes(project,right)))
     return result
 
 
@@ -312,7 +312,7 @@ def _variant_check(project, placement, variant, allow_calm_snapshot=False):
 def _private_project(request, selections, stored_variants=None):
     _selections(request, selections)
     before = request['project']; project = copy.deepcopy(before)
-    project['contract_rev'] = REV
+    project['contract_rev'] = before['contract_rev'] if before['contract_rev'] == 'curve-workflow-v2-r3-p7' else REV
     library = m.indexed(project['materials'])
     new = []
     for index, selection in enumerate(selections):
@@ -330,6 +330,7 @@ def _private_project(request, selections, stored_variants=None):
                          emotion=selection['emotion'], emotion_variant=None)
         project['placements'].append(placement); new.append(identity)
     m.invalidate_records(project, before)
+    __import__('curve_application').capture_private_music(before,project,new)
     expected_memory = memory.expected_protection(project)
     if stored_variants is None:
         output = memory.recompute(copy.deepcopy(before), copy.deepcopy(project))
@@ -355,8 +356,8 @@ def _private_project(request, selections, stored_variants=None):
         if old != current:
             m.reject('补全不能移动或放宽已有记忆保护。', 'PROTECTION_CONFLICT')
     # Preserve fixed locks AND their actual music/rest; not just lock metadata.
-    original_notes = [n for p in before['placements'] for n in m.placed_notes(p)]
-    actual_notes = [n for p in project['placements'] for n in m.placed_notes(p)]
+    original_notes = m.current_notes(before)
+    actual_notes = m.current_notes(project)
     for lock in before['protections']:
         ranges = m.protection_ranges(lock)
         def inside(notes):
@@ -436,7 +437,7 @@ def _candidate(request, proposal, stored_variants=None):
     _score(proposal['score']); _warnings(proposal['reasons'])
     project, added = _private_project(request, proposal['placements'], stored_variants)
     new_ids = set(added)
-    notes = [n for p in project['placements'] for n in m.placed_notes(p)]
+    notes = m.current_notes(project)
     resolutions = []
     for gap in request['target_gaps']:
         ids = [n['id'] for p in project['placements'] if p['id'] in new_ids for n in m.placed_notes(p)

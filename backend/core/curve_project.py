@@ -4,16 +4,19 @@ import hashlib
 import json
 import math
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import intensity_curve
 
 SCHEMA = 'emoblocks.assembly.v2'
 SPEC_REV = 'curve-workflow-v2-r3'
 CONTRACT_REV = 'curve-workflow-v2-r3-p4'
-SUPPORTED_CONTRACT_REVS = ('curve-workflow-v2-r3-p0', 'curve-workflow-v2-r3-p23', CONTRACT_REV)
+SUPPORTED_CONTRACT_REVS = ('curve-workflow-v2-r3-p0', 'curve-workflow-v2-r3-p23', CONTRACT_REV, 'curve-workflow-v2-r3-p7')
 PPQ = 480
 BAR = PPQ * 4
 EMOTIONS = ('calm', 'hope', 'sad', 'suspense', 'crisis', 'resolve')
+_IDENTITY_CONTEXT = ContextVar('curve_private_identity', default=None)
 RECORD_FIELDS = {
     'bridge_plan': 'candidate_id candidate_fingerprint automatic_decision bridge_ids manual_bridge_ids ranges reasons joint_boundary_conditions',
     'bridge_result': 'bridge_id plan_id plan_version protection_id material_snapshot validation',
@@ -22,6 +25,7 @@ RECORD_FIELDS = {
     'boundary_plan': 'bridge_plan_id bridge_plan_version protection_summary_fingerprint operations original_notes',
     'final_score': 'total_ticks notes protection_summary_fingerprint validation',
     'accepted_candidate': 'final_score_id transaction_id input_snapshot_id',
+    'captured_music': 'source_score_ref source_input_fingerprint source_notes performance_map base_binding_fingerprint added_placement_ids',
 }
 
 
@@ -36,7 +40,19 @@ def reject(message, code='INVALID_PROJECT'):
 
 
 def uid():
+    context = _IDENTITY_CONTEXT.get()
+    if context is not None:
+        context['serial'] += 1
+        return digest('emoblocks.private-attempt-id.v1', dict(namespace=context['namespace'], serial=context['serial']))
     return uuid.uuid4().hex
+
+
+@contextmanager
+def deterministic_ids(namespace):
+    """Thread-local private facts: replaying one captured request is reproducible."""
+    token = _IDENTITY_CONTEXT.set(dict(namespace=namespace,serial=0,validated_projects=set()))
+    try: yield
+    finally: _IDENTITY_CONTEXT.reset(token)
 
 
 def canonical(value):
@@ -216,6 +232,13 @@ def protection_summary(protections):
 def placed_notes(placement):
     material = placement['emotion_variant'] or placement['base_snapshot']
     return [dict(n, id=placement['id'] + ':' + n['id'], start_tick=n['start_tick'] + placement['start_tick']) for n in material['notes']]
+
+
+def current_notes(project):
+    if project['contract_rev'] == 'curve-workflow-v2-r3-p7':
+        from curve_application import current_notes as effective
+        return effective(project)
+    return sorted([n for p in project['placements'] for n in placed_notes(p)], key=lambda n:(n['start_tick'],n['pitch'],n['duration_tick'],n['id']))
 
 
 def protection_ranges(protection):
@@ -574,7 +597,18 @@ def intensity_at(project, tick):
 
 
 def invalidate_records(project, before):
+    fixed = set()
+    if before['contract_rev'] == 'curve-workflow-v2-r3-p7':
+        from curve_application import binding_fingerprint
+        if binding_fingerprint(project) == binding_fingerprint(before): return
+        # A fixed bridge is an immutable accepted fact, not a proposal to rerun.
+        old = indexed(before['protections'])
+        for lock in project['protections']:
+            if lock['kind']=='bridge' and old.get(lock['id'])==lock:
+                fixed.add(lock['plan_id'])
     for record in project['records']:
+        if record['kind']=='bridge_plan' and record['id'] in fixed: continue
+        if record['kind']=='bridge_result' and record['payload']['plan_id'] in fixed: continue
         if record['status'] != 'INVALIDATED':
             record['payload']['audit_total_ticks'] = before['total_ticks']
             record['payload']['audit_context'] = copy.deepcopy(dict(placements=before['placements'], protections=before['protections']))
@@ -690,7 +724,7 @@ def _edit(project, action, recompute=None, **args):
             for p in result['placements']:
                 if p['id'] in affected and p['base_snapshot']['kind'] == 'bridge':
                     register_manual_bridge(result, p, max((q['plan_version'] or 0 for q in removed if q['placement_id'] == p['id']), default=0))
-    result['contract_rev'] = CONTRACT_REV
+    result['contract_rev'] = project['contract_rev'] if project['contract_rev'] == 'curve-workflow-v2-r3-p7' else CONTRACT_REV
     if recompute is not None:
         apply_recompute(project, result, recompute)
     validate(result)
@@ -721,7 +755,7 @@ def apply_recompute(before, edited, recompute):
     sources = source_index(edited['sources'])
     fixed = [p for p in edited['protections'] if not managed_memory(edited, p)]
     original_lock_ids = {p['id'] for p in before['protections']}
-    original_notes = [n for p in before['placements'] for n in placed_notes(p)]
+    original_notes = current_notes(before)
     for placement in edited['placements']:
         variant = variants[placement['id']]
         if variant is None and placement['emotion'] != 'calm':
@@ -736,7 +770,7 @@ def apply_recompute(before, edited, recompute):
                     or generation.get('input_material_ids') != [placement['material_id']]):
                 reject('情绪结果与当前情绪和基础快照不匹配。', 'PROTECTION_CONFLICT')
         placement['emotion_variant'] = copy.deepcopy(variant)
-    actual_notes = [n for p in edited['placements'] for n in placed_notes(p)]
+    actual_notes = current_notes(edited)
     for lock in fixed:
         if lock['id'] not in original_lock_ids:
             continue  # Explicitly replanned manual bridge is validated below.
@@ -774,7 +808,11 @@ def edit(project, action, recompute=None, **args):
 
 
 def validate(project):
+    context = _IDENTITY_CONTEXT.get()
+    key = digest('emoblocks.validation-cache.v1',project) if context is not None else None
+    if context is not None and key in context['validated_projects']: return
     try:
         _validate(project)
+        if context is not None: context['validated_projects'].add(key)
     except (KeyError, TypeError, AttributeError, RecursionError) as exc:
         raise ProjectError('INVALID_PROJECT', '工程损坏或字段类型无效。') from exc

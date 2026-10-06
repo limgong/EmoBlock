@@ -50,6 +50,14 @@ def _bridge_parent_table(project):
             table[absolute['id']] = dict(note=absolute, snapshot=actual,
                 parent_ref=dict(placement_id=placement['id'], component_path=path,
                     material_snapshot_id=actual['id'], note_id=local['id']))
+    if project['contract_rev'] == 'curve-workflow-v2-r3-p7':
+        import curve_bridges
+        from curve_application import parent_snapshot
+        actual_table = {}
+        for note in model.current_notes(project):
+            parent = curve_bridges.parent_ref(dict(base_project=project), note['id'])
+            actual_table[note['id']] = dict(note=copy.deepcopy(note),snapshot=parent_snapshot(project,parent),parent_ref=parent)
+        return actual_table
     return table
 
 
@@ -222,7 +230,7 @@ def compose_bridge_phrase(request, window, joint_boundary_conditions, should_can
         _fail('BRIDGE_GENERATION_FAILED', '桥没有实际音符，不能视为完成。')
     result = dict(id=ident, label='桥完整乐句', kind='phrase', length_ticks=length, notes=notes,
         provenance=dict(source_start_tick=None, key_context=key,
-            parent_snapshots={p['parent_ref']['placement_id']:copy.deepcopy(p['snapshot']) for p in motif}),
+            parent_snapshots={p['parent_ref'].get('placement_id') or p['parent_ref']['owner_id']:copy.deepcopy(p['snapshot']) for p in motif}),
         generation=dict(method='bridge_phrase', parameters=dict(target_ticks=length,
             rhythm_method='captured-motif-cells-with-reply-rests', motif_method='opening-answer-sequence-arrival',
             rule_unit_ticks=unit), seed=seed, rng_version=RNG_VERSION, algorithm_version=BRIDGE_VERSION,

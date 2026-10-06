@@ -95,8 +95,8 @@ def _validate(request):
         left = max(lefts, key=lambda p: p['start_tick']) if lefts else None
         right = min(rights, key=lambda p: p['start_tick']) if rights else None
         expected_contexts.append(dict(gap_id=gap['id'], left=left, right=right,
-            left_notes=model.placed_notes(left) if left else [],
-            right_notes=model.placed_notes(right) if right else []))
+            left_notes=__import__('curve_application').context_notes(project,left),
+            right_notes=__import__('curve_application').context_notes(project,right)))
     if request['contexts'] != expected_contexts:
         _fail('STALE_SNAPSHOT', '左右上下文必须来自实际放置变体及绝对音符。')
     return materials

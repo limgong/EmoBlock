@@ -93,7 +93,7 @@ def complement(ranges, total):
 
 
 def actual_notes(project):
-    result = ordered([n for p in project['placements'] for n in m.placed_notes(p)])
+    result = ordered(m.current_notes(project))
     m.indexed(result)
     return result
 
@@ -196,10 +196,19 @@ def context_sides(request, window, windows):
     rights = [p for p in placements if p['start_tick'] >= window['end_tick']]
     left = max(lefts, key=lambda p: (extent(p)['end_tick'], p['id'])) if lefts else None
     right = min(rights, key=lambda p: (p['start_tick'], p['id'])) if rights else None
-    return tuple(dict(placement_id=p['id'], notes=m.placed_notes(p)) if p else None for p in (left, right))
+    return tuple(dict(placement_id=p['id'], notes=__import__('curve_application').context_notes(request['base_project'],p)) if p else None for p in (left, right))
 
 
 def parent_ref(request, emission_id):
+    if request['base_project']['contract_rev'] == 'curve-workflow-v2-r3-p7':
+        from curve_application import accepted_overlay, accepted_parent_ref
+        active = accepted_overlay(request['base_project'])
+        carry = any(r['kind']=='captured_music' and r['status']=='READY' for r in request['base_project']['records'])
+        physical={n['id']:n for p in request['base_project']['placements'] for n in m.placed_notes(p)}
+        actual={n['id']:n for n in m.current_notes(request['base_project'])}
+        if (active or carry) and physical.get(emission_id)!=actual.get(emission_id):
+            if any(r['kind']=='final_score' and r['payload'].get('p7') and any(n['id']==emission_id for n in r['payload']['p7']['final_score']['notes']) for r in request['base_project']['records']):
+                return accepted_parent_ref(request['base_project'], emission_id)
     for place in request['base_project']['placements']:
         material = place['emotion_variant'] or place['base_snapshot']
         for n in material['notes']:
@@ -388,7 +397,7 @@ def inherited_result(request, plan, bridge_id):
         place=next((p for p in project['placements'] if p['id']==lock['placement_id']),None)
         if place is not None:
             base=place['base_snapshot']; final=place['emotion_variant'] or base
-            notes=m.placed_notes(place)
+            notes=(__import__('curve_application').context_notes(project,place) if project['contract_rev']=='curve-workflow-v2-r3-p7' else m.placed_notes(place))
     else:
         records=[r for r in project['records'] if r['kind']=='bridge_result' and r['status']=='READY'
             and r['payload']['bridge_id']==bridge_id and r['payload']['protection_id']==lock['id']
@@ -568,17 +577,22 @@ def validate_result(request, plan, result):
         parent=parents.get(op['input_note_id']);m.integer(op['motif_index'],0,len(motifs)-1);m.integer(op['cycle_index'])
         if parent is None or window['context']['motif_note_ids'][op['motif_index']]!=parent['id'] or op['parent_ref']!=parent_ref(request,parent['id']):
             m.reject('桥父音符或重复组合路径错误。','INVALID_BRIDGE')
-        material_ids.add(op['parent_ref']['material_snapshot_id'])
+        material_ids.add(op['parent_ref'].get('material_snapshot_id') or op['parent_ref'].get('owner_id'))
         if (op['output_note_id']!=n['id'] or op['from_pitch']!=parent['pitch'] or op['to_pitch']!=n['pitch']
                 or any(op[k]!=n[k] for k in ('start_tick','duration_tick'))
                 or n['origin']!=parent['origin'] or n['lineage']!=list(dict.fromkeys(parent['lineage']+[parent['id']])) or n['slice'] is not None):
             m.reject('桥实际音高时间来源与具体父音符账本不符。','INVALID_BRIDGE')
-    captured={parent_ref(request,n['id'])['material_snapshot_id'] for n in motifs}
+    captured={parent_ref(request,n['id']).get('material_snapshot_id') or parent_ref(request,n['id']).get('owner_id') for n in motifs}
     if set(gen['input_material_ids'])!=captured: m.reject('桥生成素材来源集合错误。','INVALID_BRIDGE')
     placements=m.indexed(request['base_project']['placements']);snapshots={}
     for n in motifs:
-        ref=parent_ref(request,n['id']);place=placements[ref['placement_id']]
-        snapshots[place['id']]=place['emotion_variant'] or place['base_snapshot']
+        ref=parent_ref(request,n['id'])
+        if ref.get('kind')=='accepted_score':
+            from curve_application import source_score
+            snapshots[ref['owner_id']]=source_score(request['base_project'],n['id'])
+        else:
+            place=placements[ref['placement_id']]
+            snapshots[place['id']]=place['emotion_variant'] or place['base_snapshot']
     if base['provenance'].get('parent_snapshots')!=snapshots or final['provenance']!=base['provenance']:
         m.reject('桥来源快照不是实际动机放置。','INVALID_BRIDGE')
     _emotion_result(request,plan,window,result); _children(final,result['children'],source_index)

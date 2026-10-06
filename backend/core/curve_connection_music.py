@@ -116,6 +116,14 @@ def _captured_key(request, notes):
     if not notes:
         _fail('EMPTY_MATERIAL','没有实际动机或邻接父发声。')
     parent=service.parent_ref(request,notes[0]['id'])
+    if parent['kind']=='accepted_score':
+        from curve_application import source_score
+        score=source_score(request['actual_layout']['base_project'],notes[0]['id'])
+        if score['id']!=parent['owner_id']:_fail('INVALID_SOURCE','接受父谱身份与实际调性来源不一致。')
+        event=next(row['emitted_note_id'] for row in score['performance_map'] if notes[0]['id'] in row['logical_note_ids'])
+        context=next((e['key_context'] for layer in score['layers'] for e in layer['rules']['entries'] if e['rule']=='melody' and e['note_id']==event),None)
+        if context is None:_fail('INVALID_SOURCE','接受父谱没有对应的实际调性事实。')
+        return copy.deepcopy(context)
     if parent['kind']=='bridge':
         snapshot=next(r['material'] for r in request['bridge_ref']['results'] if r['bridge_id']==parent['owner_id'])
     else:

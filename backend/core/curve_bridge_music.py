@@ -132,7 +132,7 @@ def _validate_request(request):
     else:
         _fail('INVALID_CANDIDATE', '未知桥基础输入种类。')
     base = request['base_project']
-    notes = _ordered([n for place in base['placements'] for n in m.placed_notes(place)])
+    notes = _ordered(m.current_notes(base))
     if request['base_notes'] != notes or request['blank_regions'] != base['blank_regions']:
         _fail('INVALID_CANDIDATE', '请求未保留真实基础发声或主动留白。')
     actual_gaps = m.gaps(base)
@@ -187,15 +187,15 @@ def _contexts(request, regions):
         rights = [p for p in unaffected if p['start_tick'] >= r['end_tick']]
         left = lefts[-1] if lefts else None; right = rights[0] if rights else None
         inner = [n for n in request['base_notes'] if m.intersects(_support(n), r)]
-        motif = inner[:8] + (m.placed_notes(left)[-2:] if left else []) + (m.placed_notes(right)[:2] if right else [])
+        motif = inner[:8] + (__import__('curve_application').context_notes(base,left)[-2:] if left else []) + (__import__('curve_application').context_notes(base,right)[:2] if right else [])
         # Capture key from the actual effective snapshot, including a non-C key.
         touched = [p for p in places if m.intersects(_range(p['start_tick'], p['start_tick']+p['length_ticks']), r)]
         first = touched[0]['emotion_variant'] or touched[0]['base_snapshot']
         key = melody._key(first, inner)
         windows.append(dict(id=m.digest('emoblocks.bridge-window.v1', dict(request_fingerprint=_request_hash(request), range=r)),
             **r, placement_ids=[p['id'] for p in touched], context=dict(
-                left=dict(placement_id=left['id'], notes=m.placed_notes(left)) if left else None,
-                right=dict(placement_id=right['id'], notes=m.placed_notes(right)) if right else None,
+                left=dict(placement_id=left['id'], notes=__import__('curve_application').context_notes(base,left)) if left else None,
+                right=dict(placement_id=right['id'], notes=__import__('curve_application').context_notes(base,right)) if right else None,
                 motif_note_ids=list(dict.fromkeys(n['id'] for n in motif)), key_context=key),
             emotion_segments=_segments(base, r), blank_mask=_mask(base, r)))
     return windows
@@ -544,7 +544,7 @@ def _inherited(request, plan, lock):
         if len(matches) != 1:
             _fail('BRIDGE_NOT_READY', '手动继承桥没有原实际放置。')
         place = matches[0]; material = copy.deepcopy(place['emotion_variant'] or place['base_snapshot'])
-        notes = _ordered(m.placed_notes(place)); base_material = copy.deepcopy(place['base_snapshot'])
+        notes = _ordered(__import__('curve_application').context_notes(base,place)); base_material = copy.deepcopy(place['base_snapshot'])
         children = []; processing = None; operations = []
     else:
         # Historical P0 records retain their own shape and old lock bindings.

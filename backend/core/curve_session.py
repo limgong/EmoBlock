@@ -127,3 +127,15 @@ class ProjectSession:
         self._project = copy.deepcopy(project)
         self._changed()
         return True
+
+
+    def apply_prepared(self, project, expected_revision, expected_fingerprint):
+        """Validated whole-music transaction; append-only commit stays strict."""
+        if expected_revision != self._revision or expected_fingerprint != model.fingerprint(self._project):
+            model.reject('编辑已变化，请重新计算方案。', 'STALE_SNAPSHOT')
+        model.validate(project)
+        if project['project_id'] != self._project['project_id']:
+            model.reject('不能应用另一工程的方案。','STALE_SNAPSHOT')
+        if project == self._project:return False
+        self._undo.append(self._project);self._undo=self._undo[-30:];self._redo.clear()
+        self._project=copy.deepcopy(project);self._changed();return True

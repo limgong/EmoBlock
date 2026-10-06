@@ -12,6 +12,7 @@ import curve_bridges
 import curve_connections
 from curve_audition import render_audition
 from export_safe import atomic_export
+from curve_recommendations import RecommendationFacade, prepare_recommendations, prepare_candidate_mode
 
 FORMATS = {'wav': 'preview.wav', 'mid': 'composition.mid', 'mmp': 'composition.mmp'}
 
@@ -104,7 +105,7 @@ def combine(project, inputs, label='组合素材'):
     return material
 
 
-class Controller:
+class Controller(RecommendationFacade):
     def __init__(self, project=None):
         self.session = curve_session.ProjectSession(project if project is not None else model.new_project(), recompute=curve_memory.recompute)
         self._bundle = curve_store.new_bundle(self.session.project)
@@ -131,7 +132,7 @@ class Controller:
         return dict(access_mode='legacy_readonly' if self.readonly else 'editable', project=self.project,
             capabilities=dict(edit=not self.readonly, derive=not self.readonly, audition=True,
                 generate_final=False, intensity_edit=not self.readonly, emotion=not self.readonly, memory=not self.readonly,
-                completion=not self.readonly, bridge=not self.readonly, connection=not self.readonly),
+                completion=not self.readonly, bridge=not self.readonly, connection=not self.readonly, recommendation=not self.readonly),
             is_saved=True if self.readonly else self.session.is_saved,
             saved_path=str(self._saved_path) if self._saved_path else None,
             can_undo=not self.readonly and self.session.can_undo, can_redo=not self.readonly and self.session.can_redo,
@@ -140,7 +141,10 @@ class Controller:
 
     def _stale_completions(self):
         for attempt in self._bundle['attempts']:
-            if ('completion' in attempt or 'bridge' in attempt or 'connection' in attempt) and attempt['state'] in ('RUNNING', 'READY'):
+            if 'recommendation' in attempt:
+                for job in attempt['recommendation']['mode_jobs']:
+                    if job['status']=='RUNNING': job['status']='STALE';self._staging_dirty=True
+            if any(k in attempt for k in ('completion','bridge','connection','recommendation')) and attempt['state'] in ('RUNNING', 'READY'):
                 attempt['state'] = 'STALE'
                 self._staging_dirty = True
         self._completion_immediate = None
@@ -261,7 +265,7 @@ class Controller:
         changed = bool(sources or materials)
         if changed:
             model.invalidate_records(project, before)
-            project['contract_rev'] = model.CONTRACT_REV
+            project['contract_rev'] = before['contract_rev'] if before['contract_rev'] == 'curve-workflow-v2-r3-p7' else model.CONTRACT_REV
         # complete source/phrase references validate before a single session write
         committed = self.session.commit(project, token)
         if committed:
@@ -706,6 +710,8 @@ class Controller:
         self._bridge_id = bridges[-1]['id'] if bridges else None
         connections = [v for v in self._bundle['attempts'] if 'connection' in v]
         self._connection_id = connections[-1]['id'] if connections else None
+        recommendations = [v for v in self._bundle['attempts'] if 'recommendation' in v]
+        self._recommendation_id = recommendations[-1]['id'] if recommendations else None
         if loaded is not None:
             self.session.mark_saved()
 
@@ -728,6 +734,24 @@ class Controller:
         results = self._loaded['legacy'].get('results', []) if self.readonly else self._bundle['results']
         rows = []
         for index, result in enumerate(results):
+            if result.get('candidate_id'):
+                from curve_recommendations import resolve
+                from curve_application import accepted_state
+                import hashlib
+                attempt,candidate=self._candidate(result['candidate_id']);mode=result['mode'];member=candidate['modes'][mode]
+                asset=member['assets']['final'];score=resolve(self._bundle['final_facts'],member['final_score_ref'])
+                paths={k:v['path'] for k,v in asset['files'].items()};available={}
+                for key,path in paths.items():
+                    try:
+                        data=Path(path).read_bytes();available[key]=len(data)==asset['files'][key]['bytes'] and hashlib.sha256(data).hexdigest()==asset['files'][key]['sha256']
+                    except OSError:available[key]=False
+                local=bool(score['remaining_gaps']);accepted=accepted_state(self.project)
+                rows.append(dict(id=result['id'],label='V'+str(index+1).zfill(2)+(' · 局部未完成' if local else ''),version=index+1,
+                    generated_at=result['generated_at'],body_seconds=asset['body_seconds'],audio_seconds=asset['audio_seconds'],availability=available,
+                    paths=paths,edit_fingerprint=attempt['input_fingerprint'],scope='LOCAL' if local else 'FULL',mode=mode,score_ref=member['final_score_ref'],
+                    modes=copy.deepcopy(candidate['modes']),application_status='CURRENT' if accepted['status']=='ACTIVE' and accepted['result_id']==result['id'] else 'HISTORICAL',
+                    capabilities=dict(can_export_final=not local)))
+                continue
             report = result.get('report') if isinstance(result.get('report'), dict) else {}
             directory = report.get('output_directory')
             paths = {k: str(Path(directory) / filename) if isinstance(directory, str) and directory else None for k, filename in FORMATS.items()}
@@ -745,14 +769,27 @@ class Controller:
                 availability=available, paths=paths, edit_fingerprint=result.get('story_fingerprint')))
         return rows
 
-    def export_history(self, result_id, format, destination):
+    def export_history(self, result_id, format, destination, mode=None):
         if format not in FORMATS:
             model.reject('请选择WAV、MIDI或MMP格式。')
         items = self.history_items()
         row = next((r for r in items if r['id'] == result_id), None)
+        if row is not None and row.get('scope')=='LOCAL':model.reject('局部方案仍有空缺，不能正式导出整曲。','TARGET_GAPS_UNRESOLVED')
+        if row is not None and row.get('score_ref') and mode is not None and mode != row['mode']:
+            result=next(r for r in self._bundle['results'] if r.get('id')==result_id)
+            attempt,candidate=self._candidate(result['candidate_id']);member=candidate['modes'].get(mode)
+            if member is None:model.reject('此模式尚未准备。','SOURCE_UNAVAILABLE')
+            source=member['assets']['final']['files'][format]
+            import hashlib
+            data=Path(source['path']).read_bytes()
+            if len(data)!=source['bytes'] or hashlib.sha256(data).hexdigest()!=source['sha256']:model.reject('此模式对应文件已不可用。','SOURCE_UNAVAILABLE')
+            row=dict(row,paths={k:v['path'] for k,v in member['assets']['final']['files'].items()},availability={format:True})
         if row is None or not row['availability'][format]:
             model.reject('此版本对应格式文件已不可用，请找回文件或选择其他版本。', 'SOURCE_UNAVAILABLE')
         protected = [Path(path) for item in items for path in item['paths'].values() if path]
+        if not self.readonly:
+            for fact in self._bundle.get('final_facts',[]):
+                if fact['kind']=='audio_asset':protected.extend(Path(f['path']) for f in fact['data']['files'].values())
         # Reports, snapshots, render logs and copied resources are generated
         # sources too. Include all versions and let atomic_export check aliases.
         directories = {path.parent for path in protected}

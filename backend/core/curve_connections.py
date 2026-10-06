@@ -192,10 +192,14 @@ def parent_ref(request, emission_id):
             # Inherited bridges retain their original placement's emission identity.
             if local is None:
                 old = b.parent_ref(request['bridge_ref']['request'], emission_id)
-                local = next(n for n in result['material']['notes'] if n['id'] == old['note_id'])
+                if old.get('kind') == 'accepted_score':
+                    local = next((n for n in result['material']['notes'] if result['bridge_id']+':'+n['id']==emission_id),None)
+                    if local is None:m.reject('继承桥缺少实际原发声身份。','SOURCE_CLOSURE_INVALID')
+                else: local = next(n for n in result['material']['notes'] if n['id'] == old['note_id'])
             return dict(kind='bridge', owner_id=result['bridge_id'], component_path=[],
                         material_snapshot_id=result['material']['id'], note_id=local['id'])
     old = b.parent_ref(request['bridge_ref']['request'], emission_id)
+    if old.get('kind') == 'accepted_score': return copy.deepcopy(old)
     return dict(kind='placement', owner_id=old['placement_id'], component_path=old['component_path'],
                 material_snapshot_id=old['material_snapshot_id'], note_id=old['note_id'])
 
@@ -213,7 +217,7 @@ def generation_data(request, plan, window, operations):
     parents = m.indexed(request['actual_layout']['notes'])
     return dict(method='connection_phrase', parameters=copy.deepcopy(window['parameters']), seed=musical_seed(request, plan, window),
         rng_version='python.random-v3', algorithm_version=ALGORITHM, input_fingerprint=compose_fingerprint(request, plan, window),
-        input_material_ids=sorted({parent_ref(request, n)['material_snapshot_id'] for n in window['context']['motif_note_ids']}),
+        input_material_ids=sorted({parent_ref(request, n)['material_snapshot_id'] or parent_ref(request, n)['owner_id'] for n in window['context']['motif_note_ids']}),
         base_notes=[copy.deepcopy(parents[n]) for n in window['context']['motif_note_ids']],
         key_context=copy.deepcopy(window['key_context']), operations=copy.deepcopy(operations))
 

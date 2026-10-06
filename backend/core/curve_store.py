@@ -18,6 +18,9 @@ def new_bundle(project):
 
 
 def _validate_bundle(bundle):
+    if bundle.get('schema') == 'emoblocks.curve-bundle.v2':
+        from curve_recommendations import validate_p7_bundle
+        return validate_p7_bundle(bundle)
     model.canonical(bundle)
     model.shape(bundle, 'schema spec_rev contract_rev project snapshots attempts results')
     if (bundle['schema'], bundle['spec_rev']) != (SCHEMA, model.SPEC_REV) or bundle['contract_rev'] not in model.SUPPORTED_CONTRACT_REVS or bundle['contract_rev'] != bundle['project']['contract_rev']:
@@ -134,7 +137,8 @@ def _validate_completion_attempt(attempt, snapshots):
 def save(bundle, path=None):
     validate_bundle(bundle)
     serialized = json.dumps(bundle, ensure_ascii=False, indent=2, allow_nan=False)
-    if len(serialized.encode('utf-8')) > MAX_BYTES:
+    limit = 128*1024*1024 if bundle['schema'] == 'emoblocks.curve-bundle.v2' else MAX_BYTES
+    if len(serialized.encode('utf-8')) > limit:
         model.reject('工程文件超过20MiB。')
     if path is None:
         folder = data_root() / 'projects'
@@ -186,7 +190,7 @@ def history_availability(results):
 
 def load(path):
     path = Path(path)
-    if path.stat().st_size > MAX_BYTES:
+    if path.stat().st_size > 128*1024*1024:
         model.reject('工程文件超过20MiB。')
     try:
         data = json.loads(path.read_text(encoding='utf-8'), parse_constant=lambda _: model.reject('工程含非有限数字。'))
@@ -194,14 +198,22 @@ def load(path):
             model.reject('工程根对象无效。')
         if data.get('schema') == model.SCHEMA:
             data = new_bundle(data)
-        if data.get('schema') == SCHEMA:
+        if data.get('schema') in (SCHEMA, 'emoblocks.curve-bundle.v2'):
+            if data['schema'] == SCHEMA and path.stat().st_size > MAX_BYTES: model.reject('工程文件超过20MiB。')
             validate_bundle(data)
             bundle = copy.deepcopy(data)
             staging_dirty = False
             for attempt in bundle['attempts']:
                 if attempt['state'] == 'RUNNING':
                     attempt['state'] = 'INTERRUPTED'
-                    staging_dirty = staging_dirty or 'completion' in attempt or 'bridge' in attempt or 'connection' in attempt
+                    staging_dirty = staging_dirty or any(k in attempt for k in ('completion','bridge','connection','recommendation'))
+                if 'recommendation' in attempt:
+                    private=attempt['recommendation']['partial_stage_bundle']
+                    if private is not None:
+                        for child in private['attempts']:
+                            if child['state']=='RUNNING':child['state']='INTERRUPTED';staging_dirty=True
+                    for job in attempt['recommendation']['mode_jobs']:
+                        if job['status'] == 'RUNNING': job['status'] = 'INTERRUPTED'; staging_dirty = True
             return dict(format=model.SCHEMA, access_mode='editable', capabilities=dict(edit=True, plan=False,
                 history=history_availability(bundle['results'])), bundle=bundle, legacy=None, staging_dirty=staging_dirty)
         _legacy_validate(data, path)

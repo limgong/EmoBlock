@@ -721,3 +721,17 @@ def generate_connection_request(request, plan, actual_layout, should_cancel=None
         curve_connections.m.reject('连接生成必须使用捕获的实际bridge布局。', 'LAYOUT_MISMATCH')
     return curve_connection_music.generate_connection_blocks(request, plan, actual_layout,
         should_cancel=should_cancel, on_progress=on_progress, on_result=on_result)
+
+
+def plan_boundary_request(request, should_cancel=None, on_progress=None):
+    """P7 local handoff after authenticated P6; never replan bridge/connections."""
+    import curve_final
+    import curve_boundary_music
+    curve_final.validate_request(request)
+    return curve_boundary_music.plan_boundaries(request, should_cancel=should_cancel, on_progress=on_progress)
+
+
+def prepare_recommendation_request(request, source_facts=None, should_cancel=None, on_progress=None):
+    """Snapshot-only public entry to the complete r3 recommendation pipeline."""
+    import curve_recommendations
+    return curve_recommendations.prepare_recommendations(request, source_facts, should_cancel, on_progress)
