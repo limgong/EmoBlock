@@ -1139,6 +1139,8 @@ sources为上述全部逻辑notes、父notes及material_snapshots的notes/childr
 
 后台私有Controller建立后、任何阶段捕获前先登记并纯校验该原闭包。不能用旧接受音符去构造没有依赖registry的阶段Bundle；完整旧Score/Boundary请求与计划的原生引用必须解析。只需要源事实的有限引用闭包，最多沿用2048条/32层/128MiB预算，不读取原导入文件、不生成或渲染来补事实。闭包缺失、篡改、跨工程或版本不匹配中止本次请求，不改当前编辑、保护与undo；输入随后变化由原Token/修订/seq门禁拒绝。
 
+父谱选择禁止按音符ID反向扫描历史：ACTIVE输入必须由当前接受覆盖score_ref指定唯一旧Score，私有carry由captured_music.source_score_ref指定；按完整Ref解析registry并逐字段核对旧Score叶、parent.owner_id、原父八字段Note与真实演奏/组件路径。A/B历史谱共用音符ID时也不能选另一合法B冒充A；交换历史顺序不改变结果，缺指定A闭包必须拒绝。lead可在source_score/parent_snapshot的既有来源读取链做上述纯适配，不改音乐规则或已冻结公开音乐对象。
+
 源读取文件范围补充：lead可在 `curve_melody._bridge_parent_table` 与其 parent_snapshots 键解析处加入p7 accepted_score源适配，保存真实旧FinalScore叶快照和Ref；只改源读取、父身份、真实现有快照解析，不改变旧P5构作音乐规则、算法版本或旧输入验证。算法worker仍仅curve_boundary_music与对应测试，公共入口/源适配由lead独占。
 
 验收：已接受p7工程→新推荐捕获→私有P4/5/6→最终score，保原真实音乐/桥锁与完整来源；捕获后立即编辑、撤销同内容与取消均不能用旧闭包绕过会话门禁；缺闭包/借另工程合法闭包/伪造旧Score重新计算hash均拒绝；保存重开不调用生成/渲染。新项目的source_facts=[]兼容原正常路径。只读评审与独立PASS后才能将本节标为FROZEN并实施新增捕获字段。
