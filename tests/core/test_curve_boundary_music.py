@@ -1,4 +1,4 @@
-"""Frozen P7 JSON provider tests; public P7 gates are a separate integration.
+"""Frozen P7 provider tests, including pure public gate roundtrips.
 
 Ordinary fixtures use authenticated real P5/P6 facts. Accepted-score unit
 fixtures exercise the new ledger branch without claiming a P7 registry gate.
@@ -262,6 +262,7 @@ class BoundaryMusicTests(unittest.TestCase):
         proposal=music.plan_boundaries(req);self.assertNotIn(960,[b['tick'] for b in proposal['boundaries']])
 
     def test_five_methods_have_actual_notes_or_performance(self):
+        import curve_final as final
         cases=[]
         p=fixture(2,rough=False);cells(p,0,[(0,240,60),(1680,240,60,100)]);cells(p,1,[(0,240,62,60),(1680,240,60)])
         cases.append(('natural_continuation',request(p),1920))
@@ -280,6 +281,15 @@ class BoundaryMusicTests(unittest.TestCase):
                 boundary=next(b for b in proposal['boundaries'] if b['tick']==tick)
                 self.assertEqual(method,boundary['method']);self.assertTrue(boundary['operation_ids'] or any(h['boundary_id']==boundary['id'] for h in proposal['performance_hints']))
                 self.assertNotEqual(req['actual_layout']['notes'],notes)
+                # Reconstruct the public frame from genuine P6 facts rather
+                # than submit this test's hand-built ledger as authority.
+                real=final.make_request(req['connection_ref'],token=req['token'],seed=req['seed'],plan_id='five-method-gate')
+                untouched=copy.deepcopy(real);final.validate_request(real)
+                plan=final.make_plan(real,music.plan_boundaries(real))
+                result=final.apply_boundaries(real,plan);final.validate_result(real,plan,result)
+                actual=next(b for b in plan['boundaries'] if b['tick']==tick)
+                self.assertEqual(method,actual['method']);self.assertNotEqual(real['actual_layout']['notes'],result['notes'])
+                self.assertEqual(untouched,real)
 
     def test_policy_none_preserves_music_and_reports_no_operations(self):
         req=request(parameters=dict(policy='none'));p=music.plan_boundaries(req)
