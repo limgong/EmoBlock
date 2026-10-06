@@ -35,6 +35,11 @@ def _validate_bundle(bundle):
     for snap in snapshots.values():
         snapshot_edges[snap['id']] = [r['payload']['input_snapshot_id'] for r in snap['project']['records'] if r['kind'] == 'accepted_candidate']
     for attempt in model.indexed(bundle['attempts']).values():
+        if 'completion' in attempt:
+            _validate_completion_attempt(attempt, snapshots)
+            if attempt['state'] in ('READY', 'RUNNING') and attempt['input_fingerprint'] != model.fingerprint(bundle['project']):
+                model.reject('当前输入已变化，不能恢复未失效的旧候选。', 'STALE_SNAPSHOT')
+            continue
         model.shape(attempt, 'id snapshot_id input_fingerprint state records protections staged_materials error')
         snap = snapshots.get(attempt['snapshot_id'])
         if snap is None or snap['content_fingerprint'] != attempt['input_fingerprint']:
@@ -51,8 +56,10 @@ def _validate_bundle(bundle):
             materials[material['id']] = material
         placements = model.indexed(snap['project']['placements'])
         for p in model.indexed(attempt['protections']).values():
-            model.protection_check(p, snap['project']['total_ticks'], placements, sources)
-        model.records_check(attempt['records'], attempt['protections'], placements, snap['project']['total_ticks'], materials, sources)
+            model.protection_check(p, snap['project']['total_ticks'], placements, sources,
+                                   managed=model.managed_memory(snap['project'], p))
+        model.records_check(attempt['records'], attempt['protections'], placements, snap['project']['total_ticks'], materials, sources,
+                            project_id=snap['project']['project_id'])
     for records in record_scopes:
         for record in records:
             if record['kind'] != 'accepted_candidate':
@@ -77,6 +84,38 @@ def _validate_bundle(bundle):
     for result in model.objects(bundle['results']):
         if not isinstance(result, dict):
             model.reject('历史成品记录无效。')
+
+
+def _validate_completion_attempt(attempt, snapshots):
+    import curve_candidates as candidates
+    model.shape(attempt, 'id snapshot_id input_fingerprint state records protections staged_materials error completion')
+    completion = attempt['completion']
+    model.shape(completion, 'schema spec_rev contract_rev request outcome')
+    if (completion['schema'], completion['spec_rev'], completion['contract_rev']) != ('emoblocks.completion-attempt.v1', model.SPEC_REV, candidates.REV):
+        model.reject('补全暂存版本不匹配。', 'UNSUPPORTED_VERSION')
+    request = completion['request']; candidates.validate_request(request)
+    snap = snapshots.get(attempt['snapshot_id'])
+    if (snap is None or snap['project'] != request['project'] or snap['id'] != request['snapshot_id']
+            or attempt['id'] != request['request_id'] or attempt['input_fingerprint'] != request['input_fingerprint']
+            or attempt['input_fingerprint'] != snap['content_fingerprint']):
+        model.reject('补全暂存缺少匹配原版本输入快照。', 'STALE_SNAPSHOT')
+    if not request['target_gaps'] or any(attempt[k] != [] for k in ('records', 'protections', 'staged_materials')):
+        model.reject('补全候选不能污染编辑保护或无目标注册暂存。', 'INVALID_CANDIDATE')
+    state, outcome = attempt['state'], completion['outcome']
+    if state not in ('RUNNING', 'INTERRUPTED', 'READY', 'FAILED', 'CANCELLED', 'STALE'):
+        model.reject('基础候选不能被当作已应用或最终方案。', 'INVALID_CANDIDATE')
+    if outcome is not None:
+        candidates.validate_outcome(request, outcome)
+    if state in ('RUNNING', 'INTERRUPTED'):
+        valid = outcome is None and attempt['error'] is None
+    elif state == 'READY':
+        valid = outcome is not None and outcome['status'] in ('SUCCEEDED', 'INSUFFICIENT') and attempt['error'] is None
+    elif state in ('FAILED', 'CANCELLED'):
+        valid = outcome is not None and outcome['status'] == state and attempt['error'] == outcome['error']
+    else:
+        valid = (attempt['error'] == (outcome['error'] if outcome is not None else None))
+    if not valid:
+        model.reject('补全暂存状态、结果及错误不一致。', 'INVALID_CANDIDATE')
 
 
 def save(bundle, path=None):
@@ -145,11 +184,13 @@ def load(path):
         if data.get('schema') == SCHEMA:
             validate_bundle(data)
             bundle = copy.deepcopy(data)
+            staging_dirty = False
             for attempt in bundle['attempts']:
                 if attempt['state'] == 'RUNNING':
                     attempt['state'] = 'INTERRUPTED'
+                    staging_dirty = staging_dirty or 'completion' in attempt
             return dict(format=model.SCHEMA, access_mode='editable', capabilities=dict(edit=True, plan=False,
-                history=history_availability(bundle['results'])), bundle=bundle, legacy=None)
+                history=history_availability(bundle['results'])), bundle=bundle, legacy=None, staging_dirty=staging_dirty)
         _legacy_validate(data, path)
         return dict(format=data['schema'], access_mode='legacy_readonly', capabilities=dict(edit=False, plan=False,
             history=history_availability(data.get('results', []))), bundle=None, legacy=copy.deepcopy(data))

@@ -7,6 +7,7 @@ import curve_project as model
 import curve_session
 import curve_store
 import curve_memory
+import curve_candidates
 from curve_audition import render_audition
 from export_safe import atomic_export
 
@@ -99,6 +100,9 @@ class Controller:
         self._saved_path = None
         self._jobs = {}
         self._untouched_new = project is None
+        self._staging_dirty = False
+        self._completion_id = None
+        self._completion_immediate = None
 
     @property
     def readonly(self):
@@ -111,11 +115,20 @@ class Controller:
     def state(self):
         return dict(access_mode='legacy_readonly' if self.readonly else 'editable', project=self.project,
             capabilities=dict(edit=not self.readonly, derive=not self.readonly, audition=True,
-                generate_final=False, intensity_edit=not self.readonly, emotion=not self.readonly, memory=not self.readonly),
+                generate_final=False, intensity_edit=not self.readonly, emotion=not self.readonly, memory=not self.readonly,
+                completion=not self.readonly),
             is_saved=True if self.readonly else self.session.is_saved,
             saved_path=str(self._saved_path) if self._saved_path else None,
             can_undo=not self.readonly and self.session.can_undo, can_redo=not self.readonly and self.session.can_redo,
-            memory_info=None if self.readonly else curve_memory.memory_info(self.session.project))
+            memory_info=None if self.readonly else curve_memory.memory_info(self.session.project),
+            staging_dirty=self._staging_dirty)
+
+    def _stale_completions(self):
+        for attempt in self._bundle['attempts']:
+            if 'completion' in attempt and attempt['state'] in ('RUNNING', 'READY'):
+                attempt['state'] = 'STALE'
+                self._staging_dirty = True
+        self._completion_immediate = None
 
     def _editable(self):
         if self.readonly:
@@ -125,6 +138,7 @@ class Controller:
         self._editable()
         changed = self.session.edit(action, **args)
         if changed:
+            self._stale_completions()
             self._jobs.clear()
             self._untouched_new = False
         return changed
@@ -133,6 +147,7 @@ class Controller:
         self._editable()
         changed = self.session.undo()
         if changed:
+            self._stale_completions()
             self._jobs.clear()
             self._untouched_new = False
         return changed
@@ -141,6 +156,7 @@ class Controller:
         self._editable()
         changed = self.session.redo()
         if changed:
+            self._stale_completions()
             self._jobs.clear()
             self._untouched_new = False
         return changed
@@ -171,14 +187,24 @@ class Controller:
         return dict(token=snap['token'], snapshot=payload)
 
     def accepts(self, token):
-        return self.session.accepts(token) and token.get('request_id') in self._jobs
+        if not self.session.accepts(token) or token.get('request_id') not in self._jobs:
+            return False
+        if self._jobs[token['request_id']]['kind'] == 'COMPLETION':
+            attempt = self._attempt(token['request_id'])
+            return attempt is not None and attempt['state'] == 'RUNNING'
+        return True
 
     def cancel_job(self, token):
+        context = self._jobs.get(token.get('request_id')) if isinstance(token, dict) else None
+        if context is not None and context['kind'] == 'COMPLETION':
+            return self.cancel_completion(token)
         return self.finish_job(token)
 
     def finish_job(self, token):
         if not self.accepts(token):
             return False
+        if self._jobs[token['request_id']]['kind'] == 'COMPLETION':
+            return False  # Completion must pass its independent result gate first.
         result = self.session.finish(token)
         self._jobs.pop(token['request_id'], None)
         return result
@@ -217,11 +243,111 @@ class Controller:
         # complete source/phrase references validate before a single session write
         committed = self.session.commit(project, token)
         if committed:
+            self._stale_completions()
             self._jobs.clear()
             self._untouched_new = False
         elif not changed:
             self._jobs.pop(token['request_id'], None)
         return dict(changed=committed, added_source_ids=list(sources) if committed else [], added_material_ids=list(materials) if committed else [])
+
+    def _attempt(self, identity):
+        return next((v for v in self._bundle['attempts'] if v['id'] == identity and 'completion' in v), None)
+
+    def gap_items(self):
+        return [] if self.readonly else curve_candidates.gap_items(self.project)
+
+    def capture_completion(self, selected_gap_id=None, seed=31, budget=None):
+        self._editable()
+        if any(job['kind'] == 'COMPLETION' for job in self._jobs.values()):
+            model.reject('基础候选正在计算，请等待或取消。', 'DUPLICATE_REQUEST')
+        request = curve_candidates.make_request(self.project, selected_gap_id, seed, budget)
+        if not request['target_gaps']:
+            result = curve_candidates.prepare_completion(request)
+            self._completion_immediate = result
+            return dict(token=None, request=request, attempt_id=None, immediate_outcome=copy.deepcopy(result))
+        captured = self.session.capture(request['request_id']); token = captured['token']
+        request['snapshot_id'] = token['snapshot_id']
+        attempt = dict(id=request['request_id'], snapshot_id=request['snapshot_id'], input_fingerprint=request['input_fingerprint'],
+            state='RUNNING', records=[], protections=[], staged_materials=[], error=None,
+            completion=dict(schema='emoblocks.completion-attempt.v1', spec_rev=model.SPEC_REV, contract_rev=curve_candidates.REV,
+                            request=copy.deepcopy(request), outcome=None))
+        bundle = self._current_bundle()
+        bundle['snapshots'].append(dict(id=request['snapshot_id'], spec_rev=model.SPEC_REV, contract_rev=request['input_contract_rev'],
+                                    content_fingerprint=request['input_fingerprint'], project=copy.deepcopy(request['project'])))
+        bundle['attempts'].append(attempt)
+        try:
+            curve_store.validate_bundle(bundle)
+        except Exception:
+            self.session.finish(token)
+            raise
+        self._bundle = bundle
+        self._jobs[token['request_id']] = dict(kind='COMPLETION', request=copy.deepcopy(request))
+        self._completion_id = attempt['id']; self._completion_immediate = None
+        self._staging_dirty = True
+        return dict(token=token, request=copy.deepcopy(request), attempt_id=attempt['id'], immediate_outcome=None)
+
+    def _completion_finish(self, token, result):
+        if not self.accepts(token) or self._jobs[token['request_id']]['kind'] != 'COMPLETION':
+            return False
+        request = self._jobs[token['request_id']]['request']
+        curve_candidates.validate_outcome(request, result)
+        bundle = self._current_bundle()
+        attempt = next(v for v in bundle['attempts'] if v['id'] == token['request_id'])
+        attempt['state'] = 'READY' if result['status'] in ('SUCCEEDED', 'INSUFFICIENT') else result['status']
+        attempt['error'] = copy.deepcopy(result['error'])
+        attempt['completion']['outcome'] = copy.deepcopy(result)
+        curve_store.validate_bundle(bundle)
+        if not self.session.finish(token):
+            return False
+        self._jobs.pop(token['request_id'], None)
+        self._bundle = bundle; self._staging_dirty = True
+        return True
+
+    def finish_completion(self, token, outcome):
+        if not self.accepts(token) or self._jobs[token['request_id']]['kind'] != 'COMPLETION':
+            return False
+        try:
+            return self._completion_finish(token, outcome)
+        except Exception as exc:
+            return self.fail_completion(token, dict(code=getattr(exc, 'code', 'INVALID_CANDIDATE'), message=str(exc), details={})) and False
+
+    def fail_completion(self, token, error):
+        if not self.accepts(token) or self._jobs[token['request_id']]['kind'] != 'COMPLETION':
+            return False
+        if not isinstance(error, dict):
+            error = dict(code=getattr(error, 'code', 'COMPLETION_FAILED'), message=str(error), details={})
+        normalized = dict(code=str(error.get('code') or 'COMPLETION_FAILED'), message=str(error.get('message') or '基础候选计算失败，请重试或增加素材。'),
+                          details=copy.deepcopy(error.get('details')) if isinstance(error.get('details'), dict) else {})
+        try:
+            model.canonical(normalized)
+        except model.ProjectError:
+            normalized['details'] = {}
+        request = self._jobs[token['request_id']]['request']
+        result = curve_candidates.outcome(request, 'FAILED', failure=normalized)
+        return self._completion_finish(token, result)
+
+    def cancel_completion(self, token):
+        if not self.accepts(token) or self._jobs[token['request_id']]['kind'] != 'COMPLETION':
+            return False
+        request = self._jobs[token['request_id']]['request']
+        result = curve_candidates.outcome(request, 'CANCELLED', failure=curve_candidates.error('CANCELLED', '基础候选计算已取消，当前编辑保持不变。'),
+                     search=dict(expansions=None, generated_notes=None, termination='CANCELLED', raw_termination='UNKNOWN', rejections=[]))
+        return self._completion_finish(token, result)
+
+    def completion_state(self):
+        attempt = self._attempt(self._completion_id)
+        if self._completion_immediate is not None:
+            result = self._completion_immediate
+            return dict(status='NOT_NEEDED', attempt_id=None, input_fingerprint=result['input_fingerprint'], request=None,
+                        outcome=copy.deepcopy(result), error=None, message='没有目标空缺，无需基础补全。')
+        if attempt is None:
+            return dict(status='IDLE', attempt_id=None, input_fingerprint=None, request=None, outcome=None, error=None, message='基础补全尚未计算。')
+        messages = dict(RUNNING='正在计算基础候选；尚未处理bridge与连接。', READY='基础候选已暂存；尚未处理bridge与连接，不能应用或导出整曲。',
+                        FAILED='基础候选计算失败；当前编辑与历史保留，可检查素材和保护后重试。', CANCELLED='基础候选计算已取消。',
+                        STALE='输入已改变，旧基础候选已失效，请重新计算。', INTERRUPTED='上次计算已中断，请重新计算。')
+        return dict(status=attempt['state'], attempt_id=attempt['id'], input_fingerprint=attempt['input_fingerprint'],
+                    request=copy.deepcopy(attempt['completion']['request']), outcome=copy.deepcopy(attempt['completion']['outcome']),
+                    error=copy.deepcopy(attempt['error']), message=messages[attempt['state']])
 
     def _current_bundle(self):
         bundle = copy.deepcopy(self._bundle)
@@ -234,13 +360,14 @@ class Controller:
         path = curve_store.save(self._current_bundle(), path)
         self.session.mark_saved()
         self._saved_path = path
+        self._staging_dirty = False
         self._untouched_new = False
         return path
 
     def autosave_if_needed(self):
-        if self.readonly or self.session.is_saved:
+        if self.readonly or (self.session.is_saved and not self._staging_dirty):
             return None
-        if self._untouched_new and model.fingerprint(self.session.project) == self._initial_fingerprint:
+        if not self._staging_dirty and self._untouched_new and model.fingerprint(self.session.project) == self._initial_fingerprint:
             return None
         return self.save_snapshot()
 
@@ -253,6 +380,10 @@ class Controller:
         self._saved_path = Path(path) if path else None
         self._untouched_new = loaded is None
         self._jobs.clear()
+        self._staging_dirty = bool(loaded and loaded.get('staging_dirty', False))
+        completions = [v for v in self._bundle['attempts'] if 'completion' in v]
+        self._completion_id = completions[-1]['id'] if completions else None
+        self._completion_immediate = None
         if loaded is not None:
             self.session.mark_saved()
 
