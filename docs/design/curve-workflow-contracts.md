@@ -930,9 +930,9 @@ RecommendationRequest绑定完整不可变输入Project、input_contract_rev、�
 
 lead将当前认证P6 request/plan/outcome/全results及原P5集合组装成actual_layout，验证READY精确集合、none有效性及全部来源/指纹/保护。无P6父或缺失/失败/旧版本禁止进入。
 
-算法接口拟为`plan_boundaries(boundary_request,should_cancel=None,on_progress=None)->BoundaryProposal`，输入包括真实连接后Layout、bridge_plan、protections、connection_results及固定种子参数；lead认证并公布`BoundaryPlan`，再`apply_boundaries(request,plan)->FinalScoreProposal`。`validate_final_score(request,plan,score)->ValidationReport`是lead独立纯校验器，不能用重运行算法验证旧结果。
+算法接口为`plan_boundaries(boundary_request,should_cancel=None,on_progress=None)->BoundaryProposal`，输入包括真实连接后Layout、bridge_plan、protections、connection_results及固定种子参数；lead认证并公布`BoundaryPlan`，再`apply_boundaries(request,plan)->FinalScoreProposal`。`validate_final_score(request,plan,score)->ValidationReport`是lead独立纯校验器，不能用重运行算法验证旧结果。
 
-待只读评审冻结精确字段：请求Token/候选/计划/算法版本，边界ID和真实放置/演奏所有者、完整原始音符快照、局部许可范围、操作类型及输入/输出音符、奏法/音色/力度/伴奏提示、共同端点与冲突依赖、保护摘要、音乐和源血缘指纹、剩余gap及完成能力。声明READY或自报impact不构成保护通过。
+精确对象见13.10–13.13：请求Token/候选/计划/算法版本，边界ID和真实放置/演奏所有者、完整原始音符快照、局部许可范围、操作类型及输入/输出音符、奏法/音色/力度/伴奏提示、共同端点与冲突依赖、保护摘要、音乐和源血缘指纹、剩余gap及完成能力。声明READY或自报impact不构成保护通过。
 
 桥内pitch/绝对onset/duration/内部休止不变，不得新增主旋律；保护完整记忆跨界音符、组合/短尾、主题/手工/留白。合法边界相接可用，音符实际支撑不得越界。受保护休止不得被填满，素材内部休止不是gap。变换音符保留具体motif父和完整来源，变音高或时值不得复用旧发声slice。只合并同一次放置/演奏、同一原音符、同音高且连续切片；重复用同素材重新起音，不能只凭source_note_id合并。句内四拍线不是独立边界。
 
@@ -971,3 +971,139 @@ lead：curve_final.py、curve_recommendations.py、curve_final_render.py、curve
 全gap→真实基础/P5/P6/P7/编配/实际音频→明确试听→确认→保存重开；单gap余gap不变/局部确认/不能正式整曲导出；none/无窗/无专门边界；桥pitch/onset/duration/桥内加音/记忆跨界/留白/漏影响独立拒绝；slice同演奏合并与重复起音；最终收敛去重/不足诚实；试听和取消不改工程，确认同谱、幂等、一次undo/redo不作曲；计算期间修改/迟到/重复/session失效；渲染失败/取消/缺文件/运行恢复/已应用后编辑失效；两mode旋律一致/伴奏表达切换/三格式绑定。
 
 固定素材记录基础→桥→连接→最终的实际notes、依赖/源/保护、至少两套实际不同推荐乐谱和真实音频（不足原因另测）。实际窗口坐标、LMMS/设备串行，自动、Tk、渲染、设备、人工视觉听感、Mac/Windows分类，不以模拟替代P7真实渲染。必跑backend-only/check_frontends/full/diff。契约与实现分别最多5轮，匹配RUN/TASK/ROUND/HEAD/前后同fingerprint明确PASS。完成P7停止，不派P8。
+
+
+### 13.10 双角色评审整合：最终边界精确对象（DRAFT）
+
+统一Ref=`{id,version,fingerprint}`。所有schema前缀emoblocks、版本v1；本节对象spec_rev=r3/contract_rev=p7。所有Note沿用P3八字段，音高12–119，不夹紧；时间精确tick。字符串ID不能为空，数字/预算禁止bool。
+
+BoundaryRequest精确字段：`schema spec_rev contract_rev token input_contract_rev input_fingerprint candidate_ref connection_ref actual_layout layout_fingerprint protection_summary plan_id plan_version seed algorithm_version parameters`。schema=emoblocks.boundary-request.v1，token为P1八字段p7 Token，candidate_ref为P4 candidate的Ref或无gap时null。connection_ref精确`{attempt_id,request,plan,results,outcome}`，全部P6对象独立认证；input_project、P5完整桥集合和目标从实际P6请求追溯，不能相信caller布局。新Boundary request不得以STALE父授予能力。algorithm_version=curve-boundary-v1。
+
+ActualLayout精确`{total_ticks,bpm,base_project,notes,segments,coverage_ranges,remaining_gaps,protections,blank_regions,emission_ledger}`。notes精确等P6已认证outcome.notes；base_project为P5 request.base_project；coverage由基础放置、主动留白与真实剩余gap推导，不用新增空notes填表。Segment=`{id,performance_id,owner_ref,start_tick,end_tick,phrase_id,component_path,emotion,key_context,intensity_start,intensity_end,kind}`；kind=placement|bridge|connection|blank。桥及连接按真实覆盖范围替换显示所有者，原排布保留，内部四拍不另切边界。ledger每实际Note一条`{note_id,parent_ref,performance_id}`，parent_ref=`{stage,owner_id,note_id,component_path,material_snapshot_id,content_fingerprint}`，stage=placement|bridge|connection|final_score；从真实P6结果与P5/放置数据逐项解析，禁止用材料/source ID冒充演奏所有者。performance_id绑定真实placement与嵌套occurrence，桥/连接绑定各自执行实例。只读阶段不改变current库或编号。
+
+Boundary参数精确`{policy,max_boundary_ticks,max_operations,max_pitch_shift,max_time_shift,max_modified_notes,max_added_notes}`，默认auto/240/64/2/120/2/1；policy=auto|none，限制boundary_ticks<=240、operations<=256、pitch<=2、time<=120、modified<=2、added<=1，均正整数（added允许0）。seed 0..2**32-1。边界从实际Segment的所有者交接、留白进入与末尾推导，不把乐句内部四拍当边界；未解决gap不充作合法弱起/填音窗口。
+
+BoundaryProposal精确：`schema spec_rev contract_rev request_fingerprint decision none_reason boundaries operations joints join_groups performance_hints assessments reasons search`。Boundary=`{id,tick,left_performance_id,right_performance_id,method,editable_ranges,operation_ids,reasons}`；method=natural_continuation|motif_reply|gradual_build|blank_entry|resolve_close|none。editable_ranges由每侧240tick与允许音乐域相交，减去全保护完整支撑/休止、留白、未解gap及已就绪连接的结构范围；P7本实现不再结构改写P6窗口，仅允许其表演交接。none_reason=NOT_NEEDED|NO_LEGAL_OPERATION|POLICY_NONE，异常不是none。
+
+Operation=`{id,boundary_ids,kind,input_refs,consumed_note_ids,outputs,permitted_ranges}`，kind=replace|remove|add；输出为`{note,parent_note_ids,performance_id}`。所有原音符和parent_ref取自同一原Layout，不读取本批新输出。replace消耗一个原音符并产一个，remove消耗一个短弱音（原长<=120）无产出，add引用一个真实局部父动机但不消耗它、输出长<=120且范围合法。每边界最多修改2/新增1；改变pitch/start/duration的新ID由request/operation/真实note结构派生，保留精确origin和完整父lineage、slice=null；未改结构保原ID/来源/slice，力度交接另走hint。每原音符只能一个结构写入者，各实际新增/删除/移位/延长/缩短与许可域、完整保护和原始单旋律逐项比对。多个范围或音符冲突在Plan公布前拒绝，不能顺序覆盖。
+
+PerformanceHint=`{id,boundary_id,note_id,performance_id,velocity_delta,tone_hint,accompaniment_hint}`；velocity_delta=-12..12，tone_hint=null或soft/bell/dark/pluck/brass，accompaniment_hint=none|fade_in|reduce|sustain。只可引用该边界实际左右端点或局部原音符，一个note最多一个hint；无结构修改时允许桥/记忆内有限表演变化，力度仍1..127。仅主旋律忽略这些表现差别、统一soft/80。无条件默认目标音预示/鼓填充禁止。Joints记录所有共享原端点的边界组，精确`{id,boundary_ids,note_ids,original_endpoints,final_endpoints}`，null是真实无音；P6原joint不修改，新的统一最终端点须精确等一次应用实际结果。
+
+JoinGroup=`{performance_id,input_note_ids,source_emission_id,render_event}`。逻辑Note不因播放合并改其保护结构；只有同演奏/同slice父/同origin/同音高、时刻和offset连续才生成一个物理事件，采用首次起音力度/音色，后片不重新起音。重复放置或嵌套occurrence不能共用performance_id。join_groups由lead纯归一化独立重算，规范音乐差异用这些真实播放事件，不将同一长音的不同分块算两套音乐。
+
+BoundaryPlan为Proposal加`id version token layout_fingerprint protection_summary_fingerprint connection_plan_ref original_notes plan_fingerprint`，指纹除自身字段。`plan_boundaries(request,should_cancel=None,on_progress=None)->BoundaryProposal`为算法独立模块；lead `make_boundary_plan`完整认证后公布。`apply_boundaries(request,plan)->BoundaryResult`仅一次纯拼接和已知表演变化，不作曲/随机/重跑情绪。BoundaryResult精确`{schema,spec_rev,contract_rev,id,request_fingerprint,plan_ref,notes,emitted_notes,join_groups,operations,performance_hints,remaining_gaps,content_fingerprint}`。notes从全部原Layout同时消耗/产出，JoinGroup只影响emitted_notes。校验器重新从原Layout/已认证操作构造并比较全部结果，包括漏报影响/额外音符和桥内休止；不是接受生成器的READY。
+
+### 13.11 FinalScore、编配和资产（DRAFT）
+
+FinalScore精确`{schema,spec_rev,contract_rev,id,boundary_request_ref,boundary_plan_ref,connection_plan_ref,kind,mode,total_ticks,bpm,notes,emitted_notes,join_groups,performance_map,layers,remaining_gaps,target_resolution,protection_summary_fingerprint,source_fingerprint,music_fingerprint,score_fingerprint}`。kind=final|comparison，mode=melody_only|arranged；comparison来自同一候选P4完成后的真实基础排布，无gap时当前有效实际音乐，不能对比另一个候选或尚未补齐的编辑。所有谱ref与输入快照/候选链一致；notes逻辑保护不变，emitted_notes由合法JoinGroup规范化。谱fingerprint对全部字段除id/score_fingerprint计算，id由谱fingerprint派生，不自指；music_fingerprint仅total/bpm/实际发声pitch/start/duration，排除ID/label/velocity/seed/mode。不把基础candidate音符差异当最终差异。
+
+每Layer精确`{id,role,name,preset,volume,pan,drum,notes,rules}`；role权威由允许的规则/ID/实际来源确定，不信字符串标签。主旋律事件逐项由emitted_notes派生，仅arranged允许已登记情绪preset/表达；solo仅单一soft主旋律/velocity80、无伴奏，实际pitch/onset/duration完全相同。陪衬规则profile=curve-arrangement-v1：从实际主旋律调性推导三和弦，和声逐拍/低音克制时值、按真实强度/情绪触发节奏与条件kick/snare/hat；每个伴奏Note保存具体规则、拍位置、和声/父音乐来源。独立validator按有限规则解析真实音符与参数，禁止任意新增旋律改名为harmony骗过；不允许复制主旋律或默认handoff。全部层总长精确固定，伴奏留白只克制延续，不新增主旋律。
+
+`validate_final_score(request,plan,score)->ValidationReport`精确`{status,score_fingerprint,music_fingerprint,layout_fingerprint,protection_summary_fingerprint,checks,remaining_gaps}`，status=VALID才可渲染。边界前/后与编配后逐一校验完整桥集合、逻辑保护及物理合法合并、目标实际覆盖/音符支撑、来源、留白、剩余gap、固定总长/单旋律以及所有依赖版本。validation是独立返回，不放入自身乐谱hash产生循环。旧compile_score不直接用于P7，复用preset/和声原理/序列化/LMMS/尾音，另建同谱适配。
+
+AudioAsset精确`{schema,spec_rev,contract_rev,id,version,candidate_ref,score_ref,kind,mode,renderer_version,files,body_ticks,body_seconds,audio_seconds,tail_policy,asset_fingerprint}`；files=`{wav:{path,sha256,bytes},mid:{path,sha256,bytes},mmp:{path,sha256,bytes}}`，kind=comparison|final，renderer=curve-final-lmms-v1，tail_policy=fixed-1s-existing-finish-audio（不宣称任意长尾音）。真实LMMS连续渲染并验证WAV可读/声道/长度/非静音、MIDI/MMP实际音符时间与绑定的表现谱；谱与文件完整就绪才AUDITION_READY。输出前总长及全部层onset/duration必须10tick可表达，否则OUTPUT_TIME_UNREPRESENTABLE，无任何量化；MIDI本身虽能精确tick，本轮完整三格式绑定仍明确按共同无损能力拒绝，原数据完整保留。
+
+保存与加载只验证持久化事实，不重新安排/作曲/渲染；磁盘文件缺失/被换时音乐可读取，动态capability不可试听/确认该推荐。每次Play/Confirm/Export验证ref/hash/实际文件和模式；取消原生导出不改工程/选中/播放，atomic_export保护源与已有目标，三格式逐项可用，正式整曲导出要求remaining_gaps=[]。旧历史输出保持逐格式兼容。
+
+### 13.12 完整推荐、有限搜索和前端Facade（DRAFT）
+
+RecommendationRequest精确`{schema,spec_rev,contract_rev,token,input_project,input_contract_rev,input_fingerprint,scope,target_gaps,mode,seed,parameters,algorithm_version,request_fingerprint}`，scope=all|selected|current_complete；mode绑定输入settings，可显式只作为输出模式捕获（不修改工程）；参数精确`{completion_budget,bridge_parameters,connection_parameters,boundary_parameters,max_pipeline_candidates,max_recommendations}`；原三参数按各冻结版本验证，最后预算默认4/2，上限8/4。固定输入/seed排序可重现，取消每阶段/循环/渲染之间检查，不无限重试、不强行凑第二套。需要渲染时真实renderer槽全局串行。
+
+推荐内部独立Controller/staging_bundle先P4(有gap)再P5原子锁/真实READY、P6、P7每套；没有gap不调用P4、不造新素材。可以处理P4 INSUFFICIENT中的合法单候选。每候选失败保具体阶段错误和全部保护/已有合法事实，另一套完整有效候选保留。全部finalScore完成后真实音乐再去重，按P4真实评分/处理收益和少改动排序，排除种子/名称/力度差异，有限预算内不足至少两套明确原因。
+
+FinalCandidate精确`{id,version,request_ref,stage_refs,final_score_ref,comparison_score_ref,music_fingerprint,remaining_gaps,rank,reasons,assets,capabilities,modes}`；stage_refs精确`{completion_attempt_id,completion_candidate_id,bridge_attempt_id,connection_attempt_id,boundary_request_id,boundary_plan_id,boundary_result_id}`，无gap completion二字段null。capabilities精确`{score_scope,target_complete,can_audition,can_apply,can_export_final,blocking_reasons}`，scope=FULL|LOCAL，AUDITION_READY且当前输入授权才can_apply；LOCAL可确认但can_export_final=false。只把全部谱/资产完成的候选列有效，失败阶段事实仍有审计，不能以rendering标假READY。
+
+RecommendationOutcome精确`{schema,spec_rev,contract_rev,request_fingerprint,status,candidates,facts,stage_bundle,search,insufficient_reason,failures,error,outcome_fingerprint}`；status=SUCCEEDED|INSUFFICIENT|FAILED|CANCELLED，facts为本轮新增有界叶事实，stage_bundle是独立P4/P5/P6注册表/快照，不含本轮P7attempt/outcome递归嵌套；源Project为p7时可携带其既有扁平final_facts闭包，不能递归嵌套历史完整registry。search精确`{tested_candidates,completed_candidates,duplicate_candidates,termination}`。none、无合法窗口可继续；桥/连接真正失败中止该候选。Final去重对象是最终emitted_notes，完全同音且只不同ID不能保两套。
+
+Controller接口：
+- `capture_recommendations(selected_gap_id=None,seed=31,parameters=None,mode=None)->{token,request,attempt_id}`；重复活动recommendation拒绝。capture注册快照及独立P7attempt，不改音乐。
+- 后台纯`prepare_recommendations(request,source_facts=None,should_cancel=None,on_progress=None)->RecommendationOutcome`，source_facts为原有registry有限闭包，不嵌入持久化Request。on_progress事件`{seq,phase,message,candidate_id,stage_bundle}`；phase=BASE_COMPLETION/BRIDGE_DECISION/BRIDGE_LOCKED/BRIDGE_GENERATION/CONNECTIONS/BOUNDARIES/VALIDATION/ARRANGEMENT/RENDERING。锁真正公布后才BRIDGE_LOCKED，partial bundle包含真实锁与事实；主线程`record_recommendation_progress(token,event)`完整Token及seq按13.16登记，原型不混到新attempt。
+- `finish_recommendations(token,outcome)->bool`独立认证所有实际谱/来源/事实/资产后暂存，成功不抢播/不应用。`fail_recommendations(token,error)`/`cancel_recommendations(token)`结束busy保阶段事实和旧音乐；终态旧回调拒绝。
+- `recommendation_state()->{status,phase,attempt_id,candidates,error,message,search,insufficient_reason}`；status=IDLE/RUNNING/READY/FAILED/CANCELLED/INTERRUPTED/STALE/APPLIED，phase上列或AUDITION_READY，不暴露大registry给UI反复拷贝。候选DTO=`{id,version,title,scope,remaining_gaps,rank,reasons,score_ref,music_fingerprint,assets,capabilities,preview}`；preview=`{project,notes,protections,bridge_overlays,connection_overlays,boundary_overlays}`，全部对应候选私有实际谱，不借当前编辑标记。
+- `recommendation_asset(candidate_id,kind='final',mode=None)->AudioAsset`重核实际文件、版本/模式/谱，不开始播放；UI明确Play才app.start_playback共享player。选卡与后台完成不自动播放、不改变原来playing_target。
+- `apply_recommendation(candidate_id,transaction_id=None)->{changed:bool,receipt:ApplyReceipt}`同谱/同阶段原子认证应用；自动补全在完成后只对最高有效候选调用同一方法。取消视图/不确认不污染库。
+- `effective_music()->EffectiveLayout`与`accepted_state()`返回实际可读音乐和ACTIVE/STALE接受状态；`history()`包含明确历史接受版本/各格式可用性，`history_asset`与`export_history`绑定选定score，同样LOCAL不能正式导出。
+
+前端新RecommendationUI在既有候选区及stage选择器增加“完整建议”，查看建议/自动补全入口可达；四个中间stage依然如实不可应用。候选选择、原始/处理后对比选择、明确播放、确认、取消、重试都有明确状态。P7单一read-only preview覆盖画布，桥/记忆独立标记，返回恢复编辑选中/滚动。Tk/Controller提交只mainthread，thread只纯Request/源facts与取消Event/queue，完整token+seq/stage门禁；故障/result callback异常一定恢复可操作。stage计算不启动播放器，显示主体/含尾音真实时间与正在听对象。
+
+### 13.13 接受状态、事实注册表与一次事务（DRAFT）
+
+显式P7阶段允许外层Bundle升级`emoblocks.curve-bundle.v2`，原v1读取/另存保持v1和原音乐头。v2精确原六字段加`final_facts`，contract_rev仍等Project自身所属音乐版本（capture时可p4，确认后p7）；new_bundle无P7任务仍原v1。final_facts有限注册表条目`{id,kind,version,fingerprint,data,dependencies}`，Ref指纹=domain(kind)+canonical data，dependencies只引用同表Ref；kind=boundary_request/boundary_plan/boundary_result/final_score/audio_asset/application。每表最多2048条，图无环、依赖深度<=32、总文件上限128MiB（原v1仍20MiB）；Request.source_facts运行时快照但不存递归registry。P7attempt另有推荐request/outcome/phase/接受receipt，APPLIED是独立P7状态，不修改冻结P4/P5/P6状态枚举；其stage_bundle与源快照一并持久化，运行中恢复INTERRUPTED，不重建线程。纯恢复独立认证源/所有阶段、候选与refs/应用指纹；仅ref存在或hash自报不够。
+
+Project顶层形状不变，只有明确确认事务设置contract_rev=p7。accepted_overlay是现有final_score Record载荷中的`p7`对象，保存Ref、实际FinalScore/桥叶覆盖信息/依赖写域/accepted_binding_fingerprint；accepted_candidate记录原输入snapshot与transaction_id，不嵌完整Project或registry。完整音乐source事实在Bundle/snapshot/attempt/final_facts中。P7 Project与快照读取需解析并认证Registry的完整有限依赖闭包，旧版本不迁移。保留目标基础放置、原始source/材料；实际自动桥额外登记原P5保护与适配后的P1桥Plan/Result记录，不能只存UI标签。原手工/失败桥锁不删除、活动桥音符由实际覆盖读取，谱与保护投影一致。
+
+`accepted_binding_fingerprint`只对音乐有效依赖投影计算（project_id/ppq/bpm/total/基础placements/intensity/blank/settings/活动protections），排除自身记录/ref、文件路径、音乐saved/undo/session、显示标签及编号。应用后才绑定此投影，原input snapshot fp只作来源，两者不得混用。新资料导入不改已接受音乐依赖时保留有效层；任何音乐编辑/undo后未应用旧候选授权不可复活。已应用音乐undo/redo恢复保存状态本身，读取绑定重新校验，不调用generator或重新编号。
+
+接受读取统一`curve_application.effective_music(project,fact_registry=None)`：ACTIVE时返回同一FinalScore实际notes与合法emitted/层；无有效最终层时返回当前实际基础＋仍锁定的已接受bridge事实，并明确连接/边界失效，不整体丢桥或偷用旧基础端点。`curve_project.current_notes`的p7分派、P4上下文/候选notes、P5 actual_notes及P3固定桥/记忆检查必须经该有效读取接线，不造假p4输入绕认证；旧contract分支原样。基础选择与前情绪Snapshot保持原状，原bridge保护永不因派生层失效解除。若新强度/位置使完整记忆与既有桥固定锁矛盾，正式重算事务拒绝且工程/undo/saved不变，说明需明确新计划，不能删除任何保护来放行。
+
+ApplyReceipt精确`{transaction_id,candidate_ref,score_ref,input_snapshot_id,pre_revision,post_revision,accepted_binding_fingerprint,registered_source_ids,registered_material_ids,accepted_record_id,result_id}`。候选/谱/阶段/资产都已验证且同输入；确认时不重新抽样/生成/渲染。后台完成消耗原活动Token，确认授权检查持久化attempt身份和原session/revision及当前Project fingerprint；load后旧回调永远拒绝，已持久化READY候选仅在原输入仍精确匹配时由新session的明确确认动作创建新应用授权，编辑→undo或saved STALE不重活。事务本身revision递增只改变应用绑定，不直接失效新接受层。
+
+新增专用`ProjectSession.apply_prepared(project,expected_revision,expected_fingerprint)`，只供已认证应用事务；预先准备/validate完整Project及Bundle/facts/素材/labels/源/桥保护/记忆/覆盖与接受记录，全部通过后一次commit音乐、request生命周期和注册表。任何失败不留下source/编号/历史半提交。只登记本次实际采用P4素材及桥乐句/子块，没用/失败临时材料不进库。每candidate固定transaction_id重复确认幂等，若已应用绑定仍当前返回同receipt且包装changed=false；undo/redo只音乐状态，审计和已输出文件保留，历史版本标明当前/历史不冒充当前编辑。后续派生层失效保audit_context（仅placements/protections）与原registry叶，不循环嵌套快照。
+
+全部gap已解的接受版本才正式导出；局部版本保存/试听/应用合法但余gap明确。输出/播放选择历史已接受版本时绑定其已认证原谱/资产，与当前编辑或推荐选择独立，后续编辑不覆盖旧文件。缺失原导入文件用已有Source快照；缺音频不把工程读坏。自动补全仅选择本完整Outcome最高合法候选走同一Apply，不存在“简化补全”。
+
+
+### 13.14 二次评审整合：模式、授权与UI能力（DRAFT）
+
+本节裁决13.2–13.13中概括措辞；精确字段以本节及前述精确形状为准。初轮算法/前端只读均指出具体缺口，旧编配与素材tie反例已复现；不以这些探针冒充P7实测。
+
+两mode共用同一经过P4–P7确定的逻辑主旋律与播放事件结构。输出mode是表现/渲染选择，不改Project音乐设置、不重跑补全/桥/连接/边界。新增`prepare_candidate_mode(request,candidate_id,mode,source_facts,should_cancel=None,on_progress=None)->ModeOutcome`明确仅从同一已认证BoundaryResult编配并渲染该mode的一对谱/资产；ModeOutcome=`{candidate_id,mode,final_score,comparison_score,assets,error}`，source阶段身份仍相同，结果由独立门禁登记为新增mode refs，不替换另一mode资产。另有`capture_recommendation_mode(candidate_id,mode)->{token,request,candidate_id,mode,source_facts}`与`finish_recommendation_mode(token,outcome)`，迟到/重复/失效拒绝，不抢播/改音乐dirty。FinalCandidate初始mode由RecommendationRequest.mode捕获；每mode单独管理谱/资产/能力，推荐身份取忽略mode的BoundaryResult/阶段Ref而非表现ScoreFP，避免模式切换成为新推荐。AudioAsset.candidate_ref指纹为request+stage_refs+BoundaryResult内容身份，排除rank/asset路径/表现mode；AudioAsset.score_ref仍绑定具体mode表现谱。music去重不因mode/力度而变化。
+
+候选DTO保留13.12精确字段，并增加`modes`映射，仅melody_only/arranged键；每mode精确`{status,final_score_ref,comparison_score_ref,assets,error,capabilities}`，status=SCORE_READY/RENDERING/AUDITION_READY/FAILED/MISSING。assets精确`{comparison:AudioAsset|null,final:AudioAsset|null}`；两侧都完整认证才该mode AUDITION_READY。所谓已试听绑定是资产已准备且认证，不要求用户听完整段，自动补全无需人为播放。当前mode绑定选中/确认/导出明确对象，UI不得把missing当ready。
+
+capabilities精确扩充为`{score_scope,target_complete,can_preview,can_play_comparison,can_play_final,can_apply,can_export_final,blocking_reasons}`；只单侧文件有效可显式播放该侧，确认要求同mode两侧有效且完整输入授权，can_export_final仅已接受历史FULL结果，不对尚未确认推荐开放正式导出。UI从后端能力取值，不猜READY/count/路径。缺文件读取音乐仍成功，用户明确重试准备mode资产，新render Token拒绝旧回调，不重新作曲；保持原播放对象。
+
+RecommendationState精确`{status,phase,attempt_id,candidates,error,message,search,insufficient_reason,accepted_ref,capabilities}`，accepted_ref为已接受Ref或null，capabilities=`{can_calculate,can_cancel,can_auto_complete}`。候选选择与输出模式可保留各自UI偏好，不产生music dirty或undo。准备mode可使用既有P7正常job框架，不新增任务框架；相同候选/mode重复在RUNNING时拒绝。
+
+ConfirmationRef精确`{session_id,edit_revision,input_fingerprint,candidate_ref,mode,final_score_ref,comparison_score_ref,asset_pair_fingerprint}`。`confirmation_ref(candidate_id,mode=None)`仅纯认证当前输入/谱/双资产，返回当前session授权，不启动播放/写音乐。`apply_recommendation(candidate_id,transaction_id=None,mode=None,confirmation_ref=None)`包装changed与13.13 Receipt，确认Ref若传入必须全部匹配，模式不能与已准备资产不一致；默认由当前选中mode明确捕获并同一次调用复核。先检查已应用同transaction/同candidate/同谱幂等，再核旧修订；同transaction不同谱拒绝，undo后再确认旧transaction不能重新应用（可查看审计），redo只恢复保存音乐。
+
+应用前先完整准备并认证所有未来Project/Bundle/registry/素材/编号/保护及新的接受绑定，然后可靠保存当前暂存facts/输入快照（调用已有快照自动保护），保存失败终止且不改音乐/库/undo/编号。保存真的成功才mark_saved，不显示假已保存。随后同mainthread一次提交音乐和接受audit；事务中不再作曲/渲染/编号二次分配。P7 attempt的APPLIED不能改变旧P4/P5/P6状态；审计在外层保留，undo音乐恢复原version/header和全部数据，redo恢复保存p7音乐。
+
+已应用后任意依赖音乐编辑保守使连接/边界层失效，明确显示当前编辑有未生成修改；仍有效固定Bridge覆盖与保护保留，不能自动回旧基础绕开桥。实际有效音乐由统一读取给P3/P4/P5/后续生成，BaseProject仍保用户原选择。材料/显示编号/UI偏好不在接受绑定音乐投影中；注册表Ref必须与对应实际谱/音符来源/计划事实一致，而不只是存在。ACTIVE可播放接受历史，STALE后历史文件仍按原版本明确试听/导出（FULL限制），当前编辑不会误用其无效连接。自动bridge固定音乐不能直接映射到被遮盖的旧placement编辑；前端显示只读保护范围/理由，后续明确桥移动/删除另需正式更新事务，不能擅自释放。
+
+Renderer串行单次LMMS超时240秒，每候选双资产逐个；全搜索max_pipeline_candidates<=8/max_recommendations<=4，并在阶段之间、循环中、slot等待和渲染结束检查cancel。取消不伪造另一个成功音频。真实正常路径至少两套不同推荐及两mode的实际WAV/MIDI/MMP证据；故障路径模拟允许但明确区分。对比分数取已补齐基础（保手动桥）而非原未补齐编辑；接受谱=播放处理后谱=导出谱，记录Ref/文件hash/实际输出音符证明。
+
+
+### 13.15 末次整合：音乐账本、规则、来源和持久化形状（DRAFT）
+
+本节补齐R2双方明确缺口，独立verifier仍须审查；历史8–12节正文不修改。Ref.version无显式版本的不可变对象统一1，Plan/Asset用自身version。所有hash继续8.3的域+canonicalJSON规则，所有排序明确禁止靠caller顺序混拼。
+
+指纹：RecommendationRequest/request_fingerprint域emoblocks.recommendation-request.v1排除自身字段；BoundaryRequest全文域emoblocks.boundary-request.v1（无自身hash字段）；Layout全文域emoblocks.final-layout.v1；BoundaryPlan域emoblocks.boundary-plan.v1排除plan_fingerprint；BoundaryResult域emoblocks.boundary-result.v1排除id/content_fingerprint；FinalScore域emoblocks.final-score.v1排除id/score_fingerprint；AudioAsset域emoblocks.final-asset.v1排除id/asset_fingerprint；Outcome域emoblocks.recommendation-outcome.v1排除outcome_fingerprint。Registry Ref.fingerprint使用对象原生指纹，不再用另一个kind域偷偷替换；entry.id/version必须等对象id/version（无version用1）。ApplicationFact的Ref对13.13 Receipt全文域emoblocks.application.v1；ID=transaction_id。CandidateRef对request_ref+stage_refs+BoundaryResult内容Ref域emoblocks.final-candidate.v1，排除mode/表现谱/asset/rank，id由该digest产生，version=1。实际音乐指纹只排序`(start_tick,pitch,duration_tick)`的emitted_notes，含bpm/total_ticks；不以ID/label/seed/力度/mode计差异。
+
+Boundary.search精确`{tested_boundaries,attempted_operations,termination}`，分别计算实际几何边界评估数、提出并检查的具体操作数；termination=COMPLETE|POLICY_NONE|BUDGET_EXHAUSTED。预算没搜索完且没有合法操作时抛SEARCH_BUDGET_EXHAUSTED，不返回NO_LEGAL_OPERATION；有已认证部分操作可提交并明确预算终止，不伪称全搜索。assessments逐边界`{boundary_id,method,accepted,reasons}`；reasons是非空字符串列表。Structural预算按消费/产生原Note逐一计Δpitch/Δstart/Δduration，不只看范围；remove的弱音必须duration<=120且velocity<=80、起点非四拍强拍、非受保护（并不移除任何目标唯一音符支撑）。可合法不移除而用奏法，不能为达到某类型强造弱音。
+
+Joint端点列表按boundary_ids的排序排列，每端点精确`{boundary_id,left:Endpoint|null,right:Endpoint|null}`，Endpoint=`{note_id,pitch,start_tick,duration_tick}`，original为同一原Layout的真实最近端点，final为一次应用后的对应最近端点；原Note消失时不能保留假ID。join_group.render_event是P3八字段Note，ID=域emoblocks.final-emission.v1对performance_id/source_emission_id/按时间排序input_note_ids，origin取共同origin、pitch/start取首片、duration精确加和、velocity取首片、slice=null、lineage为按input次序去重全部原lineage与ID；单片不生成JoinGroup且保原Note。FinalScore.performance_map精确列表`{emitted_note_id,logical_note_ids,performance_id,preset}`，逐事件完整覆盖，无重复/遗漏，逻辑ID解析自该Score.notes和JoinGroup，不猜不透明ID。保护逻辑原Note结构不变，物理事件独立通过原发声/归属/连续offset检查；旧独立place误合并反例必须拒绝。
+
+来自已接受p7音乐且不是当前base/BridgeResult/ConnectionResult中原Note的ledger父：stage=final_score，owner_id=已认证旧Score.id、note_id=实际接受Note.id、material_snapshot_id=null、component_path=原performance的完整路径；content_fingerprint=旧Score.score_fingerprint。此事实须从source registry与Project真实绑定独立解析，不能退回旧A素材。为旧P4/P5/P6服务新增p7输入分派，旧输入仍原路径。P5/P6旧五字段ParentRef在input_contract_rev=p7时允许kind=accepted_score，owner_id=旧Score.id、material_snapshot_id=null、note_id=该Score真实logical Note.id、component_path保持原演奏；原p0/p23/p4输入绝不能使用此新kind。纯验证解析已接受Score叶事实，保已知origin/完整父血缘，不能清空或借无关合法来源。lead仅在curve_completion/curve_bridge_music/curve_bridges/curve_connections的源读取/父解析处接公开数据适配，不改既有音乐规则或旧版本校验；算法worker只新boundary文件，避免冲突。
+
+P7专用`captured_music` Record只用于私有P4候选保持输入有效音乐：payload精确`{source_score_ref,source_input_fingerprint,source_notes,performance_map,base_binding_fingerprint,added_placement_ids}`，source_notes是捕获输入实际接受逻辑谱，不含新填充；实际基底=原source_notes＋新增放置实际音符，原桥/连接/最终音符不因候选填另一gap而消失。candidate/Source验证从P4 original request逐字段重建此记录，source registry匹配真正旧Score，不能caller填一个hash冒充；仅contract_rev=p7分派，普通用户音乐编辑将captured_music失效，只有明确当前accepted ACTIVE或私有候选carry绑定合法才读取。实际P4 contexts/notes与P5读取均走统一函数，不能拷成p4壳绕门禁。
+
+对比谱保护分支：comparison精确P5 request.base_project的有效音乐，含其既有桥/记忆/主题/手工/留白，但不要求含本轮尚未加入的自动桥；final必须完整就绪P5桥及P6/边界实际结果。两者共享同一候选来源/快照/模式，不用当前未补全工程与之混比。
+
+Layer.rules精确`{profile,entries}`，profile=curve-arrangement-v1；entries每实际note一条`{note_id,rule,source_note_ids,region,start_tick,duration_tick,pitch,velocity,key_context,intensity,emotion}`。rule=melody/harmony/bass/pulse/kick/snare/hat。source_note_ids只能该Score实际发声父，不能随意给一个合法source标签。melody逐emitted_note一一输出，音高/绝对时刻/时值精确不变，arranged按onset emotion及合法tone_hint选soft/bell/dark/pluck/brass、velocity沿用已校验表达，solo固定soft/80，volume=35、pan0/drumnull。mainNote不可复制到两层。
+
+伴奏有限公式：region为实际音乐Segment或主动留白首拍的克制延续；key_context从该段已认证材料调性/实际旋律推导（无材料调性用既有infer_key纯数学），大/小调尺度沿用现有七音，选七个三和弦中对本段实际notes按时值加权最多的degree，同分最早degree。voicing根48+pc，其余向上最近chord音；harmony每PPQ480一个和弦，span=min(PPQ,region.end-tick)，duration=span，velocity=round(28+20*level)、preset=dark(sad/suspense)否则pad、volume14；bass根低12，duration为span*.8向下选新伴奏10tick单位、velocity=round(40+28*level)、volume20。pulse仅level>.35且非sad的奇拍，stride=120(level>.8)/240(level>.6)/480，按voicing轮换加12，duration=min(span,stride*.6)的合法10tick新伴奏单位，velocity=round(30+25*level)，presetpluck/volume15；suspense每第三细分按已有克制规则跳过。kick/snare/hat仅crisis/resolve且level>.45，kick偶拍pitch36 duration<=100 velocity=round(50+25*level) volume20，snare奇拍pitch38 duration<=100 velocity=round(45+20*level) volume15；hat每240，crisis且level>.8时每120，pitch42 duration<=60 velocity=round(30+20*level) volume10。drum对应既有bassdrum01/snare01/hihat_closed采样，MIDI GM音高与MMP采样key57的既有映射明确记录，不当成主旋律移调。
+
+在主动留白内无pulse/鼓/新增melody，只有前实际和声可延续最多一拍，velocity<=35；若没有前音乐则不生成。局部未解gap内不生成新主旋律或将其算完整；伴奏也不偷偷填完该gap。层角色和notes必须与这些有限rule/slot的实际来源、音高、时值、强度及数量逐项对应，不能仅验证role字符串/profile或自报保护通过。不使用旧compile_score量化/夹紧/目标音预示/双重主旋律。新的伴奏选10tick单位仅是它自身的明确生成规则，不改原主旋律tick；若region起点或span令最终实际层不可无损表示，整体输出明确拒绝。
+
+final_score.payload精确P1必需`{total_ticks,notes,protection_summary_fingerprint,validation}`加p7对象；p7精确`{schema,candidate_ref,score_ref,final_score,mode,binding_fingerprint,bridge_overlays,connection_overlays,boundary_operations,write_ranges}`，schema=emoblocks.accepted-overlay.v1。bridge_overlays元素`{id,range,notes}`，与真实P5结果/固定锁逐项等；connection_overlays=`{id,range,notes}`，对应P6结果，不作为新Bridge锁；boundary_operations原认证Operation列表，write_ranges为所有实际结构变化支持域。完整FinalScore是小型无Project/Registry嵌套叶，数据必须与score_ref解析的Registry事实逐字段一致（不是自签hash）；validation为实际ValidationReport，顶层notes同FinalScore.notes。INVALIDATED状态追加原有audit_total_ticks与仅placements/protections的audit_context，p7原载荷事实保留，不覆盖原音乐历史。接受记录使用P1 accepted_candidate字段并加`mode candidate_ref score_ref application_ref result_id`，任何引用必须闭合于当前Bundle.final_facts和原snapshot，不悬空。
+
+P7Attempt精确原通用`id snapshot_id input_fingerprint state records protections staged_materials error`加`recommendation`；records/protections/staged_materials都为空（实际保护在私有stage_bundle，不混到current Project）。recommendation精确`{schema,spec_rev,contract_rev,request,phase,last_seq,cancel_requested,partial_stage_bundle,outcome,mode_bindings,mode_jobs,receipt}`。schema=emoblocks.recommendation-attempt.v1；phase未开始null，partial_stage_bundle开始null；outcome/receipt未完成null；mode_bindings为`{candidate_id:{mode:{final_score_ref,comparison_score_ref,comparison_asset_ref,final_asset_ref,asset_version}}}`，只有完整同版本双资产才原子更新，不挑两侧最新文件混拼。mode_jobs列表`{token,candidate_id,mode,asset_version,status,error}`，status=RUNNING/READY/FAILED/CANCELLED/INTERRUPTED/STALE；未知模式/ID拒绝。FinalCandidate.modes持久化相同绑定解析出的13.14状态/谱Ref/完整资产/能力，全部必须与唯一mode_bindings匹配，重试新asset_version且保旧事实，不能恢复时猜模式。P7Attempt state增APPLIED，仅该schema；旧attempt不增枚举。
+
+### 13.16 最终Frontend DTO、取消审计及模式终态（DRAFT）
+
+补全preview精确13.12六字段加memory_info；memory_info沿P3原格式`peak_tick lookup_tick state placement_id component_path range protection_id`，由对应私有基底/保护真实定位，不借current标记。boundary_overlays元素精确`{id,tick,method,editable_ranges,operation_ids,performance_hint_ids,reasons}`。bridge/connection overlays复用已有P5/P6 preview形状，阶段ID/真实notes对应本候选。
+
+EffectiveLayout精确`{project_id,total_ticks,bpm,notes,emitted_notes,segments,protections,remaining_gaps,memory_info,accepted_ref,derived_layers_status}`；derived_layers_status=ACTIVE|STALE|NONE。`accepted_state()->{status,candidate_ref,score_ref,result_id,mode,remaining_gaps,message}`；status=NONE/ACTIVE/STALE，NONE引用null/remaining_gaps为当前gap，保stale来源供历史标识。Bridge前后实际读取不能自造忽略覆盖的placement音符；只读保护帧不能被编辑事件映射到其底下旧素材。
+
+历史条目在现有`history()`基础上新增P7数据但不破坏旧格式访问：`{id,label,generated_at,version,scope,mode,score_ref,modes,availability,application_status}`；scope=FULL|LOCAL|LEGACY，application_status=CURRENT|HISTORICAL（按当前音乐绑定，不按last result）。availability每格式单独bool，LOCAL正式三格式导出皆false（不删除真实开发文件）。`history_asset(id,mode=None)->AudioAsset`、`export_history(id,format_,destination,mode=None)->Path`显式mode，不提供对应模式资产时错误不回退。旧legacy接口无新增mode数据仍按旧三格式/sourcePath合同，只读规则不变；P7按该history result的已保存谱/模式/资产，不用current editor替代。
+
+Queue envelope精确`{token,seq,kind,payload}`；kind=progress/result/error，seq来自worker同request单调递增，progress.payload含同seq及13.12 event字段。controller `record_recommendation_progress(token,event)->{accepted,continue_processing}`，相同seq重复返回false且不当新失败，低seq/身份错误拒绝；完整验证stage_bundle属于该原request Project和原版本，既有锁/已认证事实不可从新snapshot删除或改版本，才能登记/显示。UI对progress提供ACK Event，backend锁登记后必须等待mainthread确认progress审计再继续音乐生成；ACK不是Tk对象，worker不访问Controller/Tk。每个桥部分READY也在继续下一桥前发布审计。锁是真正private backend事务事实，不是UI先显示再找锁。
+
+`cancel_recommendations(token)`先设置cancel_requested、phase=CANCEL_REQUESTED，取消Event阻止下一阶段；provider完整收拢已产生阶段事实后finish CANCELLED、消耗Token并恢复操作，不在锁事件仍排队时丢掉它。取消进度可只登记审计，不继续音乐；明确P7队列ACK/取消标志实现，不能把未收拢称已完成。允许专属审计路径为STALE/FAILED/CANCELLED旧attempt登记经认证的真实partial_stage_bundle（同原Token/输入/plan/单调seq、保护/事实只保留不删除），返回continue_processing=false；绝不改变终态、授予READY、替换current/new attempt/播放器或应用音乐。旧result/确认仍拒绝，这条路径仅防止输入改变或回调异常导致有效锁审计丢失。取消最终锁/READY内容都可持久化验证，不能靠重复发送任务恢复。
+
+`fail_recommendations(token,error,stage_bundle=None)`恢复终态，若带partial事实先独立认证并保留；invalid事实拒绝且保已信任旧审计，不将假锁持久化为有效。Thread.start失败直接该接口（无private线程/锁）。`fail_recommendation_mode(token,error)`和`cancel_recommendation_mode(token)`只该mode Job失败/取消，不消耗原candidate/其它mode有效谱资产；mode准备异常/result登记异常同样恢复操作。保存中RUNNING mode_job恢复INTERRUPTED，不启动线程、不撤销已有其它mode READY；mode Token原epoch永失效，显式重试新version。APPLIED/历史候选准备另一mode凭该保存接受Score/BoundaryResult新当前session只读render授权，不能用原input token再次应用。
+
+ModeOutcome/asset registration必须两个资产同candidate/mode/asset_version与各自score_ref一致；任一侧失败不发布新pair、不冒充AUDITION_READY。已有另一mode/旧同谱有效pair保留，只解释本次失败；不能回退别的候选音频当成功。mode rendering/cancel不改音乐saved/undo/选材/playing对象，只staging audit。推荐缺文件后用户可明确重试mode；不重新补全/生成/桥/连接/边界。
+
+前端可独立依冻结 DTO/Facade实现mock行为测试，但真实集成必须再用真实Controller、真实算法及LMMS验证。所有渲染与设备任务互斥串行，生成到音频/明确Play/确认/保存重开是本轮交付，不留模拟音频到P8。完成P7独立验收后停止；P8建议只供后续用户授权。
