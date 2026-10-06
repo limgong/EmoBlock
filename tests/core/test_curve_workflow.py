@@ -74,6 +74,11 @@ class TimelineTests(unittest.TestCase):
             self.assertEqual(p, original)
         self.assertEqual(m.edit(p, 'resize', grid_count=10)['total_ticks'], 19200)
 
+    def test_shrink_exact_control_point_keeps_it_as_endpoint(self):
+        p = m.edit(project(), 'set_intensity', points=[dict(tick=0, level=.25), dict(tick=3840, level=.8), dict(tick=15360, level=.25)])
+        p = m.edit(p, 'resize', grid_count=2)
+        self.assertEqual(p['intensity_points'], [dict(tick=0, level=.25), dict(tick=3840, level=.8)])
+
     def test_intensity_internal_points_not_silently_truncated(self):
         p = m.edit(project(), 'set_intensity', points=[dict(tick=0, level=.2), dict(tick=4000, level=.8), dict(tick=15360, level=.3)])
         with self.assertRaises(m.ProjectError):m.edit(p, 'resize', grid_count=2)
@@ -254,6 +259,36 @@ class ProtectionTests(unittest.TestCase):
             with self.assertRaises(m.ProjectError):s.edit(action, **args)
             self.assertEqual(s.project, p); self.assertFalse(s.can_undo)
 
+    def test_failed_range_lock_blocks_place_blank_move_and_preserves_session(self):
+        p = manual_bridge(); p['placements'] = []
+        lock = p['protections'][0]
+        lock.update(origin='automatic', placement_id=None, status='RANGE_LOCKED', notes=[], structure_fingerprint=None)
+        plan = p['records'][0]; plan['status'] = 'FAILED'
+        plan['payload'].update(automatic_decision='selected', bridge_ids=['P'], manual_bridge_ids=[], ranges=[dict(start_tick=1920, end_tick=3840)])
+        p = m.edit(p, 'place', material_id='A1', start_tick=0, placement_id='safe')
+        s = curve_session.ProjectSession(p); before = s.project
+        for action, args in [('place', dict(material_id='A1', start_tick=1920)), ('mark_blank', dict(start_tick=1920, end_tick=2160)), ('move', dict(placement_id='safe', start_tick=2160))]:
+            with self.assertRaises(m.ProjectError):s.edit(action, **args)
+            self.assertEqual(s.project, before); self.assertFalse(s.can_undo)
+        m.edit(p, 'place', material_id='A1', start_tick=3840)  # half-open boundary
+
+    def test_payload_reference_cannot_bypass_state_or_summary_with_empty_dependencies(self):
+        p = manual_bridge(); plan = connection(p); plan['status'] = 'FAILED'; p['records'].append(plan)
+        row = dict(id='connection-result', kind='connection_result', version=1, status='READY', input_fingerprint='input', dependencies=[],
+            payload=dict(plan_id=plan['id'], plan_version=1, original_notes=copy.deepcopy(p['protections'][0]['notes']),
+                output_notes=copy.deepcopy(p['protections'][0]['notes']), actual_impact_ranges=[], validation={}))
+        p['records'].append(row)
+        with self.assertRaises(m.ProjectError):m.validate(p)
+        plan['status'] = 'LOCKED'; plan['payload']['protection_summary_fingerprint'] = 'stale'
+        with self.assertRaises(m.ProjectError):m.validate(p)
+
+    def test_payload_required_array_types_rejected_before_save(self):
+        for field in ('endpoint_refs', 'windows', 'decisions'):
+            p = manual_bridge(); row = connection(p); row['payload'][field] = 'not-an-array'; p['records'].append(row)
+            with self.subTest(field=field), self.assertRaises(m.ProjectError):curve_store.new_bundle(p)
+        p = manual_bridge(); p['records'][0]['payload']['reasons'] = 42
+        with self.assertRaises(m.ProjectError):m.validate(p)
+
     def test_connection_data_gate_and_three_intrusions(self):
         p = manual_bridge(); c = connection(p)
         for start, end in [(0, 7680), (1800, 2040), (3000, 4200)]:
@@ -270,6 +305,31 @@ class ProtectionTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def test_accepted_reference_requires_ready_score_real_snapshot_and_acyclic_input(self):
+        base = project(); snap = dict(id='input', spec_rev=m.SPEC_REV, contract_rev=m.CONTRACT_REV, content_fingerprint=m.fingerprint(base), project=base)
+        p = copy.deepcopy(base)
+        score = dict(id='final', kind='final_score', version=1, status='FAILED', input_fingerprint=snap['content_fingerprint'], dependencies=[],
+            payload=dict(total_ticks=p['total_ticks'], notes=[], protection_summary_fingerprint=m.protection_summary([]), validation={}))
+        accepted = dict(id='accepted', kind='accepted_candidate', version=1, status='READY', input_fingerprint=snap['content_fingerprint'], dependencies=[],
+            payload=dict(final_score_id='final', transaction_id='txn', input_snapshot_id='input'))
+        p['records'] = [score, accepted]; p['accepted_candidate_id'] = 'accepted'
+        with self.assertRaises(m.ProjectError):m.validate(p)
+        score['status'] = 'READY'; bundle = curve_store.new_bundle(p)
+        with self.assertRaises(m.ProjectError):curve_store.validate_bundle(bundle)
+        bundle['snapshots'] = [snap]; curve_store.validate_bundle(bundle)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = curve_store.save(bundle, Path(tmp)/'accepted-fixture.json'); self.assertEqual(curve_store.load(path)['bundle'], bundle)
+        bundle['snapshots'][0]['content_fingerprint'] = 'wrong'
+        with self.assertRaises(m.ProjectError):curve_store.validate_bundle(bundle)
+
+    def test_history_metadata_without_report_does_not_break_bundle_roundtrip(self):
+        bundle = curve_store.new_bundle(project()); bundle['results'] = [dict(report=None), dict(report=dict(output_directory=''))]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = curve_store.save(bundle, Path(tmp)/'metadata.json')
+            loaded = curve_store.load(path)
+            self.assertEqual(loaded['bundle'], bundle)
+            self.assertEqual(loaded['capabilities']['history'], [dict(wav=False, midi=False, mmp=False)] * 2)
+
     def test_two_snapshots_unicode_no_overwrite_and_reopen(self):
         p = m.edit(project(), 'place', material_id='A1', start_tick=1921, placement_id='one')
         p['placements'][0]['base_snapshot']['notes'][0]['duration_tick'] = 239

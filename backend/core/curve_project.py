@@ -269,6 +269,37 @@ def records_check(records, protections, placements, total, materials, sources):
         payload = record['payload']
         if not isinstance(payload, dict) or not set(RECORD_FIELDS[record['kind']].split()) <= set(payload):
             reject('未来计划缺少必需字段。')
+        list_fields = {'bridge_plan': ('bridge_ids', 'manual_bridge_ids', 'ranges', 'reasons', 'joint_boundary_conditions'),
+            'connection_plan': ('endpoint_refs', 'windows', 'decisions'),
+            'connection_result': ('original_notes', 'output_notes', 'actual_impact_ranges'),
+            'boundary_plan': ('operations', 'original_notes'), 'final_score': ('notes',)}
+        for name in list_fields.get(record['kind'], ()):
+            objects(payload[name])
+        string_fields = {'bridge_plan': ('candidate_id', 'candidate_fingerprint'),
+            'bridge_result': ('bridge_id', 'plan_id', 'protection_id'),
+            'connection_plan': ('bridge_plan_id', 'bridge_layout_fingerprint', 'protection_summary_fingerprint'),
+            'connection_result': ('plan_id',), 'boundary_plan': ('bridge_plan_id', 'protection_summary_fingerprint'),
+            'final_score': ('protection_summary_fingerprint',),
+            'accepted_candidate': ('final_score_id', 'transaction_id', 'input_snapshot_id')}
+        for name in string_fields.get(record['kind'], ()):
+            ident(payload[name])
+        for name in ('plan_version', 'bridge_plan_version'):
+            if name in payload:
+                integer(payload[name], 1)
+        if 'validation' in payload and not isinstance(payload['validation'], dict):
+            reject('阶段校验报告必须是对象。')
+        for name, expected_kind, version_field in (
+            ('plan_id', 'bridge_plan' if record['kind'] == 'bridge_result' else 'connection_plan', 'plan_version'),
+            ('bridge_plan_id', 'bridge_plan', 'bridge_plan_version'), ('final_score_id', 'final_score', None)):
+            if name not in payload:
+                continue
+            target = refs.get(payload[name])
+            if target is None or target['kind'] != expected_kind or (version_field and target['version'] != payload[version_field]):
+                reject('阶段实际输入引用不存在或版本不匹配。', 'PLAN_VERSION_MISMATCH')
+            if record['status'] in ('READY', 'LOCKED') and target['status'] in ('FAILED', 'INVALIDATED'):
+                reject('阶段不能消费失败或失效的实际输入。', 'PLAN_VERSION_MISMATCH')
+            if record['kind'] == 'accepted_candidate' and record['status'] == 'READY' and target['status'] != 'READY':
+                reject('接受记录必须引用校验就绪的最终乐谱。', 'INVALID_FINAL_SCORE')
         for dep in objects(record['dependencies']):
             shape(dep, 'id version'); integer(dep['version'], 1)
             target = refs.get(dep['id'])
@@ -284,9 +315,9 @@ def records_check(records, protections, placements, total, materials, sources):
             scope_total = payload.get('audit_total_ticks', max([total, payload.get('total_ticks', 0)] + [p['start_tick'] + p['length_ticks'] for p in scope_placements.values()] + [p['end_tick'] for p in scope_locks.values()]))
             integer(scope_total, 1)
             for place in scope_placements.values():
-                placement_check(place, max(total, place['start_tick'] + place['length_ticks']), materials, sources)
+                placement_check(place, scope_total, materials, sources)
             for lock in scope_locks.values():
-                protection_check(lock, max(total, lock['end_tick']), scope_placements, sources)
+                protection_check(lock, scope_total, scope_placements, sources)
         kind = record['kind']
         if kind == 'bridge_plan':
             if payload['automatic_decision'] not in ('none', 'selected'):
@@ -305,7 +336,7 @@ def records_check(records, protections, placements, total, materials, sources):
                 objects(payload[name])
         if kind == 'bridge_result':
             plan = refs.get(payload['plan_id']); lock = scope_locks.get(payload['protection_id'])
-            if plan is None or plan['kind'] != 'bridge_plan' or plan['version'] != payload['plan_version'] or lock is None or lock['owner_id'] != payload['bridge_id']:
+            if plan is None or plan['kind'] != 'bridge_plan' or plan['version'] != payload['plan_version'] or lock is None or lock['owner_id'] != payload['bridge_id'] or lock['plan_id'] != plan['id'] or lock['plan_version'] != plan['version']:
                 reject('桥结果计划/保护引用无效。', 'PLAN_VERSION_MISMATCH')
             material_check(payload['material_snapshot'], sources)
             if record['status'] == 'READY':
@@ -346,6 +377,8 @@ def records_check(records, protections, placements, total, materials, sources):
             for r in objects(payload['actual_impact_ranges']):
                 range_check(r, scope_total)
             if record['status'] == 'READY':
+                if plan['payload']['protection_summary_fingerprint'] != protection_summary(list(scope_locks.values())):
+                    reject('连接结果父计划保护摘要过期。', 'PROTECTION_CONFLICT')
                 validate_protected_notes(list(scope_locks.values()), payload['output_notes'])
         if kind == 'final_score':
             integer(payload['total_ticks'], 1)
@@ -379,7 +412,7 @@ def records_check(records, protections, placements, total, materials, sources):
             if lock['owner_id'] not in plan['payload'][field]:
                 reject('保护所有者不在完整桥计划中。', 'PLAN_VERSION_MISMATCH')
     for plan in records:
-        if plan['kind'] != 'bridge_plan' or plan['status'] in ('FAILED', 'INVALIDATED'):
+        if plan['kind'] != 'bridge_plan' or plan['status'] == 'INVALIDATED':
             continue
         selected = plan['payload']['bridge_ids']
         if len(plan['payload']['ranges']) != len(selected):
@@ -544,7 +577,7 @@ def _edit(project, action, **args):
         if total != result['total_ticks']:
             level = intensity_at(result, total)
             points = [p for p in old_points[:-1] if p['tick'] < total]
-            if any(p['tick'] >= total for p in old_points[1:-1]):
+            if any(p['tick'] > total for p in old_points[1:-1]):
                 reject('缩短会截断已编辑的强度控制点。', 'OUT_OF_BOUNDS')
             if total > result['total_ticks']:
                 points.append(old_points[-1])
@@ -572,6 +605,22 @@ def _edit(project, action, **args):
     if result == project:
         validate(result)
         return result
+    write_ranges = []
+    if action == 'place':
+        write_ranges.append(dict(start_tick=placement['start_tick'], end_tick=placement['start_tick'] + placement['length_ticks']))
+    elif action in ('move', 'delete', 'set_emotion'):
+        affected_ids = {args['placement_id']} if action in ('move', 'delete') else set(args['placement_ids'])
+        for p in project['placements'] + result['placements']:
+            if p['id'] in affected_ids:
+                write_ranges.append(dict(start_tick=p['start_tick'], end_tick=p['start_tick'] + p['length_ticks'], placement_id=p['id']))
+    elif action == 'mark_blank':
+        write_ranges.append(dict(start_tick=args['start_tick'], end_tick=args['end_tick']))
+    for r in write_ranges:
+        integer(r['start_tick']); integer(r['end_tick'], r['start_tick'] + 1)
+        for lock in project['protections']:
+            own_manual_bridge = lock['kind'] == 'bridge' and lock['origin'] == 'manual' and lock['placement_id'] == r.get('placement_id')
+            if intersects(r, lock) and not own_manual_bridge:
+                reject('该范围已受保护，请先通过新的计划更新保护。', 'PROTECTION_CONFLICT')
     invalidate_records(result, project)
     if action == 'place' and placement['base_snapshot']['kind'] == 'bridge':
         register_manual_bridge(result, placement)

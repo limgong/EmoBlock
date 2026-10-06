@@ -30,6 +30,10 @@ def _validate_bundle(bundle):
             model.reject('输入快照版本不匹配。', 'UNSUPPORTED_VERSION')
         if snap['project']['project_id'] != bundle['project']['project_id'] or model.fingerprint(snap['project']) != snap['content_fingerprint']:
             model.reject('输入快照身份或指纹不匹配。', 'STALE_SNAPSHOT')
+    record_scopes = [bundle['project']['records']] + [snap['project']['records'] for snap in snapshots.values()]
+    snapshot_edges = {key: [] for key in snapshots}
+    for snap in snapshots.values():
+        snapshot_edges[snap['id']] = [r['payload']['input_snapshot_id'] for r in snap['project']['records'] if r['kind'] == 'accepted_candidate']
     for attempt in model.indexed(bundle['attempts']).values():
         model.shape(attempt, 'id snapshot_id input_fingerprint state records protections staged_materials error')
         snap = snapshots.get(attempt['snapshot_id'])
@@ -37,6 +41,7 @@ def _validate_bundle(bundle):
             model.reject('候选缺少可信输入快照。', 'STALE_SNAPSHOT')
         if attempt['state'] not in ('RUNNING', 'FAILED', 'CANCELLED', 'INTERRUPTED', 'READY', 'APPLIED') or (attempt['error'] is not None and not isinstance(attempt['error'], dict)):
             model.reject('候选状态或错误详情无效。')
+        record_scopes.append(attempt['records'])
         sources = model.indexed(snap['project']['sources'])
         materials = model.indexed(snap['project']['materials'])
         for material in model.indexed(attempt['staged_materials']).values():
@@ -48,6 +53,27 @@ def _validate_bundle(bundle):
         for p in model.indexed(attempt['protections']).values():
             model.protection_check(p, snap['project']['total_ticks'], placements, sources)
         model.records_check(attempt['records'], attempt['protections'], placements, snap['project']['total_ticks'], materials, sources)
+    for records in record_scopes:
+        for record in records:
+            if record['kind'] != 'accepted_candidate':
+                continue
+            snap = snapshots.get(record['payload']['input_snapshot_id'])
+            if snap is None or snap['content_fingerprint'] != record['input_fingerprint']:
+                model.reject('接受记录的原输入快照不存在或指纹过期。', 'STALE_SNAPSHOT')
+    visiting = set(); visited = set()
+    def visit(key):
+        if key in visiting:
+            model.reject('输入快照引用有环。')
+        if key in visited:
+            return
+        if key not in snapshot_edges:
+            model.reject('输入快照引用不存在。')
+        visiting.add(key)
+        for child in snapshot_edges[key]:
+            visit(child)
+        visiting.remove(key); visited.add(key)
+    for key in snapshot_edges:
+        visit(key)
     for result in model.objects(bundle['results']):
         if not isinstance(result, dict):
             model.reject('历史成品记录无效。')
@@ -96,8 +122,12 @@ def history_availability(results):
     """Per-format availability is descriptive; callers still recheck on export."""
     rows = []
     for result in results:
-        report = result.get('report', {})
-        folder = Path(report.get('output_directory', ''))
+        report = result.get('report')
+        directory = report.get('output_directory') if isinstance(report, dict) else None
+        if not isinstance(directory, str) or not directory:
+            rows.append(dict(wav=False, midi=False, mmp=False))
+            continue
+        folder = Path(directory)
         rows.append(dict(wav=(folder / 'preview.wav').is_file(), midi=(folder / 'composition.mid').is_file(), mmp=(folder / 'composition.mmp').is_file()))
     return rows
 
