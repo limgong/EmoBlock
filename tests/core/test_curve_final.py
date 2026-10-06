@@ -20,8 +20,8 @@ from test_curve_connections import ready_bridge,begin
 from test_curve_candidates import fixture
 
 
-def boundary_request(manual=False,ranges=()):
-    controller=ready_bridge(complete(manual),ranges)
+def boundary_request(manual=False,ranges=(),controller=None):
+    controller=ready_bridge(controller or complete(manual),ranges)
     captured,plan=begin(controller,())
     import curve_connections as connection
     controller.finish_connection(captured['token'],connection.raw_outcome(captured['request'],plan,[]))
@@ -37,7 +37,7 @@ def simulated_render(folder):
         audio.export_score(score,root)
         seconds=score['total_ticks']/m.PPQ*60/score['bpm']+1
         with wave.open(str(root/'preview.wav'),'wb') as stream:
-            stream.setnchannels(1);stream.setsampwidth(2);stream.setframerate(8000);stream.writeframes(b'\x01\x00'*round(seconds*8000))
+            stream.setnchannels(1);stream.setsampwidth(2);stream.setframerate(8000);stream.writeframes(b'\x00\x10'*round(seconds*8000))
         asset=dict(f.header('emoblocks.audio-asset.v1'),version=version,candidate_ref=copy.deepcopy(candidate_ref),score_ref=f.ref(score),kind=score['kind'],mode=score['mode'],
             renderer_version=audio.RENDERER,files={k:audio._file(root/name) for k,name in [('wav','preview.wav'),('mid','composition.mid'),('mmp','composition.mmp')]},
             body_ticks=score['total_ticks'],body_seconds=seconds-1,audio_seconds=seconds,tail_policy='fixed-1s-existing-finish-audio')
@@ -46,6 +46,37 @@ def simulated_render(folder):
 
 
 class FinalGateTests(unittest.TestCase):
+    def test_midi_cross_track_tempo_and_channel_controls_are_not_same_score(self):
+        import mido
+        request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for mutation in ('notes_to_drums','program_channel','cross_track_tempo','controller','pitchwheel'):
+                audio.export_score(score,root);midi=mido.MidiFile(root/'composition.mid');track=midi.tracks[1]
+                if mutation=='notes_to_drums':
+                    for event in track:
+                        if event.type in ('note_on','note_off'):event.channel=9
+                elif mutation=='program_channel':next(e for e in track if e.type=='program_change').channel=9
+                elif mutation=='cross_track_tempo':track.insert(0,mido.MetaMessage('set_tempo',tempo=1000000))
+                elif mutation=='controller':track.insert(0,mido.Message('control_change',channel=0,control=7,value=0))
+                else:track.insert(0,mido.Message('pitchwheel',channel=0,pitch=8191))
+                midi.save(root/'composition.mid')
+                files={k:audio._file(root/name) for k,name in [('mid','composition.mid'),('mmp','composition.mmp')]}
+                with self.subTest(mutation=mutation),self.assertRaises(m.ProjectError):audio.validate_outputs(score,files)
+
+    def test_actual_arranged_drum_and_melody_routes_remain_valid(self):
+        import engine
+        controller=complete();controller.edit('set_intensity',points=[dict(tick=0,level=.75),dict(tick=controller.project['total_ticks'],level=.75)])
+        controller.edit('set_emotion',placement_ids=['use1'],emotion='crisis')
+        request=boundary_request(controller=controller);plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
+        self.assertTrue(any(layer['drum'] for layer in score['layers']))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for layer in score['layers']:
+                if layer['drum']:(root/layer['drum']).write_bytes(b'test resource; no renderer used')
+            with patch.object(engine,'sample_path',side_effect=lambda _,name:root/name):audio.export_score(score,root)
+            files={k:audio._file(root/name) for k,name in [('mid','composition.mid'),('mmp','composition.mmp')]}
+            audio.validate_outputs(score,files)
     def test_registry_cache_rejects_changed_content_and_retains_no_data(self):
         request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));result=f.apply_boundaries(request,plan);score=f.make_score(request,plan,result)
         facts=[rec.fact('boundary_request',request),rec.fact('boundary_plan',plan,[f.ref(request)]),rec.fact('boundary_result',result,[f.ref(request),f.ref(plan)]),rec.fact('final_score',score,[f.ref(request),f.ref(plan),f.ref(result)])]
@@ -167,6 +198,22 @@ class RecommendationTransactionTests(unittest.TestCase):
         out=rec.prepare_recommendations(cap['request'],source_facts=controller._bundle.get('final_facts'),on_progress=lambda e:controller.record_recommendation_progress(cap['token'],e))
         self.assertTrue(out['candidates'],out['failures']);self.assertTrue(controller.finish_recommendations(cap['token'],out))
         return controller,cap,out
+
+    def test_public_finish_rejects_header_only_partial_or_silent_pcm(self):
+        for mutation in ('header_only','partial','silent'):
+            controller=complete();before=controller.project;undo=copy.deepcopy(controller.session._undo);saved=controller.state()['is_saved']
+            cap=controller.capture_recommendations();renderer=simulated_render(self.tmp.name)
+            def damaged(score,candidate_ref,version=1,should_cancel=None,on_progress=None):
+                asset=renderer(score,candidate_ref,version,should_cancel,on_progress);path=Path(asset['files']['wav']['path']);raw=path.read_bytes()
+                raw=raw[:44] if mutation=='header_only' else raw[:-100] if mutation=='partial' else raw[:44]+b'\x00'*(len(raw)-44)
+                path.write_bytes(raw);asset['files']['wav']=audio._file(path);asset['asset_fingerprint']=audio.asset_fingerprint(asset);asset['id']=asset['asset_fingerprint'];return asset
+            with patch.object(audio,'render',side_effect=damaged):out=rec.prepare_recommendations(cap['request'])
+            self.assertTrue(out['candidates'])
+            with self.subTest(mutation=mutation),self.assertRaises(m.ProjectError):controller.finish_recommendations(cap['token'],out)
+            controller.fail_recommendations(cap['token'],dict(code='OUTPUT_AUDIO_INCOMPLETE',message='test recovery',details={}))
+            self.assertEqual(controller.recommendation_state()['status'],'FAILED');self.assertFalse(controller._jobs)
+            self.assertEqual(controller.project,before);self.assertEqual(controller.session._undo,undo);self.assertEqual(controller.state()['is_saved'],saved)
+            self.assertEqual(controller.history(),[])
 
     def test_rehashed_stage_and_mode_bindings_cannot_borrow_another_result(self):
         controller,cap,out=self.ready()

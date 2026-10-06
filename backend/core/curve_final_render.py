@@ -64,15 +64,27 @@ def validate_outputs(score, files):
     native = mido.MidiFile(files['mid']['path'])
     expected = [sorted((n['start_tick'],n['pitch'],n['duration_tick'],max(1,min(127,round(n['velocity']*layer['volume']/35)))) for n in layer['notes']) for layer in score['layers']]
     if len(native.tracks)!=1+len(score['layers']):m.reject('MIDI声部数量与乐谱不符。','OUTPUT_BINDING_MISMATCH')
-    tempo=[event.tempo for event in native.tracks[0] if event.type=='set_tempo']
-    if tempo!=[mido.bpm2tempo(score['bpm'])]:m.reject('MIDI速度与乐谱不符。','OUTPUT_BINDING_MISMATCH')
+    tempos=[];meters=[]
+    for index,track in enumerate(native.tracks):
+        tick=0
+        for event in track:
+            tick+=event.time
+            if event.type=='set_tempo':tempos.append((index,tick,event.tempo))
+            if event.type=='time_signature':meters.append((index,tick,event.numerator,event.denominator))
+            if not event.is_meta and event.type not in ('note_on','note_off','program_change'):
+                m.reject('MIDI包含未规划的演奏控制。','OUTPUT_BINDING_MISMATCH')
+            if index==0 and not event.is_meta:m.reject('MIDI主轨包含未规划的演奏。','OUTPUT_BINDING_MISMATCH')
+    if tempos!=[(0,0,mido.bpm2tempo(score['bpm']))] or meters!=[(0,0,4,4)]:m.reject('MIDI速度或拍号与乐谱不符。','OUTPUT_BINDING_MISMATCH')
     actual = []
+    channels=iter([channel for channel in range(16) if channel!=9])
     for index,track in enumerate(native.tracks[1:]):
-        programs=[event.program for event in track if event.type=='program_change']
-        if programs!=[engine.PRESETS[score['layers'][index]['preset']][4]]:m.reject('MIDI音色绑定不符。','OUTPUT_BINDING_MISMATCH')
+        layer=score['layers'][index];channel=9 if layer['drum'] else next(channels)
+        programs=[(event.channel,event.program) for event in track if event.type=='program_change']
+        if programs!=[(channel,engine.PRESETS[layer['preset']][4])]:m.reject('MIDI音色或通道绑定不符。','OUTPUT_BINDING_MISMATCH')
         tick = 0; active = {}; notes = []
         for event in track:
             tick += event.time
+            if not event.is_meta and event.channel!=channel:m.reject('MIDI音符被路由到另一乐器或鼓通道。','OUTPUT_BINDING_MISMATCH')
             if event.type == 'note_on' and event.velocity:
                 key=(event.channel,event.note)
                 if key in active: m.reject('MIDI重复起音未正确关闭。','OUTPUT_BINDING_MISMATCH')
@@ -179,5 +191,14 @@ def validate_asset(asset, score, candidate_ref=None, files=True, required_format
         with wave.open(asset['files']['wav']['path'],'rb') as stream:
             if stream.getnchannels() not in (1,2) or stream.getsampwidth()!=2 or abs(stream.getnframes()/stream.getframerate()-asset['audio_seconds'])>1/stream.getframerate() or abs(asset['audio_seconds']-asset['body_seconds']-1)>1/stream.getframerate():
                 m.reject('实际音频与结果信息不一致。','OUTPUT_BINDING_MISMATCH')
+            import numpy as np
+            remaining=stream.getnframes();peak=0
+            while remaining:
+                count=min(65536,remaining);pcm=stream.readframes(count)
+                if len(pcm)!=count*stream.getnchannels()*stream.getsampwidth():
+                    m.reject('试听音频数据不完整，请重新准备。','OUTPUT_AUDIO_INCOMPLETE')
+                peak=max(peak,int(np.abs(np.frombuffer(pcm,dtype='<i2').astype(np.int32)).max()))
+                remaining-=count
+            if peak/32768<.0001:m.reject('试听音频没有有效声音，请重新准备。','OUTPUT_AUDIO_SILENT')
     if {'mid','mmp'}<=physical:validate_outputs(score,asset['files'])
     return True
