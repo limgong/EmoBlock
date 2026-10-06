@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p7
 
-当前阶段：P6实施ROUND2独立PASS及前后199文件指纹已现场核对；用户启动P7。第13节p7补充为DRAFT，先只读评审与独立契约验收。本轮结束停止，不进入P8；下面旧阶段启动/停止语句仅为保留的历史。
+当前阶段：P6实施ROUND2独立PASS及前后199文件指纹已现场核对；用户启动P7。第13节p7独立契约ROUND2已PASS并FROZEN，已授权实施。本轮结束停止，不进入P8；下面旧阶段启动/停止语句仅为保留的历史。
 
 产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23/p4正文为 **FROZEN**；历史P5第11节为 **FROZEN**（独立ROUND2 PASS），当前P6第12节为 **FROZEN**（独立ROUND1 PASS）。历史P0独立ROUND2、P4实施ROUND3均PASS，原阶段记录保留；用户已启动P5，只读评审、独立契约冻结后才按文件归属实施，完成P5停止，不进入P6。
 

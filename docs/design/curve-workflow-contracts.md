@@ -906,11 +906,11 @@ preview的桥部分严格由本次request.bridge_ref生成；没有Plan时previe
 两个角色只读评审问题已整合，独立P6-CONTRACT ROUND1 PASS，FROZEN；未开始功能实现。
 
 
-## 13. P7 最终处理、完整推荐与一次应用补充（DRAFT）
+## 13. P7 最终处理、完整推荐与一次应用补充（FROZEN）
 
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p7
-STATUS=DRAFT
+STATUS=FROZEN
 
 历史第8–12节冻结正文保留。本补充必须经算法/前端只读评审、lead整合及verifier独立PASS后才能FROZEN和实施。本轮完成P7后停止，不进入P8。所有公开对象是JSON纯数据、音乐时间为PPQ480精确整数tick、半开区间，不含Tk/线程/文件句柄。运行记录/素材样例/渲染输出在仓库外。
 
@@ -973,7 +973,7 @@ lead：curve_final.py、curve_recommendations.py、curve_final_render.py、curve
 固定素材记录基础→桥→连接→最终的实际notes、依赖/源/保护、至少两套实际不同推荐乐谱和真实音频（不足原因另测）。实际窗口坐标、LMMS/设备串行，自动、Tk、渲染、设备、人工视觉听感、Mac/Windows分类，不以模拟替代P7真实渲染。必跑backend-only/check_frontends/full/diff。契约与实现分别最多5轮，匹配RUN/TASK/ROUND/HEAD/前后同fingerprint明确PASS。完成P7停止，不派P8。
 
 
-### 13.10 双角色评审整合：最终边界精确对象（DRAFT）
+### 13.10 双角色评审整合：最终边界精确对象（FROZEN）
 
 统一Ref=`{id,version,fingerprint}`。所有schema前缀emoblocks、版本v1；本节对象spec_rev=r3/contract_rev=p7。所有Note沿用P3八字段，音高12–119，不夹紧；时间精确tick。字符串ID不能为空，数字/预算禁止bool。
 
@@ -993,7 +993,7 @@ JoinGroup=`{performance_id,input_note_ids,source_emission_id,render_event}`。�
 
 BoundaryPlan为Proposal加`id version token layout_fingerprint protection_summary_fingerprint connection_plan_ref original_notes plan_fingerprint`，指纹除自身字段。`plan_boundaries(request,should_cancel=None,on_progress=None)->BoundaryProposal`为算法独立模块；lead `make_boundary_plan`完整认证后公布。`apply_boundaries(request,plan)->BoundaryResult`仅一次纯拼接和已知表演变化，不作曲/随机/重跑情绪。BoundaryResult精确`{schema,spec_rev,contract_rev,id,request_fingerprint,plan_ref,notes,emitted_notes,join_groups,operations,performance_hints,remaining_gaps,content_fingerprint}`。notes从全部原Layout同时消耗/产出，JoinGroup只影响emitted_notes。校验器重新从原Layout/已认证操作构造并比较全部结果，包括漏报影响/额外音符和桥内休止；不是接受生成器的READY。
 
-### 13.11 FinalScore、编配和资产（DRAFT）
+### 13.11 FinalScore、编配和资产（FROZEN）
 
 FinalScore精确`{schema,spec_rev,contract_rev,id,boundary_request_ref,boundary_plan_ref,connection_plan_ref,kind,mode,total_ticks,bpm,notes,emitted_notes,join_groups,performance_map,layers,remaining_gaps,target_resolution,protection_summary_fingerprint,source_fingerprint,music_fingerprint,score_fingerprint}`。kind=final|comparison，mode=melody_only|arranged；comparison来自同一候选P4完成后的真实基础排布，无gap时当前有效实际音乐，不能对比另一个候选或尚未补齐的编辑。所有谱ref与输入快照/候选链一致；notes逻辑保护不变，emitted_notes由合法JoinGroup规范化。谱fingerprint对全部字段除id/score_fingerprint计算，id由谱fingerprint派生，不自指；music_fingerprint仅total/bpm/实际发声pitch/start/duration，排除ID/label/velocity/seed/mode。不把基础candidate音符差异当最终差异。
 
@@ -1005,7 +1005,7 @@ AudioAsset精确`{schema,spec_rev,contract_rev,id,version,candidate_ref,score_re
 
 保存与加载只验证持久化事实，不重新安排/作曲/渲染；磁盘文件缺失/被换时音乐可读取，动态capability不可试听/确认该推荐。每次Play/Confirm/Export验证ref/hash/实际文件和模式；取消原生导出不改工程/选中/播放，atomic_export保护源与已有目标，三格式逐项可用，正式整曲导出要求remaining_gaps=[]。旧历史输出保持逐格式兼容。
 
-### 13.12 完整推荐、有限搜索和前端Facade（DRAFT）
+### 13.12 完整推荐、有限搜索和前端Facade（FROZEN）
 
 RecommendationRequest精确`{schema,spec_rev,contract_rev,token,input_project,input_contract_rev,input_fingerprint,scope,target_gaps,mode,seed,parameters,algorithm_version,request_fingerprint}`，scope=all|selected|current_complete；mode绑定输入settings，可显式只作为输出模式捕获（不修改工程）；参数精确`{completion_budget,bridge_parameters,connection_parameters,boundary_parameters,max_pipeline_candidates,max_recommendations}`；原三参数按各冻结版本验证，最后预算默认4/2，上限8/4。固定输入/seed排序可重现，取消每阶段/循环/渲染之间检查，不无限重试、不强行凑第二套。需要渲染时真实renderer槽全局串行。
 
@@ -1026,7 +1026,7 @@ Controller接口：
 
 前端新RecommendationUI在既有候选区及stage选择器增加“完整建议”，查看建议/自动补全入口可达；四个中间stage依然如实不可应用。候选选择、原始/处理后对比选择、明确播放、确认、取消、重试都有明确状态。P7单一read-only preview覆盖画布，桥/记忆独立标记，返回恢复编辑选中/滚动。Tk/Controller提交只mainthread，thread只纯Request/源facts与取消Event/queue，完整token+seq/stage门禁；故障/result callback异常一定恢复可操作。stage计算不启动播放器，显示主体/含尾音真实时间与正在听对象。
 
-### 13.13 接受状态、事实注册表与一次事务（DRAFT）
+### 13.13 接受状态、事实注册表与一次事务（FROZEN）
 
 显式P7阶段允许外层Bundle升级`emoblocks.curve-bundle.v2`，原v1读取/另存保持v1和原音乐头。v2精确原六字段加`final_facts`，contract_rev仍等Project自身所属音乐版本（capture时可p4，确认后p7）；new_bundle无P7任务仍原v1。final_facts有限注册表条目`{id,kind,version,fingerprint,data,dependencies}`，Ref指纹=domain(kind)+canonical data，dependencies只引用同表Ref；kind=boundary_request/boundary_plan/boundary_result/final_score/audio_asset/application。每表最多2048条，图无环、依赖深度<=32、总文件上限128MiB（原v1仍20MiB）；Request.source_facts运行时快照但不存递归registry。P7attempt另有推荐request/outcome/phase/接受receipt，APPLIED是独立P7状态，不修改冻结P4/P5/P6状态枚举；其stage_bundle与源快照一并持久化，运行中恢复INTERRUPTED，不重建线程。纯恢复独立认证源/所有阶段、候选与refs/应用指纹；仅ref存在或hash自报不够。
 
@@ -1043,7 +1043,7 @@ ApplyReceipt精确`{transaction_id,candidate_ref,score_ref,input_snapshot_id,pre
 全部gap已解的接受版本才正式导出；局部版本保存/试听/应用合法但余gap明确。输出/播放选择历史已接受版本时绑定其已认证原谱/资产，与当前编辑或推荐选择独立，后续编辑不覆盖旧文件。缺失原导入文件用已有Source快照；缺音频不把工程读坏。自动补全仅选择本完整Outcome最高合法候选走同一Apply，不存在“简化补全”。
 
 
-### 13.14 二次评审整合：模式、授权与UI能力（DRAFT）
+### 13.14 二次评审整合：模式、授权与UI能力（FROZEN）
 
 本节裁决13.2–13.13中概括措辞；精确字段以本节及前述精确形状为准。初轮算法/前端只读均指出具体缺口，旧编配与素材tie反例已复现；不以这些探针冒充P7实测。
 
@@ -1064,7 +1064,7 @@ ConfirmationRef精确`{session_id,edit_revision,input_fingerprint,candidate_ref,
 Renderer串行单次LMMS超时240秒，每候选双资产逐个；全搜索max_pipeline_candidates<=8/max_recommendations<=4，并在阶段之间、循环中、slot等待和渲染结束检查cancel。取消不伪造另一个成功音频。真实正常路径至少两套不同推荐及两mode的实际WAV/MIDI/MMP证据；故障路径模拟允许但明确区分。对比分数取已补齐基础（保手动桥）而非原未补齐编辑；接受谱=播放处理后谱=导出谱，记录Ref/文件hash/实际输出音符证明。
 
 
-### 13.15 末次整合：音乐账本、规则、来源和持久化形状（DRAFT）
+### 13.15 末次整合：音乐账本、规则、来源和持久化形状（FROZEN）
 
 本节补齐R2双方明确缺口，独立verifier仍须审查；历史8–12节正文不修改。Ref.version无显式版本的不可变对象统一1，Plan/Asset用自身version。所有hash继续8.3的域+canonicalJSON规则，所有排序明确禁止靠caller顺序混拼。
 
@@ -1090,7 +1090,7 @@ final_score.payload精确P1必需`{total_ticks,notes,protection_summary_fingerpr
 
 P7Attempt精确原通用`id snapshot_id input_fingerprint state records protections staged_materials error`加`recommendation`；records/protections/staged_materials都为空（实际保护在私有stage_bundle，不混到current Project）。recommendation精确`{schema,spec_rev,contract_rev,request,phase,last_seq,cancel_requested,partial_stage_bundle,outcome,mode_bindings,mode_jobs,receipt}`。schema=emoblocks.recommendation-attempt.v1；phase未开始null，partial_stage_bundle开始null；outcome/receipt未完成null；mode_bindings为`{candidate_id:{mode:{final_score_ref,comparison_score_ref,comparison_asset_ref,final_asset_ref,asset_version}}}`，只有完整同版本双资产才原子更新，不挑两侧最新文件混拼。mode_jobs列表`{token,candidate_id,mode,asset_version,status,error}`，status=RUNNING/READY/FAILED/CANCELLED/INTERRUPTED/STALE；未知模式/ID拒绝。FinalCandidate.modes持久化相同绑定解析出的13.14状态/谱Ref/完整资产/能力，全部必须与唯一mode_bindings匹配，重试新asset_version且保旧事实，不能恢复时猜模式。P7Attempt state增APPLIED，仅该schema；旧attempt不增枚举。
 
-### 13.16 最终Frontend DTO、取消审计及模式终态（DRAFT）
+### 13.16 最终Frontend DTO、取消审计及模式终态（FROZEN）
 
 补全preview精确13.12六字段加memory_info；memory_info沿P3原格式`peak_tick lookup_tick state placement_id component_path range protection_id`，由对应私有基底/保护真实定位，不借current标记。boundary_overlays元素精确`{id,tick,method,editable_ranges,operation_ids,performance_hint_ids,reasons}`。bridge/connection overlays复用已有P5/P6 preview形状，阶段ID/真实notes对应本候选。
 
@@ -1109,7 +1109,7 @@ ModeOutcome/asset registration必须两个资产同candidate/mode/asset_version�
 前端可独立依冻结 DTO/Facade实现mock行为测试，但真实集成必须再用真实Controller、真实算法及LMMS验证。所有渲染与设备任务互斥串行，生成到音频/明确Play/确认/保存重开是本轮交付，不留模拟音频到P8。完成P7独立验收后停止；P8建议只供后续用户授权。
 
 
-### 13.17 独立契约R1修复：请求身份与来源闭包（DRAFT）
+### 13.17 独立契约R1修复：请求身份与来源闭包（FROZEN）
 
 独立R1明确FAIL F1/F2，前后200文件/HEAD/完整manifest一致；只修本节精确缺口，仍不开始产品实现，不重置计数。
 

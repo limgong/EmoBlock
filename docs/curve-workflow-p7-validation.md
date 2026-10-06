@@ -18,3 +18,8 @@ P6实际ROUND2 PASS、HEAD与199文件前后指纹逐项现场核对。集成目
 ## 契约独立ROUND1 FAIL与修复
 
 受检HEAD=91d4e6803807bca23780d68c0eaa779a9326b206，前后200文件指纹60b27ff0dac801e955c20f5967bf60b802041c5d9756f0e48a692c5cdf3b5a42，实际pane/review/lead逐项核对匹配，检查期间未写目录。F1 BoundaryRequest无注册ID；F2 source_fingerprint无唯一投影/域/来源闭包。新增13.17并同步Request字段，定义多候选唯一ID/Ref/纯恢复和精确源父闭包/旧接受Score锚点、不自指及两个固定hash向量；篡改后重新hash仍必须拒绝。下一独立契约ROUND2/5，本轮仍无产品实现。
+
+
+## 契约独立ROUND2 PASS与冻结
+
+受检HEAD=ecb36c53a74663db078032cb82ce72c92f17c769，前后200文件指纹f57174074312a29ece7637e9c68e322342dfdddafbe0313371882fdedc938231，实际pane/review/lead逐项核对一致；R1两项问题关闭，两个source向量和请求多候选身份独立检查一致。只修改状态为FROZEN，不改通过的规范规则。本结论仅契约，现在开始P7实现，实际功能/渲染/人工仍需各自验证。
