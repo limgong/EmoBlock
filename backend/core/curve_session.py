@@ -75,7 +75,7 @@ class ProjectSession:
         if request_id in self._requests:
             raise model.ProjectError('DUPLICATE_REQUEST', '该请求已经开始，请等待结果。')
         processing_rev = model.CONTRACT_REV if contract_rev is None else contract_rev
-        if processing_rev not in model.SUPPORTED_CONTRACT_REVS + ('curve-workflow-v2-r3-p5',):
+        if processing_rev not in model.SUPPORTED_CONTRACT_REVS + ('curve-workflow-v2-r3-p5', 'curve-workflow-v2-r3-p6'):
             raise model.ProjectError('UNSUPPORTED_VERSION', '任务处理版本不受支持。')
         token = dict(project_id=self._project['project_id'], session_id=self._session_id, request_id=request_id,
             snapshot_id=model.uid(), spec_rev=model.SPEC_REV, contract_rev=processing_rev,

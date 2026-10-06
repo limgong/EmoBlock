@@ -703,3 +703,21 @@ def move_region(project,index,delta):
     v['start']=round(max(0,min(project['duration']-span,v['start']+delta)),2);v['end']=v['start']+span
     validate(result,require_source=False)
     return result
+
+
+def plan_connection_request(request, should_cancel=None, on_progress=None):
+    """P6-only provider; no final boundary processing or legacy planning."""
+    import curve_connections
+    import curve_connection_music
+    curve_connections.validate_request(request)
+    return curve_connection_music.plan_connection_blocks(request, should_cancel=should_cancel, on_progress=on_progress)
+
+
+def generate_connection_request(request, plan, actual_layout, should_cancel=None, on_progress=None, on_result=None):
+    import curve_connections
+    import curve_connection_music
+    curve_connections.validate_request(request); curve_connections.validate_plan(request, plan)
+    if actual_layout != request['actual_layout']:
+        curve_connections.m.reject('连接生成必须使用捕获的实际bridge布局。', 'LAYOUT_MISMATCH')
+    return curve_connection_music.generate_connection_blocks(request, plan, actual_layout,
+        should_cancel=should_cancel, on_progress=on_progress, on_result=on_result)

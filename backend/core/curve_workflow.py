@@ -9,6 +9,7 @@ import curve_store
 import curve_memory
 import curve_candidates
 import curve_bridges
+import curve_connections
 from curve_audition import render_audition
 from export_safe import atomic_export
 
@@ -116,6 +117,7 @@ class Controller:
         self._completion_id = None
         self._completion_immediate = None
         self._bridge_id = None
+        self._connection_id = None
 
     @property
     def readonly(self):
@@ -129,7 +131,7 @@ class Controller:
         return dict(access_mode='legacy_readonly' if self.readonly else 'editable', project=self.project,
             capabilities=dict(edit=not self.readonly, derive=not self.readonly, audition=True,
                 generate_final=False, intensity_edit=not self.readonly, emotion=not self.readonly, memory=not self.readonly,
-                completion=not self.readonly, bridge=not self.readonly),
+                completion=not self.readonly, bridge=not self.readonly, connection=not self.readonly),
             is_saved=True if self.readonly else self.session.is_saved,
             saved_path=str(self._saved_path) if self._saved_path else None,
             can_undo=not self.readonly and self.session.can_undo, can_redo=not self.readonly and self.session.can_redo,
@@ -138,7 +140,7 @@ class Controller:
 
     def _stale_completions(self):
         for attempt in self._bundle['attempts']:
-            if ('completion' in attempt or 'bridge' in attempt) and attempt['state'] in ('RUNNING', 'READY'):
+            if ('completion' in attempt or 'bridge' in attempt or 'connection' in attempt) and attempt['state'] in ('RUNNING', 'READY'):
                 attempt['state'] = 'STALE'
                 self._staging_dirty = True
         self._completion_immediate = None
@@ -205,8 +207,8 @@ class Controller:
         if self._jobs[token['request_id']]['kind'] == 'COMPLETION':
             attempt = self._attempt(token['request_id'])
             return attempt is not None and attempt['state'] == 'RUNNING'
-        if self._jobs[token['request_id']]['kind'] == 'BRIDGE':
-            attempt = self._bridge_attempt(token['request_id'])
+        if self._jobs[token['request_id']]['kind'] in ('BRIDGE', 'CONNECTION'):
+            attempt = self._bridge_attempt(token['request_id']) if self._jobs[token['request_id']]['kind'] == 'BRIDGE' else self._connection_attempt(token['request_id'])
             return attempt is not None and attempt['state'] == 'RUNNING'
         return True
 
@@ -216,12 +218,14 @@ class Controller:
             return self.cancel_completion(token)
         if context is not None and context['kind'] == 'BRIDGE':
             return self.cancel_bridge(token)
+        if context is not None and context['kind'] == 'CONNECTION':
+            return self.cancel_connection(token)
         return self.finish_job(token)
 
     def finish_job(self, token):
         if not self.accepts(token):
             return False
-        if self._jobs[token['request_id']]['kind'] in ('COMPLETION', 'BRIDGE'):
+        if self._jobs[token['request_id']]['kind'] in ('COMPLETION', 'BRIDGE', 'CONNECTION'):
             return False  # Completion must pass its independent result gate first.
         result = self.session.finish(token)
         self._jobs.pop(token['request_id'], None)
@@ -519,6 +523,146 @@ class Controller:
             remaining_gaps=copy.deepcopy(stage['request']['remaining_gaps']),capabilities=curve_bridges.capabilities(active),
             error=copy.deepcopy(attempt['error']),message=messages[attempt['state']])
 
+    def _connection_attempt(self, request_id):
+        return next((a for a in self._bundle['attempts'] if a['id'] == request_id and 'connection' in a), None)
+
+    def _active_connection(self, token):
+        return self.accepts(token) and self._jobs[token['request_id']]['kind'] == 'CONNECTION'
+
+    def capture_connection(self, bridge_attempt_id=None, seed=41, parameters=None):
+        self._editable()
+        if self._jobs: model.reject('已有后台任务，请等待完成或取消。', 'DUPLICATE_REQUEST')
+        parent = self._bridge_attempt(self._bridge_id if bridge_attempt_id is None else bridge_attempt_id)
+        if parent is None or parent['state'] != 'READY':
+            model.reject('请先计算当前有效且全部内容就绪的bridge计划。', 'BRIDGE_NOT_READY')
+        curve_store.validate_bundle(self._current_bundle())
+        old = parent['bridge']
+        ref = dict(attempt_id=parent['id'], request=copy.deepcopy(old['request']), plan=copy.deepcopy(old['plan']),
+                   protections=copy.deepcopy(parent['protections']), results=copy.deepcopy(old['results']), outcome=copy.deepcopy(old['outcome']))
+        version = max([a['connection']['request']['plan_version'] for a in self._bundle['attempts'] if 'connection' in a] + [0]) + 1
+        preliminary = curve_connections.make_request(self.project, ref, seed=seed, values=parameters, plan_version=version)
+        captured = self.session.capture(preliminary['request_id'], contract_rev=curve_connections.REV); token = captured['token']
+        try:
+            request = curve_connections.make_request(captured['project'], ref, token, seed, parameters, preliminary['plan_id'], version)
+            attempt = dict(id=request['request_id'], snapshot_id=request['snapshot_id'], input_fingerprint=request['input_fingerprint'],
+                state='RUNNING', records=[], protections=copy.deepcopy(ref['protections']), staged_materials=[], error=None,
+                connection=dict(schema='emoblocks.connection-attempt.v1', spec_rev=model.SPEC_REV, contract_rev=curve_connections.REV,
+                    request=copy.deepcopy(request), phase='CONNECTION_PLANNING', plan=None, results=[], outcome=None))
+            bundle = self._current_bundle()
+            bundle['snapshots'].append(dict(id=request['snapshot_id'], spec_rev=model.SPEC_REV, contract_rev=request['input_contract_rev'],
+                content_fingerprint=request['input_fingerprint'], project=copy.deepcopy(request['input_project'])))
+            bundle['attempts'].append(attempt); curve_store.validate_bundle(bundle)
+        except Exception:
+            self.session.finish(token)
+            raise
+        self._bundle = bundle; self._jobs[token['request_id']] = dict(kind='CONNECTION', request=copy.deepcopy(request))
+        self._connection_id = attempt['id']; self._staging_dirty = True
+        return dict(status='STARTED', token=copy.deepcopy(token), request=copy.deepcopy(request), attempt_id=attempt['id'])
+
+    def _publish_connection(self, token, attempt, terminal=False):
+        if not self._active_connection(token): return False
+        bundle = self._current_bundle()
+        index = next(i for i, a in enumerate(bundle['attempts']) if a['id'] == token['request_id'])
+        bundle['attempts'][index] = copy.deepcopy(attempt); curve_store.validate_bundle(bundle)
+        if not self._active_connection(token): return False
+        if terminal:
+            if not self.session.finish(token): return False
+            self._jobs.pop(token['request_id'], None)
+        self._bundle = bundle; self._staging_dirty = True
+        return True
+
+    def plan_connection(self, token, proposal):
+        if not self._active_connection(token): model.reject('连接规划输入已失效。', 'STALE_SNAPSHOT')
+        attempt = copy.deepcopy(self._connection_attempt(token['request_id'])); stage = attempt['connection']
+        if stage['phase'] != 'CONNECTION_PLANNING' or stage['plan'] is not None:
+            model.reject('同一请求不能重复发布连接计划。', 'PLAN_VERSION_MISMATCH')
+        stage['plan'] = curve_connections.make_plan(stage['request'], proposal); stage['phase'] = 'CONNECTION_PLANNED'
+        if not self._publish_connection(token, attempt): model.reject('连接规划输入已失效。', 'STALE_SNAPSHOT')
+        return copy.deepcopy(stage['plan'])
+
+    def begin_connection_generation(self, token, plan):
+        if not self._active_connection(token): return False
+        attempt = copy.deepcopy(self._connection_attempt(token['request_id'])); stage = attempt['connection']
+        if stage['phase'] != 'CONNECTION_PLANNED' or stage['plan'] != plan:
+            model.reject('连接生成必须使用同一已认证计划。', 'PLAN_VERSION_MISMATCH')
+        stage['phase'] = 'CONNECTION_GENERATION'
+        return self._publish_connection(token, attempt)
+
+    def record_connection_result(self, token, result):
+        if not self._active_connection(token): return False
+        attempt = copy.deepcopy(self._connection_attempt(token['request_id'])); stage = attempt['connection']
+        try:
+            if stage['phase'] != 'CONNECTION_GENERATION': model.reject('连接尚未开始生成。', 'PLAN_VERSION_MISMATCH')
+            curve_connections.validate_result(stage['request'], stage['plan'], result)
+            old = next((r for r in stage['results'] if r['connection_id'] == result['connection_id']), None)
+            if old is not None:
+                if old == result: return False
+                model.reject('重复连接结果试图替换已认证事实。', 'PLAN_VERSION_MISMATCH')
+            stage['results'].append(copy.deepcopy(result))
+            published = self._publish_connection(token, attempt)
+            if published and result['status'] != 'READY':
+                self._connection_terminate(token, result['error'], result['status'])
+            return published
+        except Exception as exc:
+            self.fail_connection(token, exc)
+            return False
+
+    def finish_connection(self, token, raw):
+        if not self._active_connection(token): return False
+        attempt = copy.deepcopy(self._connection_attempt(token['request_id'])); stage = attempt['connection']
+        try:
+            if stage['phase'] != 'CONNECTION_GENERATION': model.reject('连接生成阶段或版本错误。', 'PLAN_VERSION_MISMATCH')
+            curve_connections.validate_raw(stage['request'], stage['plan'], raw)
+            incoming = {r['connection_id']: r for r in raw['results']}
+            if any(incoming.get(r['connection_id']) != r for r in stage['results']):
+                model.reject('连接终态改变此前已认证的实际音乐。', 'PROTECTION_CONFLICT')
+            stage['results'] = copy.deepcopy(raw['results'])
+            stage['outcome'] = curve_connections.make_outcome(stage['request'], stage['plan'], stage['results'], raw['status'], raw['error'])
+            attempt['state'] = 'READY' if raw['status'] == 'SUCCEEDED' else raw['status']; attempt['error'] = copy.deepcopy(raw['error'])
+            if attempt['state'] == 'READY': stage['phase'] = 'CONNECTIONS_READY'
+            return self._publish_connection(token, attempt, terminal=True)
+        except Exception as exc:
+            self.fail_connection(token, exc)
+            return False
+
+    def _connection_terminate(self, token, failure, state):
+        if not self._active_connection(token): return False
+        if not isinstance(failure, dict): failure = dict(code=getattr(failure, 'code', 'CONNECTION_FAILED'), message=str(failure), details={})
+        normalized = dict(code=str(failure.get('code') or 'CONNECTION_FAILED'), message=str(failure.get('message') or '连接计算失败，请检查范围后重试。'),
+                          details=copy.deepcopy(failure.get('details')) if isinstance(failure.get('details'), dict) else {})
+        try: model.canonical(normalized)
+        except model.ProjectError: normalized['details'] = {}
+        attempt = copy.deepcopy(self._connection_attempt(token['request_id'])); stage = attempt['connection']; plan = stage['plan']
+        if plan:
+            known = {r['connection_id'] for r in stage['results']}
+            for win in plan['windows']:
+                if win['id'] not in known:
+                    stage['results'].append(curve_connections.failure_result(stage['request'], plan, win['id'], normalized, state))
+        attempt['state'] = state; attempt['error'] = normalized
+        stage['outcome'] = curve_connections.make_outcome(stage['request'], plan, stage['results'], state, normalized)
+        return self._publish_connection(token, attempt, terminal=True)
+
+    def fail_connection(self, token, error):
+        return self._connection_terminate(token, error, 'FAILED')
+
+    def cancel_connection(self, token):
+        return self._connection_terminate(token, curve_connections.error('CANCELLED', '连接计算已取消，bridge保护与先前有效音乐保留。'), 'CANCELLED')
+
+    def connection_state(self):
+        attempt = self._connection_attempt(self._connection_id)
+        if attempt is None:
+            return dict(status='IDLE', phase=None, attempt_id=None, request=None, plan=None, protections=[], results=[], outcome=None,
+                        preview=None, remaining_gaps=[], capabilities=curve_connections.capabilities(), error=None, message='连接尚未计算。')
+        stage = attempt['connection']; active = attempt['state'] == 'READY'
+        messages = dict(RUNNING='连接正在规划或生成；bridge保护保持不变。', READY='连接已认证，尚未经过最终块间处理。',
+            FAILED='连接失败，bridge保护与已认证内容保留，可明确重试。', CANCELLED='连接已取消，当前编辑保持不变。',
+            INTERRUPTED='上次连接计算已中断，请明确重试。', STALE='输入已改变，旧连接失效；撤销回同内容也需重新计算。')
+        return dict(status=attempt['state'], phase=stage['phase'], attempt_id=attempt['id'], request=copy.deepcopy(stage['request']),
+            plan=copy.deepcopy(stage['plan']), protections=copy.deepcopy(attempt['protections']), results=copy.deepcopy(stage['results']),
+            outcome=copy.deepcopy(stage['outcome']), preview=curve_connections.preview(stage['request'], stage['plan'], stage['results'], stage['outcome']),
+            remaining_gaps=copy.deepcopy(stage['request']['actual_layout']['remaining_gaps']), capabilities=curve_connections.capabilities(active),
+            error=copy.deepcopy(attempt['error']), message=messages[attempt['state']])
+
     def _current_bundle(self):
         bundle = copy.deepcopy(self._bundle)
         bundle['project'] = self.session.project
@@ -556,6 +700,8 @@ class Controller:
         self._completion_immediate = None
         bridges = [v for v in self._bundle['attempts'] if 'bridge' in v]
         self._bridge_id = bridges[-1]['id'] if bridges else None
+        connections = [v for v in self._bundle['attempts'] if 'connection' in v]
+        self._connection_id = connections[-1]['id'] if connections else None
         if loaded is not None:
             self.session.mark_saved()
 
