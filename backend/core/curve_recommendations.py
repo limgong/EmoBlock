@@ -1,6 +1,7 @@
 """P7 finite private candidate pipeline and pure fact authentication."""
 import copy
 import traceback
+from collections import deque
 from datetime import datetime, timezone
 
 import curve_project as m
@@ -13,6 +14,7 @@ import curve_final_render as audio
 REV = final.REV
 REQUEST_FIELDS = 'schema spec_rev contract_rev token input_project input_contract_rev input_fingerprint scope target_gaps mode seed parameters algorithm_version request_fingerprint'
 OUTCOME_FIELDS = 'schema spec_rev contract_rev request_fingerprint status candidates facts stage_bundle search insufficient_reason failures error outcome_fingerprint'
+_VALID_FACT_REGISTRIES = deque(maxlen=16)
 
 
 def request_fingerprint(value):
@@ -82,7 +84,12 @@ def resolve(facts,ref,kind=None):
 
 @m.validated_operation
 def validate_facts(facts, stage_bundle=None, owned_ids=None):
-    rows=index_facts(facts);seen=set();visiting=set()
+    rows=index_facts(facts)
+    # Cache only intrinsic immutable JSON facts, never files or session authority.
+    # Every read hashes all bytes; no retained objects, pointers or mutable rows.
+    registry_key=m.digest('emoblocks.fact-validation-cache.v1',facts) if stage_bundle is None else None
+    if registry_key is not None and registry_key in _VALID_FACT_REGISTRIES:return rows
+    seen=set();visiting=set()
     def visit(ident,depth=0):
         if depth>32 or ident in visiting: m.reject('乐谱事实引用有环或超过深度上限。')
         if ident in seen:return
@@ -135,6 +142,7 @@ def validate_facts(facts, stage_bundle=None, owned_ids=None):
         if row!=fact(kind,data,row['dependencies']):m.reject('最终事实原生指纹或身份被篡改。')
         visiting.remove(ident);seen.add(ident)
     for ident in rows:visit(ident)
+    if registry_key is not None:_VALID_FACT_REGISTRIES.append(registry_key)
     return rows
 
 
