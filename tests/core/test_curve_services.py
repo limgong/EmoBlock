@@ -107,6 +107,46 @@ class FacadeTests(unittest.TestCase):
             with self.assertRaises(ValueError):c.export_history(row['id'],'mid',folder/'composition.mid')
             self.assertEqual(c.history_items()[0],row)
 
+    def test_real_midi_import_preserves_leading_rest_cross_block_and_short_tail(self):
+        import mido
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'中文 source.mid'
+            midi=mido.MidiFile(ticks_per_beat=480);track=mido.MidiTrack();midi.tracks.append(track)
+            track.extend([mido.Message('note_on',note=60,velocity=75,time=480),
+                mido.Message('note_off',note=60,time=1920),
+                mido.Message('note_on',note=64,velocity=80,time=0),
+                mido.Message('note_off',note=64,time=240)])
+            midi.save(path)
+            batch=w.prepare_import(path);source=batch['sources'][0]
+            self.assertEqual(source['length_ticks'],2640)
+            self.assertEqual(source['notes'][0]['start_tick'],480)
+            blocks=[i for i in batch['materials'] if i['kind']=='block' and i['phrase_id'] is None and i['generation'] is None]
+            self.assertEqual([i['length_ticks'] for i in blocks],[1920,720])
+            a,b=blocks[0]['notes'][0],blocks[1]['notes'][0]
+            self.assertEqual(a['origin'],b['origin'])
+            self.assertEqual(a['slice']['parent_emission_id'],b['slice']['parent_emission_id'])
+            self.assertEqual(a['duration_tick'],1440);self.assertEqual(b['slice']['offset_tick'],1440)
+            c=w.Controller();token=c.capture_job('IMPORT')['token'];c.apply_batch(batch,token)
+            m.validate(c.project)
+            candidates=[i for i in c.project['materials'] if i['generation'] and i['phrase_id'] is None]
+            self.assertLessEqual(len(candidates),3)
+            self.assertEqual(len({__import__('curve_melody').music_signature(i) for i in candidates}),len(candidates))
+            with tempfile.TemporaryDirectory() as saved:
+                out=c.save_snapshot(Path(saved)/'snapshot.json');d=w.Controller();d.load(out)
+                self.assertEqual(c.project,d.project);self.assertTrue(d.state()['is_saved'])
+
+    def test_actual_import_rejects_overlap_instead_of_truncating_original(self):
+        import mido
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'overlap.mid';midi=mido.MidiFile();track=mido.MidiTrack();midi.tracks.append(track)
+            track.extend([mido.Message('note_on',note=60,velocity=75),
+                mido.Message('note_on',note=64,velocity=75,time=120),
+                mido.Message('note_off',note=60,time=120),
+                mido.Message('note_off',note=64,time=120)])
+            midi.save(path)
+            with self.assertRaises(m.ProjectError) as exc:w.prepare_import(path)
+            self.assertEqual(exc.exception.code,'MONOPHONIC_IMPORT_REQUIRED')
+
     def test_actual_continuous_slices_tie_but_repeat_or_other_source_does_not(self):
         item=material(length=480)
         n=item['notes'][0];n.update(duration_tick=240,slice=dict(parent_emission_id='held',offset_tick=0,parent_duration_tick=480))
