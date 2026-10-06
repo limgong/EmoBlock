@@ -467,3 +467,74 @@ class CurveP3Tests(MappedUIFixture):
         self.assertIn(expected_tick,[p['tick'] for p in points])
         self.assertEqual(len(self.edits('set_intensity')),1)
         self.app.undo();self.assertEqual(self.controller.state()['project'],before)
+
+    def test_subpixel_block_integer_mapped_hit_with_scroll_scale_and_neighbors(self):
+        material = copy.deepcopy(self.app.resolve('material','block'))
+        material.update(id='single-tick',label='单 tick 休止块',length_ticks=1,notes=[])
+        captured = self.controller.capture_job('COMBINE')
+        self.controller.apply_batch(dict(sources=[],materials=[material],warnings=[]),captured['token'])
+        self.app.refresh()
+        first = self.place('single-tick',1)
+        c = self.app.page.timeline
+        a,t,b,d = c.boxes[first]
+        x = round((a+b)/2-c.canvas.canvasx(0));y = int((t+d)/2+18)
+        self.assertFalse(a<=c.canvas.canvasx(x)<=b)
+        before = self.controller.state()['project']
+        c.canvas.event_generate('<ButtonPress-1>',x=x,y=y)
+        c.canvas.event_generate('<ButtonRelease-1>',x=x,y=y)
+        self.root.update()
+        self.assertEqual(self.app.selected_target,('placement',first))
+        self.assertEqual(self.controller.state()['project'],before)
+        second = self.place('single-tick',2)
+        neighbor = self.place('block',3)
+        distant = self.place('single-tick',7201)
+        distant_neighbor = self.place('block',7202)
+        for geometry,scale,scroll,target,next_id in (
+            ('1020x700',.085,0.,second,neighbor),
+            ('1280x800',.17,.35,distant,distant_neighbor),
+            ('1440x900',.04,.1,distant,distant_neighbor)):
+            with self.subTest(geometry=geometry,scale=scale):
+                self.root.geometry(geometry);self.root.update()
+                c.scale = scale;c.draw();c.canvas.xview_moveto(scroll);self.root.update()
+                a,t,b,d = c.boxes[target]
+                self.assertLess(b-a,1)
+                # The nearest integer pointer hits the visible 1px outline,
+                # even when no integer canvas coordinate is inside the geometry.
+                x = round((a+b)/2-c.canvas.canvasx(0))
+                y = int((t+d)/2+18)
+                event = self.event(c.canvas,x,y)
+                canvas_x = c.canvas.canvasx(event.x_root-c.canvas.winfo_rootx())
+                self.assertFalse(a<=canvas_x<=b)
+                self.assertTrue(c.contains_root(event.x_root,event.y_root))
+                self.assertTrue(all(abs(canvas_x-px)>10 or abs(c.canvas.canvasy(y)-py)>10
+                                    for _,px,py in c.point_boxes))
+                self.assertEqual(c.hit(canvas_x,c.canvas.canvasy(y)),target)
+                before = self.controller.state()['project']
+                c.canvas.event_generate('<ButtonPress-1>',x=x,y=y)
+                c.canvas.event_generate('<ButtonRelease-1>',x=x,y=y)
+                self.root.update()
+                self.assertEqual(self.app.selected_target,('placement',target))
+                self.assertEqual(self.controller.state()['project'],before)
+                self.assertAlmostEqual(c.boxes[target][2]-c.boxes[target][0],scale)
+                # An integer pointer in the adjacent ordinary block still selects
+                # that block; its ordinary hit bounds are never widened.
+                na,nt,nb,nd = c.boxes[next_id]
+                nx = round(na-c.canvas.canvasx(0))+2
+                ny = int((nt+nd)/2+18)
+                self.assertEqual(c.hit(c.canvas.canvasx(nx),c.canvas.canvasy(ny)),next_id)
+                c.canvas.event_generate('<ButtonPress-1>',x=nx,y=ny)
+                c.canvas.event_generate('<ButtonRelease-1>',x=nx,y=ny)
+                self.root.update()
+                self.assertEqual(self.app.selected_target,('placement',next_id))
+                self.assertEqual(self.controller.state()['project'],before)
+        # Adjacent subpixel outlines sharing an integer pointer follow the same
+        # back-to-front order as drawing; outside the 0.5px stroke there is no hit.
+        c.scale = .085;c.draw();c.canvas.xview_moveto(0);self.root.update()
+        a,t,b,d = c.boxes[first]
+        x = round(a);y = int((t+d)/2+18)
+        self.assertEqual(c.hit(x,y),second)
+        self.assertIsNone(c.hit(a-.501,y))
+        self.assertEqual(c.hit(c.boxes[neighbor][2]+.1,y),None)
+        self.assertFalse(self.edits('set_intensity'))
+        self.assertFalse(self.edits('move'))
+        self.assertFalse(self.app.player.calls)
