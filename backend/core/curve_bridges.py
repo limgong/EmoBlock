@@ -467,7 +467,13 @@ def _emotion_result(request, plan, window, result):
     if ordered(picked)!=ordered(final['notes']) or len(final['notes'])!=len(base['notes']):
         m.reject('最终桥不是一次情绪段处理的真实结果。','INVALID_BRIDGE')
     gen=final['generation']
-    if not isinstance(gen,dict) or gen.get('method')!='bridge_emotion_once' or gen.get('base_notes')!=base['notes']:
+    expected=dict(method='bridge_emotion_once',parameters=dict(pass_count=1,
+            segments=[dict(range=e['range'],emotion=e['emotion'],seed=e['seed'],input_material_id=base['id']) for e in entries]),
+        seed=base['generation']['seed'],rng_version='python.random-v3',algorithm_version=ALGORITHM,
+        input_fingerprint=m.digest('emoblocks.bridge-emotion-input.v1',dict(base=base,segments=entries)),
+        input_material_ids=[base['id']],base_notes=base['notes'],key_context=base['generation']['key_context'],
+        operations=[dict(range=e['range'],emotion=e['emotion'],operations=e['variant']['generation']['operations']) for e in entries])
+    if gen!=expected or final['id']!=m.digest('emoblocks.bridge-final-material.v1',dict(base=base,segments=entries)):
         m.reject('最终桥缺少未处理基础和一次情绪记录。','INVALID_BRIDGE')
 
 
@@ -478,6 +484,8 @@ def _children(parent, children, sources):
         m.material_check(child,sources)
         a=i*m.BAR;b=min(a+m.BAR,parent['length_ticks'])
         if (child['kind']!='block' or child['phrase_id']!=parent['id'] or child['length_ticks']!=b-a
+                or child['id']!=m.digest('emoblocks.melody.phrase-block.v1',[parent['id'],a,b])
+                or child['generation']!=parent['generation']
                 or child['provenance'].get('relative_start_tick')!=a or child['children']):
             m.reject('桥子块必须来自实际完整母句，短尾不补长。','INVALID_BRIDGE')
         expected=[]
@@ -541,6 +549,8 @@ def validate_result(request, plan, result):
                        seed=seed,algorithm_version=ALGORITHM)
     if gen['input_fingerprint']!=m.digest('emoblocks.bridge-compose-input.v1',compose_input):
         m.reject('桥作曲输入指纹不匹配实际音乐上下文。','INVALID_BRIDGE')
+    if base['id']!=m.digest('emoblocks.melody.bridge-phrase.v1',gen['input_fingerprint']) or gen['rng_version']!='python.random-v3':
+        m.reject('桥母句身份或随机规则与捕获音乐输入不匹配。','INVALID_BRIDGE')
     if gen['base_notes']!=motifs or result['operations']!=gen['operations'] or len(result['operations'])!=len(base['notes']):
         m.reject('桥作曲账本必须回指实际动机父快照。','INVALID_BRIDGE')
     material_ids=set()
