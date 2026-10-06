@@ -3,7 +3,9 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p6
 
-产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23/p4正文为 **FROZEN**；当前P5第11节为 **FROZEN**（独立ROUND2 PASS）。历史P0独立ROUND2、P4实施ROUND3均PASS，原阶段记录保留；用户已启动P5，只读评审、独立契约冻结后才按文件归属实施，完成P5停止，不进入P6。
+当前阶段：P6实现已集成，自查后等待独立实施验收；P6契约ROUND1已FROZEN。以下P0–P5启动/停止语句是保留的历史记录，本轮按P6补充执行，完成后停止，不进入P7。
+
+产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23/p4正文为 **FROZEN**；历史P5第11节为 **FROZEN**（独立ROUND2 PASS），当前P6第12节为 **FROZEN**（独立ROUND1 PASS）。历史P0独立ROUND2、P4实施ROUND3均PASS，原阶段记录保留；用户已启动P5，只读评审、独立契约冻结后才按文件归属实施，完成P5停止，不进入P6。
 
 ## 角色与文件所有权
 

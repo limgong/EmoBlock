@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p6
 
-**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 FROZEN (P5-CONTRACT ROUND2 PASS)，已授权P5范围实现。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
+**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 FROZEN (P5-CONTRACT ROUND2 PASS)；第12节p6 FROZEN (P6-CONTRACT ROUND1 PASS)，当前实施至P6。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
 
 ## 1. 时间、身份、工程和快照
 

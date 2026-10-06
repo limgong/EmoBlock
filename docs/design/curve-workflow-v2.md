@@ -3,6 +3,8 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p6
 
+当前阶段：P6实现已集成，自查后等待独立实施验收；P6契约ROUND1已FROZEN。以下P0–P5启动/停止语句是保留的历史记录，本轮按P6补充执行，完成后停止，不进入P7。
+
 状态：P0–P4已独立PASS（P4实施ROUND3）；用户启动P5 bridge。产品原文保持r3；p0/p23/p4契约FROZEN，公共契约第11节p5已独立ROUND2 PASS并FROZEN，当前开始P5范围实现。
 
 本文完整保留 r3 原文。它替代此前固定 A/B/C/D 版本族、先连接后补全、bridge 与连接块共同决策或交错生成、右栏 BPM 控件及独立记忆点标记。旧 `assembly-confirmed-plan.md` 和其他历史文档不能覆盖 r3；旧格式继续独立读取，不迁移为可完整编辑的新工程。
