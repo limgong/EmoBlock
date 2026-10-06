@@ -51,7 +51,7 @@ class FinalGateTests(unittest.TestCase):
         request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));score=f.make_score(request,plan,f.apply_boundaries(request,plan))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
-            for mutation in ('notes_to_drums','program_channel','delayed_program','cross_track_tempo','controller','pitchwheel'):
+            for mutation in ('notes_to_drums','program_channel','delayed_program','same_tick_program_after_attack','cross_track_tempo','controller','pitchwheel'):
                 audio.export_score(score,root);midi=mido.MidiFile(root/'composition.mid');track=midi.tracks[1]
                 if mutation=='notes_to_drums':
                     for event in track:
@@ -59,6 +59,10 @@ class FinalGateTests(unittest.TestCase):
                 elif mutation=='program_channel':next(e for e in track if e.type=='program_change').channel=9
                 elif mutation=='delayed_program':
                     program=next(e for e in track if e.type=='program_change');track.remove(program);track.insert(len(track)-1,program)
+                elif mutation=='same_tick_program_after_attack':
+                    program=next(e for e in track if e.type=='program_change');track.remove(program)
+                    attack=next(e for e in track if e.type=='note_on' and e.velocity);self.assertEqual(attack.time,0)
+                    track.insert(track.index(attack)+1,program)
                 elif mutation=='cross_track_tempo':track.insert(0,mido.MetaMessage('set_tempo',tempo=1000000))
                 elif mutation=='controller':track.insert(0,mido.Message('control_change',channel=0,control=7,value=0))
                 else:track.insert(0,mido.Message('pitchwheel',channel=0,pitch=8191))
@@ -216,6 +220,28 @@ class RecommendationTransactionTests(unittest.TestCase):
             self.assertEqual(controller.recommendation_state()['status'],'FAILED');self.assertFalse(controller._jobs)
             self.assertEqual(controller.project,before);self.assertEqual(controller.session._undo,undo);self.assertEqual(controller.state()['is_saved'],saved)
             self.assertEqual(controller.history(),[])
+
+    def test_public_finish_rejects_program_after_same_tick_first_attack(self):
+        import mido
+        controller=complete();before=controller.project;undo=copy.deepcopy(controller.session._undo);saved=controller.state()['is_saved']
+        cap=controller.capture_recommendations();renderer=simulated_render(self.tmp.name);mutations=[]
+        def damaged(score,candidate_ref,version=1,should_cancel=None,on_progress=None):
+            asset=renderer(score,candidate_ref,version,should_cancel,on_progress)
+            if score['kind']=='final':
+                path=Path(asset['files']['mid']['path']);midi=mido.MidiFile(path);track=midi.tracks[1]
+                program=next(e for e in track if e.type=='program_change');self.assertNotEqual(program.program,0)
+                track.remove(program);attack=next(e for e in track if e.type=='note_on' and e.velocity)
+                self.assertEqual(attack.time,0);track.insert(track.index(attack)+1,program);midi.save(path)
+                asset['files']['mid']=audio._file(path);asset['asset_fingerprint']=audio.asset_fingerprint(asset);asset['id']=asset['asset_fingerprint'];mutations.append(program.program)
+            return asset
+        with patch.object(audio,'render',side_effect=damaged):out=rec.prepare_recommendations(cap['request'])
+        self.assertTrue(out['candidates']);self.assertTrue(mutations)
+        with self.assertRaises(m.ProjectError) as error:controller.finish_recommendations(cap['token'],out)
+        self.assertEqual(error.exception.code,'OUTPUT_BINDING_MISMATCH')
+        controller.fail_recommendations(cap['token'],dict(code=error.exception.code,message='test recovery',details={}))
+        self.assertEqual(controller.recommendation_state()['status'],'FAILED');self.assertFalse(controller._jobs)
+        self.assertEqual(controller.project,before);self.assertEqual(controller.session._undo,undo);self.assertEqual(controller.state()['is_saved'],saved)
+        self.assertEqual(controller.history(),[])
 
     def test_rehashed_stage_and_mode_bindings_cannot_borrow_another_result(self):
         controller,cap,out=self.ready()

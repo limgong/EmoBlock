@@ -84,11 +84,13 @@ def validate_outputs(score, files):
             program_tick+=event.time
             if event.type=='program_change':programs.append((program_tick,event.channel,event.program))
         if programs!=[(0,channel,engine.PRESETS[layer['preset']][4])]:m.reject('MIDI音色、起始程序或通道绑定不符。','OUTPUT_BINDING_MISMATCH')
-        tick = 0; active = {}; notes = []
+        tick = 0; active = {}; notes = []; selected_program = None
         for event in track:
             tick += event.time
             if not event.is_meta and event.channel!=channel:m.reject('MIDI音符被路由到另一乐器或鼓通道。','OUTPUT_BINDING_MISMATCH')
+            if event.type == 'program_change':selected_program = event.program
             if event.type == 'note_on' and event.velocity:
+                if selected_program!=engine.PRESETS[layer['preset']][4]:m.reject('MIDI起音前尚未设置所选音色。','OUTPUT_BINDING_MISMATCH')
                 key=(event.channel,event.note)
                 if key in active: m.reject('MIDI重复起音未正确关闭。','OUTPUT_BINDING_MISMATCH')
                 active[key]=(tick,event.velocity)
