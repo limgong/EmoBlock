@@ -1,7 +1,7 @@
 # r3 P6 连接块验收记录
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p6 (DRAFT)
+CONTRACT_REV=curve-workflow-v2-r3-p6 (FROZEN)
 RUN_ID=curve-v2-p6-20261007-715c3cb7
 BASE_SHA=8706f96fa9c8aecdbb613f115547f64255da9b3c
 
@@ -29,3 +29,8 @@ P6只消费真实就绪bridge布局，规划/生成保护外有时长的连接�
 ## 契约双角色只读评审
 
 算法和前端ROUND1均指出可实现性缺口，未写仓库或运行产品算法：精确状态/覆盖层与队列、逐窗元数据/来源、去身份音乐种子、真实发展门禁、历史保护力度比较、父预览隔离和预算耗尽。lead整合第12.7–12.9，历史冻结正文未改；独立契约轮次尚未开始，当前仍DRAFT。基线477后端测试和check_frontends通过，仅基线证据。
+
+
+## 独立契约ROUND1 PASS
+
+HEAD=5c70a8c6d0e0b724831a0f82a4139fe66b5f1138，193文件前后指纹1dd4d9914e45d51853de7b89dd24936502c273f0deba2b29b173e90098df90e2，actual pane/review/lead重算完整manifest一致。无阻断契约缺口；历史8–11正文未改。只更新本节状态FROZEN后才开始P6实现，此PASS不代替产品测试和实施验收。

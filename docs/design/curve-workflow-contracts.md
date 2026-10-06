@@ -755,7 +755,7 @@ lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览
 STALE保留此前Plan/锁/结果/Outcome/error不变；决策前RUNNING重开INTERRUPTED时plan/results/outcome仍null/[]/null；决策前FAILED/CANCELLED恢复上述终态，不再生成计划。补测计划前线程异常／计算异常／取消保存重开、禁用全部生成函数、重复迟到回调不创建锁或none、旧失败记录不复活；锁后部分成功＋取消/异常仍保留真实音乐。
 
 
-## 12. P6 连接块补充契约（DRAFT）
+## 12. P6 连接块补充契约（FROZEN）
 
 SPEC_REV=curve-workflow-v2-r3；CONTRACT_REV=curve-workflow-v2-r3-p6。历史p0/p23/p4/p5冻结正文保持原样。本节仅P6，不授予P7最终处理、应用、完整试听或正式导出能力。
 
@@ -850,7 +850,7 @@ lead独占curve_connections.py（新增纯认证）、curve_workflow/curve_store
 必须覆盖：真实P5父和目标/候选校验、无自动但手动READY、旧末音与桥实际不同、三类侵入、合法窗超边音符、两侧无空间、全局冲突和相邻端点、长音记忆/组合/短尾/留白/内部休止、伪自报影响、迟到取消重试重复、纯恢复、快照隔离、独立保护校验与音乐确定性。固定样例保存基础/桥/连接三个actual notes、来源/摘要、理由/范围；真实LMMS串行连续渲染且标尚未最终块间处理，设备串行。双主题三尺寸实际映射Tk坐标与截图/人工/Windows各自报告，不用模拟替代实测。契约/实施独立各最多5轮，匹配实际HEAD和前后同指纹PASS。P6完成停止，不进入P7。
 
 
-### 12.7 双角色只读评审整合：精确形状与计算（DRAFT）
+### 12.7 双角色只读评审整合：精确形状与计算（FROZEN）
 
 本节细化12.1–12.5的字段，不修改任何历史冻结版本。两个角色ROUND1只读FAIL提出的接口缺口统一如下，worker不得另猜字段：
 
@@ -875,7 +875,7 @@ emotion_segments来自base_project所有放置的时间/情绪，intensity_point
 
 Generation.input_fingerprint=digest("emoblocks.connection-compose-input.v1", `{layout_fingerprint,range,technique,parameters,key_context,motif:base_notes,joints,seed,algorithm_version}`)。这些纯helper由lead提供，算法复用；不通过回放随机作曲认证保存数据。Request.seed是0..2**32-1整数，bool拒绝；policy仅auto或none（none仅显式保留，reason NOT_NEEDED，不能代替错误）。max_notes为每窗实际输出总音符上限，含preserve，不含日志；超限失败，不截短或按生成顺序挪预算。其它预算拒绝bool，max_window_tests≤2048、max_windows≤8、max_window_ticks≤15360、max_notes≤4096。
 
-### 12.8 实际发展、端点与保护比较（DRAFT）
+### 12.8 实际发展、端点与保护比较（FROZEN）
 
 所有READY窗口至少两个发声，actual `(pitch,start_tick,duration_tick)`音乐序列必须不同于original_notes；ID/名称/血缘/seed/velocity/标签差异都不算发展。纯单音改高、全preserve或只换ID一律不能READY。不重新执行全轮情绪算法。以下静态规则是必要条件，不宣称听感质量：
 
@@ -891,7 +891,7 @@ Plan中的Joint非null端点恰等READY结果第一/最后音符pitch/start/dura
 
 规划预算耗尽且未证明不存在合法有收益窗口时返回结构化SEARCH_BUDGET_EXHAUSTED失败，不写none_reason=NO_LEGAL_WINDOW；已有合法selected方案可返回预算终止提示。自然无需连接和确实无合法窗口分别NOT_NEEDED与NO_LEGAL_WINDOW，均有对应具体assessment/reason。同一句的内部四拍分界不自动触发连接，须有真实音乐关系需要。
 
-### 12.9 Facade、队列和预览返回（DRAFT）
+### 12.9 Facade、队列和预览返回（FROZEN）
 
 Controller.state().capabilities.connection=not readonly，仅表示可请求该阶段，实际父门禁在capture。capture_connection(None)只解析Controller当前_bridge_id，失效/失败就拒绝，不静默回退旧父；显式bridge_attempt_id可以选择仍READY父。返回`{status:"STARTED",token,request,attempt_id}`且attempt_id=request_id。所有预留版本（包含计划前失败/取消）都参加严格max+1。
 
@@ -903,4 +903,4 @@ preview的桥部分严格由本次request.bridge_ref生成；没有Plan时previe
 
 队列绑定完整p6 Token、PLANNING或`GENERATION:plan_id:version:fingerprint`及阶段内单调整数seq。progress是非空可读字符串，纯provider调用on_progress(message)；没有百分比/假阶段。Plan发布不消费Token；begin成功后才启动生成线程，线程启动异常走专属fail。所有Tk/Facade在主线程，worker只计算纯输入；终态/取消/阶段错配/乱序迟到都不可更新状态。generic finish_job拒绝CONNECTION，cancel_job转专属取消；保存白名单、Store中断暂存标记及STALE传播正式扩展CONNECTION。保存运行中事实可用，恢复不重启线程。
 
-两个角色只读评审问题已整合，仍DRAFT，待独立契约验收；未开始功能实现。
+两个角色只读评审问题已整合，独立P6-CONTRACT ROUND1 PASS，FROZEN；未开始功能实现。

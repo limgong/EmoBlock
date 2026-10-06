@@ -96,6 +96,8 @@ P3最终ROUND3 PASS已现场核对，用户授权P4。公共契约第10节p4先D
 P5契约独立ROUND2 PASS：受检HEAD=9901766，前后指纹186d265ad323c9b7152fcfc220dbd06ac6a892f68eb6a85461c8947774455273；lead现场核对同一RUN/TASK/ROUND及HEAD/指纹，只修改状态标为FROZEN，规范正文未改。worker同步后按11.8派工，实现仍须独立验收。
 
 
-## P6 启动（DRAFT）
+## P6 启动（FROZEN）
 
 P5实施ROUND2实际独立PASS已核对：HEAD=8706f96fa9c8aecdbb613f115547f64255da9b3c，192文件前后指纹c733742fd431bfd27e751ca51bda3ad1bb2fa3414d1ce36d7b928490af8ccbd3；集成与两个worker源码一致且干净。用户明确授权P6，历史规范和验收保留。第12节p6为DRAFT，算法/前端只读评审与verifier独立PASS后才冻结实现；只处理真实就绪桥保护外连接，不进入P7，不开放最终方案应用/试听/导出。四角色及本轮记录在仓库外运行目录，使用已有Python和独立数据，文件所有权/验收见12.6。
+
+P6-CONTRACT独立ROUND1 PASS：HEAD=5c70a8c6d0e0b724831a0f82a4139fe66b5f1138，193文件前后指纹1dd4d9914e45d51853de7b89dd24936502c273f0deba2b29b173e90098df90e2。lead核对实际pane与review一致，仅更新状态FROZEN，正文规则不改；worker安全同步后按12.6范围实现P6，停止于P7之前。
