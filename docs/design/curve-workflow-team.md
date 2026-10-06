@@ -1,9 +1,9 @@
 # 强度画布 v2 r3 团队与阶段协议
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p23
+CONTRACT_REV=curve-workflow-v2-r3-p4
 
-产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)已为 **FROZEN**，P0独立检查 ROUND=2 PASS。用户已启动P0–P1：先完成两角色只读设计评审、整合并冻结提交verifier；PASS后标记FROZEN并同步，再由lead实施P1。P1完成复核后停止，不进入P2。
+产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23历史正文为 **FROZEN**；当前P4第10节为 **DRAFT**，先只读评审与独立检查。P0独立检查 ROUND=2 PASS。用户已启动P0–P1：先完成两角色只读设计评审、整合并冻结提交verifier；PASS后标记FROZEN并同步，再由lead实施P1。P1完成复核后停止，不进入P2。
 
 ## 角色与文件所有权
 
@@ -83,3 +83,7 @@ P0与P1提交、匹配指纹的verifier结论、自动验证及未验项。P0审
 ## P2–P3 启动补充
 
 用户已授权P2–P3，P1最终R3 PASS、HEAD与指纹已现场复核。补充契约第9节先DRAFT评审、PASS后FROZEN；P0正文历史保留。公共接口归lead，算法/前端按第9.6文件清单并行；P2冻结验收PASS后才派P3，结束P3停止不进P4。运行记录继承P0/P1结论，不重置旧阶段轮数；本轮P2/P3各最多5轮。
+
+## P4启动补充
+
+P3最终ROUND3 PASS已现场核对，用户授权P4。公共契约第10节p4先DRAFT，两角色只读评审、lead整合、verifier独立检查后冻结。文件归属及接口见10.7/10.8；算法/前端待冻结后并行，不相互派单。基础候选只暂存，不接P5 bridge或P7最终应用/试听。契约与实现各最多5轮，冻结期不写集成目录。完成P4停止；历史P0–P3的门禁、轮次、保护兼容和待人工验证保留。

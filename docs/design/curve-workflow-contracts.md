@@ -1,9 +1,9 @@
 # 强度画布 v2 r3 公共契约草案
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p23
+CONTRACT_REV=curve-workflow-v2-r3-p4
 
-**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
+**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 DRAFT。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
 
 ## 1. 时间、身份、工程和快照
 
@@ -383,3 +383,170 @@ P3验收：手绘峰谷/一次undo/Esc、缩放滚动后的真实坐标、相对
 `curve_emotion.emotion_variant`的protected_ranges参数为不可变的绝对半开Range[]，即所有适用保护的名义范围及完整受保护音符支撑，可能在当前素材之外但算法只处理素材内相交部分。未提供等同空列表，不等同“从notes猜范围”。lead始终显式传入所有适用的保护范围（含全休止memory）；算法不能增加/移动/延长未保护音符使其完整支撑进入这些范围，不能填入受保护休止。已保护音符仅允许力度/音色提示，不改身份/pitch/start/duration。
 
 lead事务独立按保护名义range与完整音符支持读取实际变体，校验音符集合和结构，不能只信算法自报遵守保护。全休止memory的实际相交主旋律必须仍为空；区外轻改可以合法发生，整段全部保护而无法旋律变化时如实提示。新增验收：基础phrase长3840，前四拍notes=[]，后四拍有旋律；保护[0,1920)且protected_notes=[]，在480增音拒绝，而后半段合法局部变化通过。bridge、theme、manual的不可写范围也继续按冻结记录传入，不放宽门禁。
+
+## 10. P4 基础补全候选补充契约
+
+SPEC_REV=curve-workflow-v2-r3
+CONTRACT_REV=curve-workflow-v2-r3-p4
+CONTRACT_STATUS=DRAFT
+
+本节优先于第8/9节对应的阶段边界、版本和新增字段；旧冻结正文保留。只实现基础补全候选，不选择自动bridge、不新增bridge锁/计划、不生成连接、最终边界、FinalScore、试听候选或应用事务。`CompletedCandidate`是供P5消费的基础输入，绝不是最终推荐或成品。
+
+### 10.1 版本、快照和空缺
+
+内层assembly.v2和外层curve-bundle.v1保留。新工程及成功音乐编辑使用p4；支持p0/p23/p4所属版本。打开/保存/查询/计算/预览不改变当前Project版本或其指纹，旧Snapshot/Record/Attempt不重写。运行Token.contract_rev为当前处理器p4，InputSnapshot.contract_rev保持原Project版本；两个概念不能混同。
+
+`curve_candidates.gap_items(project)->Gap[]`：按基础Placement及Blank占用的补集产生半开精确tick范围，素材内部休止不是gap。`Gap={id,start_tick,end_tick}`，id为`digest("emoblocks.gap.v1",{input_fingerprint,range})`；排序(start_tick,end_tick)。选中的ID必须在捕获输入重新查询；过期/不存在报STALE_GAP，不自动退回全部。低层不吸附、不整拍取整。每个目标必须完全落在真实gap，不能跨越放置或留白。所有固定保护（包括失败bridge范围锁）、名义memory及完整音符支撑均是不可写域；目标相交时请求报PROTECTION_CONFLICT，不能静默删除冲突目标。已有bridge素材或内含bridge组件的组合不可被P4自动新增使用。
+
+### 10.2 不可变 CompletionRequest
+
+精确形状：
+
+```text
+CompletionRequest = {
+ schema:"emoblocks.completion-request.v1",spec_rev,contract_rev:"...-p4",
+ input_contract_rev:p0|p23|p4,request_id:ID,snapshot_id:ID,
+ input_fingerprint:str,project:Project,
+ scope:"selected"|"all",target_gaps:Gap[],library_ids:ID[],
+ contexts:[{gap_id,left:Placement?,right:Placement?,left_notes:Note[],right_notes:Note[]}],
+ protection_summary:{fingerprint:str,ranges:Range[]},blank_regions:Blank[],
+ seed:int[0..2^32-1],algorithm_version:"curve-completion-v1",budget:Budget
+}
+Budget={max_expansions,beam_width,material_limit,max_new_notes,max_candidates}
+```
+
+`project`为完整深拷贝，含实际素材库、已有情绪变体、强度与保护；不能回嵌Bundle/Attempt。上下文是按几何最近左右放置及其**实际**情绪后绝对音符；缺一侧为null和[]，不能伪造端点。library_ids只含允许的block/phrase/组合，排序ID；来源和完整快照通过project解析。blank_regions和protection_summary必须独立与project一致。request输入指纹是原版本完整Project指纹，不使用私有候选的p4指纹替代。
+
+`curve_candidates.make_request(project,selected_gap_id=None,seed=31,budget=None,snapshot_id=None,request_id=None)->CompletionRequest`，先验证全部参数与输入、范围/版本/上下文/保护。ID缺省可产生内部身份；这些随机身份不用于音乐选择。无目标时目标列表为空，计算返回NOT_NEEDED，不产生素材、候选、持久化attempt或快照。只读旧格式不能启动计算。
+
+### 10.3 算法接口、搜索和原始提案
+
+算法仅实现 `curve_completion.propose(request,should_cancel=None,on_progress=None)->ProposalResult`，不访问Controller、不操作文件或Tk、不调用记忆算法或任何后续管线。回调是运行参数，不写入Request或工程。
+
+```text
+ProposalResult={proposals:RawProposal[],search:SearchInfo,error:Error?}
+RawProposal={id:ID,placements:Selection[],score:Score,reasons:Warning[]}
+Selection={gap_id:ID,start_tick:int,material:Material,emotion:Emotion}
+Score={left_fit,right_fit,key_fit,rhythm_fit,motif_fit,emotion_fit,intensity_fit,repeat_penalty,total}
+SearchInfo={expansions:int,generated_notes:int,termination:str,rejections:Warning[]}
+Error/Warning={code:str,message:str,details:JSON-object}
+```
+
+提案包含实际素材快照及音符，不能提交占位、empty notes冒充填满。可以复用已有实际素材，重复计入评价；以联合有限beam搜索前后关系、音程/调性、节奏/动机、强度趋势、相邻实际情绪及重复程度。新情绪只作用新增放置，不能只机械映射强度。生成精确时长素材时是新的动机作曲，不对原件裁切或拉伸；原始时间/notes不变。生成记录满足第9.2通用字段，method=`completion_exact`，parameters含target_ticks和实际节奏方法，algorithm_version、seed、原始base_notes、来源/组合路径；provenance.completion={base_material_id,base_snapshot,target_ticks}，base_snapshot必须等于输入库对应素材，不能用来源不明的副本。新音符保留来源与派生血缘，改变时值的音符不沿用原slice。
+
+默认Budget=256/8/24/256/2；各值为正整数，上限4096/32/128/2048/8。max_expansions计每次扩展选项，generated_notes计所有生成尝试的音符（失败与去重也计）；达到预算立即停止相应操作，返回真实终止原因。对每个扩展/新音符生成及阶段边界检查取消；取消丢弃提案，搜索不无限重试。输入库固定排序，seed只驱动明确的局部规则；不能读时间或系统随机数猜音乐。
+
+score除total外均有限0..1，缺侧上下文对应fit=.5。total=.20*left_fit+.20*right_fit+.12*key_fit+.08*rhythm_fit+.10*motif_fit+.10*emotion_fit+.10*intensity_fit-.10*repeat_penalty。分量按所有目标及候选已选布局平均；reasons记录具体左右关系、音程/节奏/调性、强度与情绪取舍、重复数量。稳定排序total降序、实际音乐投影hash升序；不靠ID/名称/seed/力度/标签宣称差异。搜索失败仍返回预算计数、拒绝项和未解决目标。
+
+### 10.4 独立完成门禁、情绪及记忆
+
+lead `curve_candidates.prepare_completion(request,should_cancel=None,on_progress=None)->CompletionOutcome`调用算法取得提案，然后逐个构建、独立验证、去重、排序。纯准备不写文件、不访问当前会话。`validate_request/validate_candidate/validate_outcome`支持存储恢复时纯验证，不运行算法、渲染器或后台线程。
+
+构建私有Project：原输入完整拷贝，仅在目标内附加新Placement及原输入库没有的实际Material；新素材仅属于candidate/staged，不分配正式显示编号。来源、label_counters、强度、总长、BPM、留白、原放置基础/位置/情绪/变体必须原样。candidateProject.contract_rev=p4，输入快照仍原版本。历史Record仅依原正式invalidate_records保留审计并失效，不新增任何后续阶段记录；既有非受管保护逐字段保留。
+
+先用P3正式curve_memory.recompute获得新自动memory，再为新增放置从base落情绪变体；P4算法不另写记忆规则。既有放置保留输入的完整快照/变体，不能为统一新算法而改写区外音乐；若新记忆与旧音乐矛盾，候选明确PROTECTION_CONFLICT，不悄悄恢复来源或改邻块。新变体必须来自本次base、长度相同、保护内音高/起点/时值及休止完整保持。完整Project验证继续使用P3的旧手工保护、历史自动记忆和跨四拍长音兼容规则，不删除或放宽bridge锁。
+
+独立门禁：
+
+1. 新放置实际范围完整位于所属目标、彼此无重叠，原有放置/留白/全部固定保护未改；不移动邻块凑长。
+2. 每个目标的新增占用并集等于目标完整范围，每个目标至少一条实际有效音符支撑相交。empty notes、部分覆盖、新留白、待生成bridge、只填READY均拒绝。
+3. 生成后重新查询remaining_gaps，目标已无缺口，其他gap保持原范围；新主旋律没有进入保护或主动留白。素材内部自然休止仍允许。
+4. 验证所有素材/来源/FK、实际变体、当前及历史保护、计划依赖，计算实际绝对notes；不信提案自报范围/score/status。
+5. 私有candidateProject完整校验、实际音乐和指纹一致；不调用bridge、connection、boundary、旧planner或最终应用。
+
+### 10.5 CompletedCandidate 与多候选结果
+
+```text
+CompletedCandidate={
+ schema:"emoblocks.completed-candidate.v1",spec_rev,contract_rev:p4,id:ID,
+ snapshot_id:ID,input_fingerprint:str,request_fingerprint:str,project:Project,
+ added_placement_ids:ID[],staged_materials:Material[],notes:Note[],
+ target_resolution:[{gap_id,start_tick,end_tick,complete:true,note_ids:ID[]}],
+ remaining_gaps:Gap[],base_write_ranges:Range[],
+ emotion_arrangement:[{placement_id,emotion}],memory_info:JSON,protection_summary:str,
+ score:Score,reasons:Warning[],provenance:JSON-object,
+ content_fingerprint:str,music_fingerprint:str,
+ capabilities:{score_scope:"BASE_COMPLETION",target_complete:true,
+ can_audition:false,can_apply:false,can_export_final:false}
+}
+CompletionOutcome={schema:"emoblocks.completion-outcome.v1",spec_rev,contract_rev:p4,
+ snapshot_id,input_fingerprint,request_fingerprint,
+ status:"SUCCEEDED"|"INSUFFICIENT"|"FAILED"|"CANCELLED"|"NOT_NEEDED",
+ candidates:CompletedCandidate[],differences:JSON-object[],
+ shortage_reasons:Warning[],unresolved_targets:Gap[],search:SearchInfo,error:Error?}
+```
+
+request_fingerprint=digest("emoblocks.completion-request.v1",完整Request)，content_fingerprint为完整私有Project指纹，candidate id按请求指纹与内容确定。notes是全部放置的实际绝对Note（含ID/血缘），emotion_arrangement只列新放置，memory_info由P3服务派生，protection_summary是实际候选保护摘要。provenance保存每个目标来源、生成方法、参数、种子、算法版本；输入/目标/评分及音乐差异可完整复现。
+
+音乐差异域`emoblocks.completion-music.v1`：固定总长+按时间/音高/时值排序的实际音乐，排除所有身份/名称/seed/velocity/情绪标签。只合并确属同次发声的连续slice，不能合并同音高重复音；以实际P3变体后的音乐去重。不同来源ID或标签不得冒充差异；排列和句结构变化必须在实际音乐中有证据。differences列实际pitch/rhythm/排列差异及对应范围，不声称连接听感。
+
+默认期望两套，返回至budget.max_candidates（最多8）。有效去重后至少2为SUCCEEDED，1为INSUFFICIENT并说明可用素材、受保护范围、去重或预算原因；0且有目标为FAILED，0无目标为NOT_NEEDED，CANCELLED不得保存部分候选。未完成提案不进入CompletedCandidate列表，unresolved_targets保留原目标；局部候选remaining_gaps非空不影响基础目标完成，但任何候选都没有应用/试听/整曲导出资格。搜索终止原因至少ENOUGH_CANDIDATES/EXHAUSTED/BUDGET_EXHAUSTED/CANCELLED/NO_TARGETS/PROTECTION_CONFLICT/NO_VALID_MATERIAL。
+
+### 10.6 attempt 持久化、取消与失效
+
+P4 Attempt保留第8.1全部字段并增加唯一`completion`：
+
+```text
+completion={schema:"emoblocks.completion-attempt.v1",spec_rev,contract_rev:p4,
+ request:CompletionRequest,outcome:CompletionOutcome?}
+```
+
+旧Attempt没有completion，按原形状读取/保存，不注入新字段。P4 Attempt.records/protections/staged_materials均[]，候选的实际保护和暂存材料保存在outcome内各独立Project，不将多个候选的保护混到原编辑。输入Snapshot表引用原版本原指纹；Bundle头继续匹配当前Project所属版本，可包含自身明确版本p4的completion对象。snapshot.id=request.snapshot_id、attempt.id=request.request_id，input_fingerprint与请求/快照一致。旧同版本已有Snapshot表和Record引用保留。
+
+Attempt.state：RUNNING；SUCCEEDED/INSUFFICIENT对应READY（只表示基础候选暂存）；FAILED/CANCELLED/INTERRUPTED；P4禁止APPLIED。输入改变后由completion_state即时判为STALE（在P4 attempt恢复/序列化中允许STALE扩展状态），不能交P5，不能用旧epoch/撤销回同内容复活。终态不能被重复回调替换；取消立即消耗token并标CANCELLED，协作检查让搜索终止；迟到结果不落库。RUNNING保存后重开为INTERRUPTED，无后台线程，outcome为null，不假成功。P4保存验证重新核验请求和全部候选，不把暂存candidate混为bundle.results。
+
+Project.is_saved、undo/redo、库和编号不因staging改变。Controller另有不进入Project的staging_dirty：显式保存包含整个bundle；自动保存保护在music dirty或staging_dirty时执行，失败停止关闭/新建/切换，不虚报已保存。保存成功才清staging_dirty；运行/取消/失败记录也是暂存变更，UI音乐保存状态与候选状态分别表示。只读旧工程不能建立attempt。
+
+### 10.7 Facade、事件与前端
+
+```text
+Controller.gap_items()->Gap[]
+Controller.capture_completion(selected_gap_id=None,seed=31,budget=None)
+ ->{token:RequestToken?,request:CompletionRequest,attempt_id:ID?,immediate_outcome:CompletionOutcome?}
+Controller.finish_completion(token,outcome)->bool
+Controller.cancel_completion(token)->bool
+Controller.completion_state()->{status,attempt_id:ID?,input_fingerprint:str?,
+ request:CompletionRequest?,outcome:CompletionOutcome?,message:str}
+```
+
+无目标capture立即NOT_NEEDED，不创建持久化attempt/snapshot、不启动线程。selectedGap/参数错误前先拒绝，不能半注册。重复completion启动拒绝DUPLICATE_REQUEST；输入改变/undo/redo/切换通过Session revision与完整token失效；完成前再次检查归属及实际candidate，成功只更新_bundle暂存，不走Session.commit/edit。cancel_job对completion转派cancel_completion；finish_job不能提前消费completion结果。generic finish_completion验证失败应将attempt置FAILED、提供详情并释放busy；验证/回调抛错也不能永久RUNNING。计算失败/取消/失效不改当前播放或选中成品。
+
+`on_progress`传`{event_seq,phase:"BASE_COMPLETION",message,expansions}`，单调event_seq；UI在队列外封装原token，在主线程检查完整身份和序号、终态。只显示真实工作阶段及可选elapsed，不捏造百分比/预计结束。回调不操作Tk、不持久化UI计时。
+
+前端在现有三栏内选实际gap、显示计算状态与取消、候选基础排布/情绪/remaining_gaps、不足/失败/已失效提示。可以在唯一画布切只读候选预览，明确“基础候选 · 尚未处理bridge与连接”，不改变当前工程与素材列表；退出预览恢复选择/滚动/播放对象。不新增第四栏、弹窗工作流、最终确认应用、候选完整试听或导出入口。中性素材试听不得被标为完整候选；已有素材播放器/历史成品导出保持可用。控制点/块拖动/手绘优先级保留；只有真实空缺选择入口，不能将任意手绘点击变成gap选择。主题/窗口/预览不dirty、不undo、不触发生成。
+
+### 10.8 所有权、失败与验收
+
+lead：curve_candidates/curve_workflow/curve_store/project/session版本、纯候选完成/范围/保护/快照服务、主流程接线与相应测试。story_engine仍仅lead；v2旧最终生成入口继续PIPELINE_NOT_AVAILABLE。算法：新增curve_completion.py及test_curve_completion.py、仓库外固定音乐样例，不改schema/记忆/UI/主流程。前端：shared curve_ui/canvas及新增curve_completion_ui.py（可选）、允许配对适配器与独立P4 UI测试，不改backend或播放器契约。verifier只审查冻结集成目录，不审查自己的副本、不修改代码。
+
+拒绝/异常使用结构化code/message/details，至少STALE_GAP/STALE_SNAPSHOT/PROTECTION_CONFLICT/NO_VALID_MATERIAL/NO_SOLUTION/BUDGET_EXHAUSTED/INCOMPLETE_TARGET/INVALID_CANDIDATE/CANCELLED；不会静默转留白、延长总长、弱化保护或进行无限重试。输出器无法表达精确tick时OUTPUT_TIME_UNREPRESENTABLE，数据原样保留，不量化取巧。P4 UI没有candidate试听，lead验收可在隔离目录把实际基础音符交已有中性LMMS渲染，材料标为“基础拼接对照，未经过bridge/连接”，不能当最终连接听感。
+
+必须覆盖用户十二项：240tick空缺且邻块/强度/总长不变；只选一gap；多gap联合重复控制；blank与内部rest；空notes/占位/部分覆盖拒绝；峰值gap先base记忆，组合/短尾/跨长音；手动bridge/失败锁/手工保护；post实际去重与不足；当前编辑/库/编号/saved/undo快照隔离与迟到重复取消；attempt保存及RUNNING重开INTERRUPTED；不调用P5–P7/旧planner；原始精确tick及输出拒绝。保留P3旧手工memory读取与历史自动memory长音+bridge审计回归。
+
+契约先算法/前端只读评审、verifier独立PASS再标FROZEN并同步；实现后自测冻结verifier最多5轮。契约与实现轮数分别记录，不重置前阶段。自动后端/完整/双端契约/diff、程序化Tk、实际LMMS/设备、人工视觉/听感与Windows实机分别记录。实际渲染与设备串行，未执行明确待验。完成P4停止，不进入P5，不推送/发布/安装模型。
+
+### 10.9 只读评审整合：精确门禁与状态矩阵（覆盖上文歧义）
+
+- Request.selected的target_gaps恰好等于选中完整Gap，all恰好等于输入全部Gap列表；禁止子范围冒充。library_ids是完整允许集合（排除bridge及嵌套bridge），固定ID排序；material_limit只限制搜索根，不裁来源/父句/组合快照闭包。contexts与target一一对应同序，左右Placement和实际notes、blank及保护摘要必须等于独立输入查询。
+- capture成功：token.request_id=request.request_id=attempt.id；token.snapshot_id=request.snapshot_id=Snapshot.id；token/request处理版本p4，request.input_contract_rev=Snapshot.contract_rev=request.project.contract_rev；原输入指纹四处相同。旧输入版本绝不因注册/计算/保存升级。
+- `validate_request(request)`, `validate_candidate(request,candidate)`, `validate_outcome(request,outcome)`均返回None或结构化ProjectError；所有Budget拒绝bool。max_candidates允许1，但期望始终至少2，只有1时INSUFFICIENT。
+- 原始搜索返回最多`min(32,max(beam_width,4*max_candidates))`个完整RawProposal，累计包含的素材notes不超过65536；受beam、根数量及扩展上限限制，是有限备选池，不宣称穷尽全部合法音乐。Raw终止RAW_POOL_LIMIT/RAW_POOL_EXHAUSTED/EXHAUSTED/BUDGET_EXHAUSTED/CANCELLED/NO_TARGETS/PROTECTION_CONFLICT/NO_VALID_MATERIAL，**不能**按两条raw宣布ENOUGH_CANDIDATES。lead处理整个有界池（达到最终上限可停），仅在post门禁及实际去重后至少2才将最终termination置ENOUGH_CANDIDATES。SearchInfo新增`raw_termination:str`保留实际原始终止原因；不足原因必须说明有限备选池/剪枝/去重，不能伪称所有方案无解。
+- generated_notes只计算法构作新素材的实际音符（每个生成尝试，包括重复/失败），每生成一音符之前检查，不超max_new_notes；复用原件不计生成音符但计扩展，组合展开复用不算新作曲。音符预算耗尽后仍可在剩余扩展预算内复用已有素材；不能丢弃已经完整的提案。RawPool音符上限同样计复用，防止规模无限增加。未解决目标由lead基于实际Completed集合计算，不由Raw自报READY决定。取消/主线程异常未取得准确计数时SearchInfo.expansions/generated_notes可以null，不能伪造0；正常算法返回必须为实际非负整数。异常终止可为ERROR，raw_termination为UNKNOWN。
+- P3 recompute对旧placement返回的变体**不得写回**；只采纳其正式新自动memory和新增placement变体，再独立验证。输入已BOUND时记忆归属/范围/结构不能移走，只有其输入基准指纹随私有布局刷新。旧快照有自定义参数/旧变体时仍逐字段保留；不能借新版默认参数重算区外声音。若与正式新记忆/保护矛盾，明确拒绝而不覆盖旧音乐。
+- staged_materials恰等于私有Project新增库项，全部被新增放置使用，无额外未使用项、重复或同ID异内容；added_placement_ids和emotion_arrangement恰对应新增放置。target_resolution恰对应完整目标，其note_ids恰为实际notes中与目标相交的新增发声。base_write_ranges为目标的规范化并集。remaining_gaps恰为gap_items(candidate.project)，使用候选指纹的ID；非目标空缺仅范围保持原样。INSUFFICIENT有一套完整有效候选时unresolved_targets=[]，方案不足不等于目标没填满。
+- differences形状为`{left_id,right_id,types:[pitch|rhythm|arrangement],ranges:Range[]}`；ID引用实际候选，变化范围/类型由post实际音乐独立计算。音乐投影进行slice合并前给parent_emission_id加placement发声命名空间，再要求同源、pitch一致、offset连续、绝对时间连续、parent_duration相同；只在投影中去除身份。Candidate.notes仍保留模型原始血缘，不改工程或保护。变更音高或时值的新音符都不沿用旧slice。
+- RUNNING/INTERRUPTED的outcome=null；READY的outcome为SUCCEEDED/INSUFFICIENT，error=null；FAILED的outcome为FAILED，attempt.error与outcome.error相同；CANCELLED的outcome为CANCELLED且无候选；STALE可保留原outcome供审计，但无任何后续消费资格。工程有效编辑/undo/redo必须持久标记原READY/RUNNING为STALE，更新staging_dirty，返回同内容也不复活。worker不能替换终态；此规则不禁止正式编辑使READY失效。重开RUNNING→INTERRUPTED的派生改动也标staging_dirty，下一次保存可记录它；不重建旧token。
+- 无目标固定返回token=null/attempt_id=null/immediate_outcome=NOT_NEEDED、candidates=[]、expansions=generated_notes=0、termination=raw_termination=NO_TARGETS。临时Request身份不登记，staging_dirty、既有暂存、saved/undo/编号/播放不变。
+- 新增Facade `Controller.fail_completion(token,error)->bool`，用于计算或结果回调异常，规范化结构错误并将所属活动attempt置FAILED、释放token；无归属/过期/重复返回false，不污染新attempt。`state().capabilities.completion`仅v2可用。completion_state.status明确为IDLE/RUNNING/READY/FAILED/CANCELLED/STALE/INTERRUPTED/NOT_NEEDED，纯查询不写状态。
+- UI关闭/新建/打开继续现有忙碌限制；用户先明确取消，再执行保护保存。允许显式保存RUNNING，文件如实记录运行态，重开即INTERRUPTED；不得先存RUNNING再仅内存取消并声称取消已保存。预览进入/切换/退出不调用工程切换或播放器关闭，不清缓存、不替换播放对象；画布只读，当前素材区保持原编辑库。
+- 额外验收：两条raw仅标签不同、第三条实际音高不同时应得到两套post候选；真实gap只填一半Request拒绝；旧放置自定义emotion参数不被默认重算；运行播放时反复候选预览不抢播；候选编辑后undo回原内容仍STALE；暂存变化自动保存失败停止切换/关闭；旧Snapshot/Attempt归属版本和历史managed身份/跨界保护不被兼容升级破坏。
+
+### 10.10 前端只读评审补充：公共状态与空素材
+
+- `Controller.state()`在原字段之外公开`staging_dirty:bool`，音乐`is_saved`与候选暂存保存状态分别显示。只查询、无目标计算、候选预览不能修改两种状态。
+- 现有`Controller.accepts(token)->bool`扩展支持completion：检查完整RequestToken、Session revision、所属活动任务及其RUNNING状态，纯查询不消耗token。取消A再启动B后，A的迟到进度即使输入内容指纹相同也不能通过；UI不访问Session私有字段。
+- `completion_state()`新增`error:Error|null`；FAILED时与outcome.error/attempt.error一致，其余状态保留真实状态对应的详情。`fail_completion`返回false时，UI不得把该错误覆盖到较新任务。
+- Candidate.memory_info使用第9.5节已冻结的`MemoryInfo`，protection_summary明确为候选实际保护的指纹。只读预览使用候选自己的记忆定位与保护，不能沿用当前编辑的标记。
+- 每个新增独立Placement的实际Material必须至少有一个有效音符；整段empty-notes素材即使与其他有音符素材共同覆盖目标也拒绝。允许非空整句/组合中的自然休止，不要求每tick发声，也不把素材内部休止当作新gap。
+- 候选详情显示新放置`emotion_variant.generation.warnings[].message`，尤其如实说明`melody_changed=false`；编配提示仍标为suggested-not-rendered，不声称已经完成伴奏渲染。编辑选择、gap选择、候选预览选择和播放对象独立。
+- 必测旧放置自定义seed=99、max_changes=1时，P3默认重算产生不同区外变体仍不能回写；新增记忆实际冲突应拒绝，不能仅因默认重算的旧变体不同误拒合法补全。另测半个empty素材+半个有音符素材覆盖一个目标的伪完成拒绝、取消后同指纹任务进度隔离、预览内警告与真实保护来源。
