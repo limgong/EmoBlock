@@ -86,3 +86,11 @@ F1：仅WAV头保留声明帧数，重新计算摘要后仍获READY。修复实�
 F2：音乐轨插入速度事件、音符改到鼓通道仍通过。修复核全部轨绝对时间上的速度/四拍拍号、每轨程序和音符通道、旋律与GM鼓路由；拒绝未规划的控制器、弯音等演奏事件。保留合法旋律/鼓输出，不改变输出器或音乐本身。
 
 14项输出/保护专项2.384秒PASS；18个真实归档资产重新通过加强后的完整PCM、速度、路由和三格式验证（r2-actual-asset-checks.json）。音乐未重生成，原文件未修改。本修复进入独立实现ROUND2/5，不重置阶段轮数；完整最新复跑结果和最终收据另记。
+
+## ROUND2最终代码自查与重新冻结
+
+本地修复提交f3f0c4e、f124951：初始音色程序必须发生在tick 0，演奏后延迟设置音色的MIDI也拒绝；合法旋律与鼓通道正例继续通过。不改变生成、输出编码、乐谱或保护规则。
+
+最终源码复跑：`scripts/test.py --backend-only` 584 PASS（63.290秒）；`scripts/test.py` 892 PASS（222.360秒）；`scripts/check_frontends.py` PASS；工作区及BASE到HEAD的`git diff --check` PASS。14项输出/保护专项3.430秒PASS；18个真实LMMS归档资产在最终校验器上再次PASS，记录见仓库外`P7-R2-final-*.log`、`p7-r2-output-gates-final.log`与`r2-final-actual-assets.log`。此前复跑后又增加程序起始时间校验，以上是该最后修改之后的结果。
+
+两worker保持空闲且无未交付改动，正常merge同步本次冻结HEAD并检查真实源码导入和完整文件内容一致，不重置或覆盖。下一轮为独立实现ROUND2/5，契约累计ROUND3/5；ROUND1明确FAIL保持不变。最终身份、受检HEAD、完整前后指纹及独立结论只写仓库外P7-final-receipt.json，检查期间不再修改本目录。
