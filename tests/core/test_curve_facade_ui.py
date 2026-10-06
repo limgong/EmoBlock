@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import tkinter as tk
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -125,3 +126,77 @@ class IntegratedFacadeUI(unittest.TestCase):
         self.assertTrue(self.controller.state()['is_saved'])
         self.assertEqual(self.controller.state()['can_undo'], can_undo)
         self.assertEqual(self.app.player.calls, [])
+
+    def canvas_event(self, tick, level):
+        timeline = self.app.page.timeline
+        canvas = timeline.canvas
+        x = round(timeline.x(tick) - canvas.canvasx(0))
+        y = round(timeline.y(level) - canvas.canvasy(0))
+        return SimpleNamespace(x=x, y=y, x_root=canvas.winfo_rootx()+x,
+                               y_root=canvas.winfo_rooty()+y)
+
+    def test_real_trace_service_release_once_undo_and_escape_atomic(self):
+        self.import_real()
+        self.controller.session.mark_saved()
+        original = copy.deepcopy(self.controller.project)
+        timeline = self.app.page.timeline
+        timeline.set_mode('trace')
+        first = self.canvas_event(480, .25)
+        peak = self.canvas_event(1200, .9)
+        last = self.canvas_event(2000, .4)
+        timeline.press(first)
+        timeline.motion(peak)
+        timeline.motion(last)
+        self.assertEqual(self.controller.project, original)
+        timeline.release(last)
+        edited = self.controller.project
+        self.assertNotEqual(edited['intensity_points'], original['intensity_points'])
+        self.app.undo()
+        self.assertEqual(self.controller.project, original)
+        self.assertTrue(self.controller.state()['is_saved'])
+        self.assertTrue(self.controller.state()['can_redo'])
+        timeline.press(first); timeline.motion(peak)
+        timeline.cancel(); timeline.release(peak)
+        self.assertEqual(self.controller.project, original)
+        self.assertTrue(self.controller.state()['can_redo'])
+        self.assertEqual(self.app.player.calls, [])
+
+    def test_real_emotion_buttons_memory_relocation_and_protected_warning(self):
+        material = self.import_real()
+        self.app.edit('place', material_id=material['id'], start_tick=0)
+        ident = self.controller.project['placements'][0]['id']
+        self.app.select_target('placement', ident)
+        library = copy.deepcopy(self.controller.project['materials'])
+        self.app.page.emotion_buttons['hope'].invoke()
+        self.root.update()
+        placement = self.controller.project['placements'][0]
+        self.assertEqual(placement['emotion'], 'hope')
+        self.assertFalse(placement['emotion_variant']['generation']['melody_changed'])
+        self.assertIn('旋律未改变', self.app.status_text.get())
+        self.assertIn('尚未渲染', self.app.detail_text.get())
+        self.assertEqual(self.controller.project['materials'], library)
+        self.assertTrue(self.app.page.timeline.canvas.find_withtag('memory-range'))
+        total = self.controller.project['total_ticks']
+        self.app.edit('set_intensity', points=[dict(tick=0,level=.1),
+            dict(tick=3000,level=.9),dict(tick=total,level=.1)])
+        self.assertEqual(self.controller.state()['memory_info']['state'], 'PENDING_GAP')
+        self.assertFalse(self.app.page.timeline.canvas.find_withtag('memory-range'))
+        self.app.undo()
+        self.assertEqual(self.controller.state()['memory_info']['placement_id'], ident)
+        self.assertEqual(self.app.player.calls, [])
+
+    def test_audition_uses_project_snapshot_without_starting_playback(self):
+        material = self.import_real()
+        self.app.select_target('material', material['id'])
+        before = copy.deepcopy(self.controller.project)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'prepared.wav'
+            path.write_bytes(b'cache-fixture-not-device-audio')
+            asset = dict(wav_path=str(path),body_seconds=8/3,audio_seconds=11/3)
+            with patch.object(workflow,'render_audition',return_value=asset) as render:
+                self.app.prepare_selected()
+                self.settle()
+            self.assertEqual(render.call_args.kwargs['bpm'], before['bpm'])
+            self.assertEqual(render.call_args.args[0], material)
+            self.assertEqual(self.controller.project, before)
+            self.assertEqual(self.app.player.calls, [])
