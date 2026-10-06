@@ -1131,7 +1131,7 @@ sources为上述全部逻辑notes、父notes及material_snapshots的notes/childr
 
 实现专项必须机械复核这两个常量；并在真正P4/P5/P6实际最终请求上模拟清空origin、借另一个合法Source、伪造lineage/parent_ref/旧accepted_score来源，重新计算source/score/asset元数据hash后仍独立拒绝。保存重开重算同来源指纹且不调用任何生成/渲染。scope=LOCAL与FULL、comparison和final各按自身真实父闭包认证，不把比较谱要求含本轮自动桥。
 
-### 13.18 运行时来源闭包补充（DRAFT）
+### 13.18 运行时来源闭包补充（FROZEN）
 
 服务契约修订 `CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1` 是第13节已冻结音乐对象之上的可加运行时捕获修订；第13.1–13.17及其对象schema/数据头 `contract_rev=curve-workflow-v2-r3-p7` 保持原版，P4/P5/P6对象及旧Project/Bundle也保持所属版本，不迁移持久化数据。各新任务使用runtime1服务修订，token和Boundary/FinalScore/AudioAsset仍使用已冻结p7数据版本。第13.12 capture返回形状由本节明确扩充，旧调用只读取原三个字段仍兼容。
 
