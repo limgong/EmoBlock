@@ -107,19 +107,29 @@ def validate_facts(facts, stage_bundle=None, owned_ids=None):
         elif kind=='boundary_plan':
             request=next((r['data'] for r in rows.values() if r['kind']=='boundary_request' and final.request_fingerprint(r['data'])==data['request_fingerprint']),None)
             if request is None:m.reject('最终计划缺少原请求。')
+            if final.ref(request) not in row['dependencies']:m.reject('最终计划未登记请求依赖。')
             final.validate_plan(request,data)
         elif kind=='boundary_result':
             plan=resolve(rows,data['plan_ref'],'boundary_plan')
             request=next(r['data'] for r in rows.values() if r['kind']=='boundary_request' and final.request_fingerprint(r['data'])==data['request_fingerprint'])
+            if any(dep not in row['dependencies'] for dep in (final.ref(request),final.ref(plan))):m.reject('最终结果未登记计划依赖。')
             final.validate_result(request,plan,data)
         elif kind=='final_score':
             request=resolve(rows,data['boundary_request_ref'],'boundary_request');plan=resolve(rows,data['boundary_plan_ref'],'boundary_plan')
+            deps=[final.ref(request),final.ref(plan)]
+            if data['kind']=='final':
+                result=next((r['data'] for r in rows.values() if r['kind']=='boundary_result' and r['data']['plan_ref']==final.ref(plan) and r['data']['request_fingerprint']==final.request_fingerprint(request)),None)
+                if result is None:m.reject('最终乐谱缺少边界结果事实。')
+                deps.append(final.ref(result))
+            if any(dep not in row['dependencies'] for dep in deps):m.reject('最终乐谱缺少原生阶段依赖。')
             final.validate_final_score(request,plan,data)
         elif kind=='audio_asset':
+            if data['score_ref'] not in row['dependencies']:m.reject('音频未登记所选乐谱依赖。')
             audio.validate_asset(data,resolve(rows,data['score_ref'],'final_score'),files=False)
         elif kind=='application':
             m.shape(data,'transaction_id candidate_ref score_ref input_snapshot_id pre_revision post_revision accepted_binding_fingerprint registered_source_ids registered_material_ids accepted_record_id result_id')
             resolve(rows,data['score_ref'],'final_score')
+            if data['score_ref'] not in row['dependencies']:m.reject('应用未登记乐谱依赖。')
         else:m.reject('未知最终事实类型。')
         if row!=fact(kind,data,row['dependencies']):m.reject('最终事实原生指纹或身份被篡改。')
         visiting.remove(ident);seen.add(ident)
@@ -597,7 +607,9 @@ class RecommendationFacade:
             if score['mode']!=context['mode'] or score['kind']!=kind:m.reject('模式乐谱类型不一致。')
             asset=outcome['assets'][kind];audio.validate_asset(asset,score,candidate_ref)
             if asset['version']!=job['asset_version']:m.reject('模式音频版本不一致。')
-            newfacts.extend([fact('final_score',score,[score['boundary_request_ref'],score['boundary_plan_ref']]),fact('audio_asset',asset,[final.ref(score)])])
+            dependencies=[score['boundary_request_ref'],score['boundary_plan_ref']]
+            if kind=='final':dependencies.append(final.ref(final.apply_boundaries(request,plan)))
+            newfacts.extend([fact('final_score',score,dependencies),fact('audio_asset',asset,[final.ref(score)])])
         for row in newfacts:
             previous=rows.get(row['id'])
             if previous and previous['data']!=row['data']:m.reject('模式结果试图覆盖旧谱。')

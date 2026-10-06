@@ -22,6 +22,7 @@ def _guard(fn):
     @wraps(fn)
     def guarded(*args, **kwargs):
         try:
+            if fn.__name__.startswith('validate_'):return m.cached_validation(fn,args,kwargs)
             return fn(*args, **kwargs)
         except (KeyError, TypeError, AttributeError, RecursionError, IndexError) as exc:
             raise m.ProjectError('INVALID_CANDIDATE', '补全数据字段缺失或结构无效。') from exc

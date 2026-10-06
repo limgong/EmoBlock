@@ -64,7 +64,7 @@ def validation_scope():
     if existing is not None:
         yield existing
         return
-    context=dict(validated_projects=set(),final_checks={})
+    context=dict(validated_projects=set(),final_checks={},native_checks={})
     token=_VALIDATION_CONTEXT.set(context)
     try:yield context
     finally:_VALIDATION_CONTEXT.reset(token)
@@ -75,6 +75,17 @@ def validated_operation(fn):
     def wrapped(*args,**kwargs):
         with validation_scope():return fn(*args,**kwargs)
     return wrapped
+
+
+def cached_validation(fn,args,kwargs):
+    """Memoize only successful pure data gates inside one operation, never files."""
+    with validation_scope() as context:
+        key=digest('emoblocks.native-validation-cache.v1',dict(function=fn.__module__+'.'+fn.__name__,args=args,kwargs=kwargs))
+        cache=context['native_checks']
+        if key in cache:return copy.deepcopy(cache[key])
+        value=fn(*args,**kwargs)
+        if len(cache)<128:cache[key]=copy.deepcopy(value)
+        return value
 
 
 def canonical(value):
