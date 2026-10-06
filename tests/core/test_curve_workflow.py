@@ -272,6 +272,19 @@ class ProtectionTests(unittest.TestCase):
             self.assertEqual(s.project, before); self.assertFalse(s.can_undo)
         m.edit(p, 'place', material_id='A1', start_tick=3840)  # half-open boundary
 
+    def test_null_manual_placement_id_never_grants_self_edit_exemption(self):
+        p = manual_bridge(); p['placements'] = []; p['protections'][0]['placement_id'] = None
+        m.validate(p); s = curve_session.ProjectSession(p); s.mark_saved(); token = s.capture()['token']
+        with tempfile.TemporaryDirectory() as tmp:
+            path = curve_store.save(curve_store.new_bundle(p), Path(tmp)/'nullable-owner.json')
+            self.assertEqual(curve_store.load(path)['bundle']['project'], p)
+        for action, args in [('place', dict(material_id='A1', start_tick=1920)), ('mark_blank', dict(start_tick=1920, end_tick=2160))]:
+            with self.assertRaises(m.ProjectError) as error:s.edit(action, **args)
+            self.assertEqual(error.exception.code, 'PROTECTION_CONFLICT')
+            self.assertEqual(s.project, p); self.assertFalse(s.can_undo); self.assertFalse(s.can_redo)
+            self.assertTrue(s.is_saved); self.assertTrue(s.accepts(token))
+        # Existing concrete manual bridge move/delete/undo remain covered above.
+
     def test_payload_reference_cannot_bypass_state_or_summary_with_empty_dependencies(self):
         p = manual_bridge(); plan = connection(p); plan['status'] = 'FAILED'; p['records'].append(plan)
         row = dict(id='connection-result', kind='connection_result', version=1, status='READY', input_fingerprint='input', dependencies=[],

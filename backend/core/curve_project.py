@@ -618,7 +618,13 @@ def _edit(project, action, **args):
     for r in write_ranges:
         integer(r['start_tick']); integer(r['end_tick'], r['start_tick'] + 1)
         for lock in project['protections']:
-            own_manual_bridge = lock['kind'] == 'bridge' and lock['origin'] == 'manual' and lock['placement_id'] == r.get('placement_id')
+            placement_id = r.get('placement_id')
+            existing = next((p for p in project['placements'] if p['id'] == placement_id), None)
+            own_manual_bridge = (placement_id is not None and existing is not None
+                and existing['base_snapshot']['kind'] == 'bridge'
+                and action in ('move', 'delete', 'set_emotion')
+                and lock['kind'] == 'bridge' and lock['origin'] == 'manual'
+                and lock['placement_id'] == placement_id)
             if intersects(r, lock) and not own_manual_bridge:
                 reject('该范围已受保护，请先通过新的计划更新保护。', 'PROTECTION_CONFLICT')
     invalidate_records(result, project)
