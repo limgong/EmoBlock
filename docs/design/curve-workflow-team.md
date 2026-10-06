@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p4
 
-产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23历史正文为 **FROZEN**；当前P4第10节为 **DRAFT**，先只读评审与独立检查。P0独立检查 ROUND=2 PASS。用户已启动P0–P1：先完成两角色只读设计评审、整合并冻结提交verifier；PASS后标记FROZEN并同步，再由lead实施P1。P1完成复核后停止，不进入P2。
+产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)的p0/p23历史正文为 **FROZEN**；当前P4第10节为 **FROZEN**（P4-CONTRACT ROUND1 PASS）。P0独立检查 ROUND=2 PASS。用户已启动P0–P1：先完成两角色只读设计评审、整合并冻结提交verifier；PASS后标记FROZEN并同步，再由lead实施P1。P1完成复核后停止，不进入P2。
 
 ## 角色与文件所有权
 

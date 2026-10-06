@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p4
 
-**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 DRAFT。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
+**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
 
 ## 1. 时间、身份、工程和快照
 
@@ -388,7 +388,7 @@ lead事务独立按保护名义range与完整音符支持读取实际变体，�
 
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p4
-CONTRACT_STATUS=DRAFT
+CONTRACT_STATUS=FROZEN
 
 本节优先于第8/9节对应的阶段边界、版本和新增字段；旧冻结正文保留。只实现基础补全候选，不选择自动bridge、不新增bridge锁/计划、不生成连接、最终边界、FinalScore、试听候选或应用事务。`CompletedCandidate`是供P5消费的基础输入，绝不是最终推荐或成品。
 
