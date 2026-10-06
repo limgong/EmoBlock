@@ -25,6 +25,9 @@ class CurveCanvas(ttk.Frame):
         self.project = None
         self.readonly = False
         self.view_memory_info = None
+        self.bridge_preview = None
+        self.bridge_boxes = {}
+        self.selected_bridge_id = None
         self.selected_id = None
         self.scale = .085
         self.margin = 36
@@ -63,12 +66,15 @@ class CurveCanvas(ttk.Frame):
             self.canvas.bind(event, self.delete_selected)
         self.bind('<Destroy>', self.destroyed, add='+')
 
-    def set_project(self, project, readonly=False, memory_info=None):
+    def set_project(self, project, readonly=False, memory_info=None, bridge_preview=None):
         if self.intensity_draft and project!=self.project:
             self.cancel()
         self.project = project
         self.readonly = readonly
         self.view_memory_info = memory_info
+        self.bridge_preview = bridge_preview
+        if not bridge_preview or self.selected_bridge_id not in {o['id'] for o in bridge_preview['overlays']}:
+            self.selected_bridge_id = None
         if not project or self.selected_id not in {p['id'] for p in project['placements']}:
             self.selected_id = None
         self.draw()
@@ -117,6 +123,7 @@ class CurveCanvas(ttk.Frame):
         self.boxes = {}
         self.point_boxes = []
         self.gap_boxes = {}
+        self.bridge_boxes = {}
         if self.project is None:
             c.configure(scrollregion=(0,0,max(1,c.winfo_width()),max(1,c.winfo_height())))
             c.create_text(24,80,anchor='nw',text='旧工程只读 · 请选择已有成品试听或导出',fill=p['muted'],font=font())
@@ -182,6 +189,7 @@ class CurveCanvas(ttk.Frame):
             c.create_rectangle(self.x(start),center-25,self.x(start+length),center+25,
                                outline=p['accent'],width=1,dash=(4,3),tags='drop-preview')
         self.draw_memory()
+        self.draw_bridges()
         for index,point in enumerate(self.points()):
             x,y = self.x(point['tick']),self.y(point['level'])
             self.point_boxes.append((index,x,y))
@@ -190,6 +198,7 @@ class CurveCanvas(ttk.Frame):
         if self.mode=='gaps':text = '选择精确空缺 · 未选中时处理全部'
         if not self.app.can_edit('intensity_edit'):text = '强度不可编辑'
         if self.readonly:text = '基础候选只读 · 尚未处理bridge与连接'
+        if self.bridge_preview is not None:text = 'Bridge阶段只读 · 尚未处理连接与最终边界'
         c.create_text(self.margin,height-16,anchor='w',text=text+' · 移动不搬动强度线',fill=p['muted'],font=font(8))
         c.xview_moveto(view)
 
@@ -197,10 +206,43 @@ class CurveCanvas(ttk.Frame):
         info = self.view_memory_info if self.readonly else self.app.state_data['memory_info']
         if not info or (not self.readonly and not self.app.state_data['capabilities'].get('memory',False)) or info['state']!='BOUND':
             return None
-        protection = next((p for p in self.project['protections'] if p['id']==info['protection_id']
+        protections = self.bridge_preview['protections'] if self.bridge_preview is not None else self.project['protections']
+        protection = next((p for p in protections if p['id']==info['protection_id']
                            and p['kind']=='memory' and p['placement_id']==info['placement_id']
                            and p['status']=='CONTENT_READY'),None)
         return info,protection
+
+    def draw_bridges(self):
+        if self.bridge_preview is None:return
+        colors = self.app.theme.colors
+        for overlay in self.bridge_preview['overlays']:
+            region = overlay['range']
+            a,b = self.x(region['start_tick']),self.x(region['end_tick'])
+            center = self.y(self.level((region['start_tick']+region['end_tick'])/2))
+            box = (a,center-28,b,center+28)
+            self.bridge_boxes[overlay['id']] = box
+            failed = overlay['result_status'] in ('FAILED','CANCELLED')
+            ink = colors['error'] if failed else colors['ink']
+            outline = colors['accent'] if overlay['id']==self.selected_bridge_id else ink
+            # No fabricated placement/music: the rectangle is the backend's overlay range.
+            self.canvas.create_rectangle(*box,fill=colors['selected'],
+                outline=outline,width=1,dash=() if overlay['status']=='CONTENT_READY' else (3,3),tags='bridge-range')
+            if b-a>=64:
+                label = 'Bridge · '+('就绪/保护' if overlay['status']=='CONTENT_READY' else '范围保护')
+                if failed:label += ' · '+('失败' if overlay['result_status']=='FAILED' else '取消')
+                limit = max(3,int((b-a-8)/13))
+                self.canvas.create_text(a+4,center-14,anchor='w',text=label[:limit]+('…' if len(label)>limit else ''),
+                                        fill=ink,font=font(10,True),tags='bridge-label')
+                material = overlay['material']
+                if material:
+                    self.canvas.create_text(a+4,center+10,anchor='w',text=material['label'][:limit],
+                                            fill=colors['ink'],font=font(10),tags='bridge-label')
+
+    def hit_bridge(self, x, y):
+        for ident,(a,t,b,d) in reversed(list(self.bridge_boxes.items())):
+            pad = .5 if b-a<1 else 0
+            if a-pad<=x<=b+pad and t<=y<=d:return ident
+        return None
 
     def draw_memory(self):
         overlay = self.memory_overlay()
@@ -226,7 +268,11 @@ class CurveCanvas(ttk.Frame):
         if not self.project or self.drag or self.intensity_draft:return
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
-        if any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
+        bridge_id = self.hit_bridge(x,y)
+        if bridge_id:
+            overlay = next(o for o in self.bridge_preview['overlays'] if o['id']==bridge_id)
+            self.app.show_detail(self.app.bridge.describe_overlay(overlay))
+        elif any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
             self.app.show_detail('强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
         else:
             overlay = self.memory_overlay()
@@ -265,11 +311,18 @@ class CurveCanvas(ttk.Frame):
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
         if self.readonly:
-            ident = self.hit(x,y)
-            if ident:
-                self.selected_id = ident
-                placement = next(p for p in self.project['placements'] if p['id']==ident)
-                self.app.show_detail(self.app.completion.describe_placement(placement)+' · 基础候选只读')
+            bridge_id = self.hit_bridge(x,y)
+            if bridge_id:
+                self.selected_bridge_id = bridge_id
+                overlay = next(o for o in self.bridge_preview['overlays'] if o['id']==bridge_id)
+                self.app.show_detail(self.app.bridge.describe_overlay(overlay))
+            else:
+                self.selected_bridge_id = None
+                ident = self.hit(x,y)
+                if ident:
+                    self.selected_id = ident
+                    placement = next(p for p in self.project['placements'] if p['id']==ident)
+                    self.app.show_detail(self.app.completion.describe_placement(placement)+' · 候选只读')
             self.draw()
             return
         point_index = next((i for i,a,b in self.point_boxes if abs(x-a)<=10 and abs(y-b)<=10),None)
@@ -418,7 +471,7 @@ class CurveCanvas(ttk.Frame):
         if self.canvas.grab_current()==self.canvas:
             self.canvas.grab_release()
         self.draw()
-        if event is not None and self.readonly:self.app.completion.exit_preview()
+        if event is not None and self.readonly:self.app.exit_private_preview()
         return 'break' if event else None
 
     def delete_selected(self, event=None):

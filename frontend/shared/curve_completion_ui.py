@@ -36,6 +36,8 @@ class CompletionUI:
         self.start_button = ttk.Button(row, text='补全基础候选', style='Curve.TButton',
                                       command=lambda: app.safe(self.start))
         self.start_button.pack(side='left')
+        self.bridge_button = ttk.Button(row, text='Bridge →', style='Curve.TButton',
+                                        command=lambda: app.bridge.show())
         self.cancel_button = ttk.Button(row, text='取消补全', style='Curve.TButton', command=self.cancel)
         self.cancel_button.pack(side='left', padx=4)
         self.choice = tk.StringVar()
@@ -64,6 +66,10 @@ class CompletionUI:
             self.bookmark = None
             return
         self.panel.pack(fill='x', before=app.page.memory_label, pady=(4,0))
+        bridge = getattr(app,'bridge',None)
+        if bridge and bridge.visible:self.panel.pack_forget()
+        if app.state_data['capabilities'].get('bridge',False):self.bridge_button.pack(side='left',padx=4)
+        else:self.bridge_button.pack_forget()
         self.gaps = app.controller.gap_items()
         if self.selected_gap_id not in {g['id'] for g in self.gaps}:
             self.selected_gap_id = None
@@ -100,7 +106,7 @@ class CompletionUI:
         self.label.configure(text=status if self.preview_candidate else status+' · '+scope, wraplength=450)
 
     def select_gap(self, ident):
-        if self.preview_candidate or self.app.jobs: return
+        if self.app.private_preview() or self.app.jobs: return
         if ident is not None and ident not in {g['id'] for g in self.gaps}: return
         self.selected_gap_id = ident
         self.refresh()
@@ -201,6 +207,8 @@ class CompletionUI:
         if not 0<=index<len(self.candidates): return
         canvas = self.app.page.timeline
         self.app.cancel_interaction()
+        self.app.bridge.restore_view()
+        self.app.bridge.visible = False
         if self.bookmark is None:
             self.bookmark = dict(selected=canvas.selected_id, scroll=canvas.canvas.xview()[0], mode=canvas.mode)
         self.preview_candidate = copy.deepcopy(self.candidates[index])
