@@ -70,3 +70,9 @@ GUI证据位于frontend/tests/p7-real-ui/的real-report、visual-report、mode-r
 约5分钟Mac复核：用隔离样例打开audition-ready，选择两套方案确认不自动播放；明确播放基础和处理后，检查底部对象、暂停/恢复/停止；切换两种输出模式比较并确认同谱；一次撤销/重做，保存新快照重开；选择接受历史版本导出三格式并核对位置；最后将窗口缩至1020×700、切换深浅主题，检查Bridge/记忆和关键按钮。声音是否自然需由人实际听，不能据文件或设备流判定。
 
 P8仅建议，不自动派工：优先解锁屏幕后补双主题截图与物理下拉/触控板，做Windows字体/滚轮/快捷键/音频与缩放矩阵，按相同输入和模式人工对比四阶段音乐及两套最终方案，再核第三方三格式与长工程审计预算/交互耗时。独立实现verifier结论及匹配的HEAD/前后代码指纹保存仓库外P7-final-receipt.json；未收到匹配PASS不报告P7_READY，避免为写结论修改受检代码。
+
+## 最终自查与冻结
+
+最终集成自查：`scripts/test.py --backend-only` 581 PASS（67.927秒）；`scripts/test.py` 889 PASS（230.405秒）；`scripts/check_frontends.py` PASS；`git diff --check` PASS。最后的16-key纯事实注册表缓存只保存完整内容摘要、不保存对象或文件状态；篡改数据与有界释放测试通过。取消/迟到审计不能替换任何已认证完成的P4/P5/P6请求、计划、结果与终态，即使新数据本身也是合法方案。代码、测试、文档冻结后进入独立P7-IMPLEMENTATION ROUND1/5；契约仍累计ROUND3/5，二者分开计算。
+
+lead主要实现de79ba1，修复b8a3f9c/c71107a/f7c93ca/fc110bd/9505e23，性能408354e，记录0fb611d；所有提交本地保留，不推送、不发布。两worker空闲且无未交付源码后正常merge同步，复核Python实际导入各自worktree。正式最终HEAD及完整代码指纹以仓库外冻结/独立验收收据为准。
