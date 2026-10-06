@@ -219,9 +219,9 @@ def _selections(request, selections):
             m.reject('目标仍有未覆盖时间，不能标记完成。', 'INCOMPLETE_TARGET')
 
 
-def _variant_check(project, placement, variant):
+def _variant_check(project, placement, variant, allow_calm_snapshot=False):
     """Validate persisted P3 evidence, never regenerate a historical melody."""
-    if placement['emotion'] == 'calm':
+    if placement['emotion'] == 'calm' and not allow_calm_snapshot:
         if variant is not None:
             m.reject('平静放置应保留基础快照。', 'INVALID_CANDIDATE')
         return
@@ -274,6 +274,8 @@ def _variant_check(project, placement, variant):
         if note is None:
             m.reject('情绪结果删除或替换了基础发声身份。', 'INVALID_CANDIDATE')
         different = any(note[k] != original[k] for k in ('pitch', 'start_tick', 'duration_tick'))
+        if placement['emotion'] == 'calm' and different:
+            m.reject('平静情绪快照不得改写基础旋律。', 'INVALID_CANDIDATE')
         if original_id in frozen:
             if m.structural_notes([note]) != m.structural_notes([original]):
                 m.reject('保存的情绪结果改变完整保护音符。', 'PROTECTION_CONFLICT')

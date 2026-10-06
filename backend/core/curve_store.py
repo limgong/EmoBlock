@@ -34,7 +34,14 @@ def _validate_bundle(bundle):
     snapshot_edges = {key: [] for key in snapshots}
     for snap in snapshots.values():
         snapshot_edges[snap['id']] = [r['payload']['input_snapshot_id'] for r in snap['project']['records'] if r['kind'] == 'accepted_candidate']
-    for attempt in model.indexed(bundle['attempts']).values():
+    attempts = model.indexed(bundle['attempts'])
+    for attempt in attempts.values():
+        if 'bridge' in attempt:
+            import curve_bridges
+            curve_bridges.validate_attempt(attempt, snapshots, attempts)
+            if attempt['state'] in ('READY', 'RUNNING') and attempt['input_fingerprint'] != model.fingerprint(bundle['project']):
+                model.reject('当前输入已变化，旧桥尝试必须失效。', 'STALE_SNAPSHOT')
+            continue
         if 'completion' in attempt:
             _validate_completion_attempt(attempt, snapshots)
             if attempt['state'] in ('READY', 'RUNNING') and attempt['input_fingerprint'] != model.fingerprint(bundle['project']):
@@ -188,7 +195,7 @@ def load(path):
             for attempt in bundle['attempts']:
                 if attempt['state'] == 'RUNNING':
                     attempt['state'] = 'INTERRUPTED'
-                    staging_dirty = staging_dirty or 'completion' in attempt
+                    staging_dirty = staging_dirty or 'completion' in attempt or 'bridge' in attempt
             return dict(format=model.SCHEMA, access_mode='editable', capabilities=dict(edit=True, plan=False,
                 history=history_availability(bundle['results'])), bundle=bundle, legacy=None, staging_dirty=staging_dirty)
         _legacy_validate(data, path)

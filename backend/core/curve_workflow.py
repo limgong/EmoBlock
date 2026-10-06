@@ -8,10 +8,22 @@ import curve_session
 import curve_store
 import curve_memory
 import curve_candidates
+import curve_bridges
 from curve_audition import render_audition
 from export_safe import atomic_export
 
 FORMATS = {'wav': 'preview.wav', 'mid': 'composition.mid', 'mmp': 'composition.mmp'}
+
+
+def decide_bridge(request, should_cancel=None, on_progress=None):
+    import story_engine
+    return story_engine.decide_bridge_request(request, should_cancel=should_cancel, on_progress=on_progress)
+
+
+def generate_bridges(request, plan, should_cancel=None, on_progress=None, on_result=None):
+    import story_engine
+    return story_engine.generate_bridge_request(request, plan, should_cancel=should_cancel,
+                                               on_progress=on_progress, on_result=on_result)
 
 
 def _warning(code, message, **details):
@@ -103,6 +115,7 @@ class Controller:
         self._staging_dirty = False
         self._completion_id = None
         self._completion_immediate = None
+        self._bridge_id = None
 
     @property
     def readonly(self):
@@ -116,7 +129,7 @@ class Controller:
         return dict(access_mode='legacy_readonly' if self.readonly else 'editable', project=self.project,
             capabilities=dict(edit=not self.readonly, derive=not self.readonly, audition=True,
                 generate_final=False, intensity_edit=not self.readonly, emotion=not self.readonly, memory=not self.readonly,
-                completion=not self.readonly),
+                completion=not self.readonly, bridge=not self.readonly),
             is_saved=True if self.readonly else self.session.is_saved,
             saved_path=str(self._saved_path) if self._saved_path else None,
             can_undo=not self.readonly and self.session.can_undo, can_redo=not self.readonly and self.session.can_redo,
@@ -125,7 +138,7 @@ class Controller:
 
     def _stale_completions(self):
         for attempt in self._bundle['attempts']:
-            if 'completion' in attempt and attempt['state'] in ('RUNNING', 'READY'):
+            if ('completion' in attempt or 'bridge' in attempt) and attempt['state'] in ('RUNNING', 'READY'):
                 attempt['state'] = 'STALE'
                 self._staging_dirty = True
         self._completion_immediate = None
@@ -192,18 +205,23 @@ class Controller:
         if self._jobs[token['request_id']]['kind'] == 'COMPLETION':
             attempt = self._attempt(token['request_id'])
             return attempt is not None and attempt['state'] == 'RUNNING'
+        if self._jobs[token['request_id']]['kind'] == 'BRIDGE':
+            attempt = self._bridge_attempt(token['request_id'])
+            return attempt is not None and attempt['state'] == 'RUNNING'
         return True
 
     def cancel_job(self, token):
         context = self._jobs.get(token.get('request_id')) if isinstance(token, dict) else None
         if context is not None and context['kind'] == 'COMPLETION':
             return self.cancel_completion(token)
+        if context is not None and context['kind'] == 'BRIDGE':
+            return self.cancel_bridge(token)
         return self.finish_job(token)
 
     def finish_job(self, token):
         if not self.accepts(token):
             return False
-        if self._jobs[token['request_id']]['kind'] == 'COMPLETION':
+        if self._jobs[token['request_id']]['kind'] in ('COMPLETION', 'BRIDGE'):
             return False  # Completion must pass its independent result gate first.
         result = self.session.finish(token)
         self._jobs.pop(token['request_id'], None)
@@ -258,7 +276,7 @@ class Controller:
 
     def capture_completion(self, selected_gap_id=None, seed=31, budget=None):
         self._editable()
-        if any(job['kind'] == 'COMPLETION' for job in self._jobs.values()):
+        if any(job['kind'] in ('COMPLETION', 'BRIDGE') for job in self._jobs.values()):
             model.reject('基础候选正在计算，请等待或取消。', 'DUPLICATE_REQUEST')
         request = curve_candidates.make_request(self.project, selected_gap_id, seed, budget)
         if not request['target_gaps']:
@@ -349,6 +367,158 @@ class Controller:
                     request=copy.deepcopy(attempt['completion']['request']), outcome=copy.deepcopy(attempt['completion']['outcome']),
                     error=copy.deepcopy(attempt['error']), message=messages[attempt['state']])
 
+    def _bridge_attempt(self, identity):
+        return next((a for a in self._bundle['attempts'] if a['id']==identity and 'bridge' in a),None)
+
+    def _active_bridge(self, token):
+        return self.accepts(token) and self._jobs[token['request_id']]['kind']=='BRIDGE'
+
+    def capture_bridge(self, candidate_id=None, completion_attempt_id=None, seed=31, parameters=None):
+        self._editable()
+        if self._jobs:
+            model.reject('已有任务正在准备，请等待或明确取消。','DUPLICATE_REQUEST')
+        ref=None
+        if candidate_id is not None or completion_attempt_id is not None:
+            parent=self._attempt(completion_attempt_id)
+            if parent is None or parent['state']!='READY':
+                model.reject('请重新选择仍有效的基础候选。','STALE_SNAPSHOT')
+            previous=parent['completion'];outcome=previous['outcome']
+            curve_candidates.validate_outcome(previous['request'],outcome)
+            selected=next((c for c in outcome['candidates'] if c['id']==candidate_id),None)
+            if selected is None:model.reject('基础候选与所属尝试不匹配。','INVALID_CANDIDATE')
+            ref=dict(attempt_id=completion_attempt_id,candidate_id=candidate_id,
+                     request=copy.deepcopy(previous['request']),candidate=copy.deepcopy(selected))
+        version=max([a['bridge']['request']['plan_version'] for a in self._bundle['attempts'] if 'bridge' in a]+[0])+1
+        tentative=curve_bridges.make_request(self.project,ref,seed=seed,values=parameters,plan_version=version)
+        captured=self.session.capture(tentative['request_id'],contract_rev=curve_bridges.REV);token=captured['token']
+        try:
+            request=curve_bridges.make_request(captured['project'],ref,token,seed,parameters,tentative['plan_id'],version)
+            attempt=dict(id=request['request_id'],snapshot_id=request['snapshot_id'],input_fingerprint=request['input_fingerprint'],
+                state='RUNNING',records=[],protections=copy.deepcopy(request['base_project']['protections']),staged_materials=[],error=None,
+                bridge=dict(schema='emoblocks.bridge-attempt.v1',spec_rev=model.SPEC_REV,contract_rev=curve_bridges.REV,
+                    request=copy.deepcopy(request),phase='BRIDGE_DECISION',plan=None,results=[],outcome=None))
+            bundle=self._current_bundle()
+            bundle['snapshots'].append(dict(id=request['snapshot_id'],spec_rev=model.SPEC_REV,contract_rev=request['input_contract_rev'],
+                content_fingerprint=request['input_fingerprint'],project=copy.deepcopy(request['input_project'])))
+            bundle['attempts'].append(attempt);curve_store.validate_bundle(bundle)
+        except Exception:
+            self.session.finish(token)
+            raise
+        self._bundle=bundle;self._jobs[token['request_id']]=dict(kind='BRIDGE',request=copy.deepcopy(request))
+        self._bridge_id=attempt['id'];self._staging_dirty=True
+        return dict(token=copy.deepcopy(token),request=copy.deepcopy(request),attempt_id=attempt['id'])
+
+    def _publish_bridge(self, token, attempt, terminal=False):
+        if not self._active_bridge(token):return False
+        bundle=self._current_bundle()
+        index=next(i for i,a in enumerate(bundle['attempts']) if a['id']==token['request_id'])
+        bundle['attempts'][index]=copy.deepcopy(attempt)
+        curve_store.validate_bundle(bundle)
+        if not self._active_bridge(token):return False
+        if terminal:
+            if not self.session.finish(token):return False
+            self._jobs.pop(token['request_id'],None)
+        self._bundle=bundle;self._staging_dirty=True
+        return True
+
+    def lock_bridge(self, token, proposal):
+        if not self._active_bridge(token):model.reject('桥决策输入已过期。','STALE_SNAPSHOT')
+        attempt=copy.deepcopy(self._bridge_attempt(token['request_id']));stage=attempt['bridge']
+        if stage['phase']!='BRIDGE_DECISION' or stage['plan'] is not None:
+            model.reject('同一桥计划不能重复登记或改位。','PLAN_VERSION_MISMATCH')
+        plan=curve_bridges.make_plan(stage['request'],proposal)
+        stage['plan']=plan;stage['phase']='BRIDGE_LOCKED'
+        attempt['protections']=curve_bridges.initial_locks(stage['request'],plan)
+        if not self._publish_bridge(token,attempt):model.reject('桥决策输入已过期。','STALE_SNAPSHOT')
+        return copy.deepcopy(plan)
+
+    def begin_bridge_generation(self, token, plan):
+        if not self._active_bridge(token):return False
+        attempt=copy.deepcopy(self._bridge_attempt(token['request_id']));stage=attempt['bridge']
+        if stage['phase']!='BRIDGE_LOCKED' or stage['plan']!=plan:
+            model.reject('生成必须使用已原子锁定的同一计划。','PLAN_VERSION_MISMATCH')
+        stage['phase']='BRIDGE_GENERATION'
+        return self._publish_bridge(token,attempt)
+
+    def record_bridge_result(self, token, result):
+        if not self._active_bridge(token):return False
+        attempt=copy.deepcopy(self._bridge_attempt(token['request_id']));stage=attempt['bridge']
+        try:
+            if stage['phase']!='BRIDGE_GENERATION':model.reject('桥生成尚未正式开始。','PLAN_VERSION_MISMATCH')
+            curve_bridges.validate_result(stage['request'],stage['plan'],result)
+            old=next((r for r in stage['results'] if r['bridge_id']==result['bridge_id']),None)
+            if old is not None:
+                if old==result:return False
+                model.reject('同一桥不能由不同重复结果替换。','PLAN_VERSION_MISMATCH')
+            stage['results'].append(copy.deepcopy(result))
+            attempt['protections']=curve_bridges.locks_with_results(stage['request'],stage['plan'],stage['results'])
+            attempt['staged_materials']=curve_bridges.staged_materials(stage['results'])
+            return self._publish_bridge(token,attempt)
+        except Exception as exc:
+            self.fail_bridge(token,exc)
+            return False
+
+    def finish_bridge(self, token, raw):
+        if not self._active_bridge(token):return False
+        attempt=copy.deepcopy(self._bridge_attempt(token['request_id']));stage=attempt['bridge']
+        try:
+            if stage['phase']!='BRIDGE_GENERATION':model.reject('桥生成阶段或版本不匹配。','PLAN_VERSION_MISMATCH')
+            curve_bridges.validate_raw(stage['request'],stage['plan'],raw)
+            incoming={r['bridge_id']:r for r in raw['results']}
+            if any(incoming.get(r['bridge_id'])!=r for r in stage['results']):
+                model.reject('桥终态改写了此前认证的内容。','PROTECTION_CONFLICT')
+            stage['results']=copy.deepcopy(raw['results'])
+            attempt['protections']=curve_bridges.locks_with_results(stage['request'],stage['plan'],stage['results'])
+            attempt['staged_materials']=curve_bridges.staged_materials(stage['results'])
+            stage['outcome']=curve_bridges.make_outcome(stage['request'],stage['plan'],stage['results'],raw['status'],raw['error'])
+            attempt['state']='READY' if raw['status']=='SUCCEEDED' else raw['status']
+            attempt['error']=copy.deepcopy(raw['error'])
+            if attempt['state']=='READY':stage['phase']='BRIDGES_READY'
+            return self._publish_bridge(token,attempt,terminal=True)
+        except Exception as exc:
+            self.fail_bridge(token,exc)
+            return False
+
+    def _bridge_terminate(self, token, failure, state):
+        if not self._active_bridge(token):return False
+        if not isinstance(failure,dict):failure=dict(code=getattr(failure,'code','BRIDGE_GENERATION_FAILED'),message=str(failure),details={})
+        normalized=dict(code=str(failure.get('code') or 'BRIDGE_GENERATION_FAILED'),
+            message=str(failure.get('message') or '桥接失败，请检查保护和素材后重试。'),
+            details=copy.deepcopy(failure.get('details')) if isinstance(failure.get('details'),dict) else {})
+        try:model.canonical(normalized)
+        except model.ProjectError:normalized['details']={}
+        attempt=copy.deepcopy(self._bridge_attempt(token['request_id']));stage=attempt['bridge']
+        plan=stage['plan'];request=stage['request']
+        if plan:
+            known={r['bridge_id'] for r in stage['results']}
+            for ref in plan['protection_refs']:
+                if ref['bridge_id'] not in known:
+                    stage['results'].append(curve_bridges.failure_result(request,plan,ref['bridge_id'],normalized,state))
+        attempt['state']=state;attempt['error']=normalized
+        stage['outcome']=curve_bridges.make_outcome(request,plan,stage['results'],state,normalized)
+        return self._publish_bridge(token,attempt,terminal=True)
+
+    def fail_bridge(self, token, error):
+        return self._bridge_terminate(token,error,'FAILED')
+
+    def cancel_bridge(self, token):
+        return self._bridge_terminate(token,curve_bridges.error('CANCELLED','桥接计算已取消，已登记保护与有效内容保留。'),'CANCELLED')
+
+    def bridge_state(self):
+        attempt=self._bridge_attempt(self._bridge_id)
+        if attempt is None:
+            return dict(status='IDLE',phase=None,attempt_id=None,request=None,plan=None,protections=[],results=[],outcome=None,
+                        preview=None,remaining_gaps=[],capabilities=curve_bridges.capabilities(),error=None,message='bridge尚未计算。')
+        stage=attempt['bridge'];outcome=stage['outcome'];active=attempt['state']=='READY'
+        messages=dict(RUNNING='桥接正在计算，锁定范围不等于音乐就绪。',READY='桥内容已认证就绪，尚未处理连接和最终边界。',
+            FAILED='桥接失败，保护与已认证内容保留，请明确重试。',CANCELLED='桥接已取消，原编辑与保护保留。',
+            STALE='输入已改变，旧桥计划已失效；撤销回原内容也需重新计算。',INTERRUPTED='上次桥接已中断，请明确重新计算。')
+        return dict(status=attempt['state'],phase=stage['phase'],attempt_id=attempt['id'],request=copy.deepcopy(stage['request']),
+            plan=copy.deepcopy(stage['plan']),protections=copy.deepcopy(attempt['protections']),results=copy.deepcopy(stage['results']),
+            outcome=copy.deepcopy(outcome),preview=curve_bridges.preview(stage['request'],stage['plan'],attempt['protections'],stage['results'],outcome),
+            remaining_gaps=copy.deepcopy(stage['request']['remaining_gaps']),capabilities=curve_bridges.capabilities(active),
+            error=copy.deepcopy(attempt['error']),message=messages[attempt['state']])
+
     def _current_bundle(self):
         bundle = copy.deepcopy(self._bundle)
         bundle['project'] = self.session.project
@@ -384,6 +554,8 @@ class Controller:
         completions = [v for v in self._bundle['attempts'] if 'completion' in v]
         self._completion_id = completions[-1]['id'] if completions else None
         self._completion_immediate = None
+        bridges = [v for v in self._bundle['attempts'] if 'bridge' in v]
+        self._bridge_id = bridges[-1]['id'] if bridges else None
         if loaded is not None:
             self.session.mark_saved()
 

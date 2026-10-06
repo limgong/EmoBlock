@@ -253,6 +253,24 @@ def automatic_peak_anchor(project):
                 end_level=region['level']+delta*(end-region['start'])/span,source_id=source['id'],original_only=True,auto_peak=True)
 
 
+def decide_bridge_request(request, should_cancel=None, on_progress=None):
+    """P5 private decision only; no old planner, connections or final rendering."""
+    import curve_bridges
+    import curve_bridge_music
+    curve_bridges.validate_request(request)
+    return curve_bridge_music.decide(request, should_cancel=should_cancel, on_progress=on_progress)
+
+
+def generate_bridge_request(request, plan, should_cancel=None, on_progress=None, on_result=None):
+    """Generate against an already locked plan; publication stays in the facade."""
+    import curve_bridges
+    import curve_bridge_music
+    curve_bridges.validate_request(request)
+    curve_bridges.validate_plan(request, plan)
+    return curve_bridge_music.generate(request, plan, should_cancel=should_cancel,
+                                      on_progress=on_progress, on_result=on_result)
+
+
 def plan(project):
     if isinstance(project, dict) and project.get("schema") == "emoblocks.assembly.v2":
         from curve_project import ProjectError
