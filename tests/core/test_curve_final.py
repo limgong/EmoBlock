@@ -171,6 +171,16 @@ class RecommendationTransactionTests(unittest.TestCase):
         missing['outcome_fingerprint']=rec.outcome_fingerprint(missing)
         with self.assertRaises(m.ProjectError):rec.validate_outcome(cap['request'],missing)
 
+    def test_missing_other_format_does_not_disable_available_audio_or_export(self):
+        controller,cap,out=self.ready();candidate=out['candidates'][0];cid=candidate['id']
+        Path(candidate['assets']['final']['files']['mid']['path']).unlink()
+        self.assertEqual(controller.recommendation_asset(cid)['score_ref'],candidate['final_score_ref'])
+        applied=controller.apply_recommendation(cid);rid=applied['receipt']['result_id']
+        self.assertTrue(controller.history()[0]['availability']['wav']);self.assertFalse(controller.history()[0]['availability']['mid'])
+        self.assertEqual(controller.history_asset(rid)['score_ref'],candidate['final_score_ref'])
+        destination=Path(self.tmp.name)/'valid.mmp';controller.export_history(rid,'mmp',destination);self.assertTrue(destination.is_file())
+        with self.assertRaises(m.ProjectError):controller.export_history(rid,'mid',Path(self.tmp.name)/'missing.mid')
+
     def test_no_gap_full_same_audition_apply_undo_redo_and_pure_reopen(self):
         controller=complete();before=controller.project;saved=controller.state()['is_saved'];undo=copy.deepcopy(controller.session._undo)
         controller,cap,out=self.ready(controller)

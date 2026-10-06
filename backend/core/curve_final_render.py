@@ -160,7 +160,7 @@ def render(score, candidate_ref, version=1, should_cancel=None, on_progress=None
     return asset
 
 
-def validate_asset(asset, score, candidate_ref=None, files=True):
+def validate_asset(asset, score, candidate_ref=None, files=True, required_formats=None):
     m.shape(asset,FIELDS);final.version(asset,'emoblocks.audio-asset.v1');m.integer(asset['version'],1)
     if (asset['asset_fingerprint']!=asset_fingerprint(asset) or asset['id']!=asset['asset_fingerprint']
             or asset['score_ref']!=final.ref(score) or asset['kind']!=score['kind'] or asset['mode']!=score['mode']
@@ -170,12 +170,14 @@ def validate_asset(asset, score, candidate_ref=None, files=True):
             or (candidate_ref is not None and asset['candidate_ref']!=candidate_ref)):
         m.reject('音频版本与所选乐谱不一致。','OUTPUT_BINDING_MISMATCH')
     m.shape(asset['files'],'wav mid mmp')
+    physical=set(required_formats or ('wav','mid','mmp')) if files else set()
+    if not physical<=set(asset['files']):m.reject('未知输出用途。')
     for key,row in asset['files'].items():
         m.shape(row,'path sha256 bytes');m.text(row['path']);m.ident(row['sha256']);m.integer(row['bytes'],1)
-        if files and _file(row['path'])!=row: m.reject('试听或输出文件已移动或改变，请重新计算。','OUTPUT_FILE_UNAVAILABLE')
-    if files:
+        if key in physical and _file(row['path'])!=row: m.reject('试听或输出文件已移动或改变，请重新计算。','OUTPUT_FILE_UNAVAILABLE')
+    if 'wav' in physical:
         with wave.open(asset['files']['wav']['path'],'rb') as stream:
             if stream.getnchannels() not in (1,2) or stream.getsampwidth()!=2 or abs(stream.getnframes()/stream.getframerate()-asset['audio_seconds'])>1/stream.getframerate() or abs(asset['audio_seconds']-asset['body_seconds']-1)>1/stream.getframerate():
                 m.reject('实际音频与结果信息不一致。','OUTPUT_BINDING_MISMATCH')
-        validate_outputs(score,asset['files'])
+    if {'mid','mmp'}<=physical:validate_outputs(score,asset['files'])
     return True

@@ -503,7 +503,7 @@ class RecommendationFacade:
         attempt,candidate=self._candidate(candidate_id);mode=mode or attempt['recommendation']['request']['mode']
         if kind not in ('final','comparison') or mode not in candidate['modes']:m.reject('试听模式尚未准备。','OUTPUT_FILE_UNAVAILABLE')
         member=candidate['modes'][mode];asset=member['assets'][kind];score=resolve(self._bundle['final_facts'],member[kind+'_score_ref'],'final_score')
-        audio.validate_asset(asset,score,dict(id=candidate_id,version=1,fingerprint=candidate_id));return copy.deepcopy(asset)
+        audio.validate_asset(asset,score,dict(id=candidate_id,version=1,fingerprint=candidate_id),required_formats=('wav',));return copy.deepcopy(asset)
 
     def confirmation_ref(self,candidate_id,mode=None):
         attempt,candidate=self._candidate(candidate_id)
