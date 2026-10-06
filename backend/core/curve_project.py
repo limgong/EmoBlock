@@ -218,6 +218,14 @@ def placed_notes(placement):
     return [dict(n, id=placement['id'] + ':' + n['id'], start_tick=n['start_tick'] + placement['start_tick']) for n in material['notes']]
 
 
+def protection_ranges(protection):
+    ranges = [{k: protection[k] for k in ('start_tick', 'end_tick')}]
+    if protection['kind'] == 'memory':
+        ranges += [dict(start_tick=n['start_tick'], end_tick=n['start_tick'] + n['duration_tick'])
+                   for n in protection['notes']]
+    return ranges
+
+
 def protection_check(p, total, placements, sources):
     shape(p, 'id kind owner_id placement_id component_path start_tick end_tick status origin plan_id plan_version input_fingerprint notes structure_fingerprint blank_mask')
     ident(p['id']); ident(p['owner_id']); text(p['input_fingerprint'])
@@ -242,7 +250,16 @@ def protection_check(p, total, placements, sources):
                 reject('保护组件路径不存在。')
     elif p['component_path']:
         reject('保护组件路径缺少放置身份。')
-    notes_check(p['notes'], p['end_tick'], sources, p['start_tick'])
+    if p['kind'] == 'memory' and p['status'] == 'CONTENT_READY':
+        if placement is None:
+            reject('记忆保护必须绑定基础放置。', 'PROTECTION_CONFLICT')
+        notes_check(p['notes'], total, sources)
+        import curve_memory
+        expected = curve_memory.base_notes(placement, [dict(start_tick=p['start_tick'], end_tick=p['end_tick'])])
+        if structural_notes(p['notes']) != structural_notes(expected):
+            reject('记忆保护必须保存相交的完整基础音符。', 'PROTECTION_CONFLICT')
+    else:
+        notes_check(p['notes'], p['end_tick'], sources, p['start_tick'])
     for mask in objects(p['blank_mask']):
         range_check(mask, p['end_tick'])
         if mask['start_tick'] < p['start_tick']:
@@ -252,7 +269,7 @@ def protection_check(p, total, placements, sources):
     if p['status'] == 'CONTENT_READY':
         masks = sorted(p['blank_mask'], key=lambda r: r['start_tick'])
         wholly_blank = bool(masks) and masks[0]['start_tick'] == p['start_tick'] and masks[-1]['end_tick'] == p['end_tick'] and all(a['end_tick'] == b['start_tick'] for a, b in zip(masks, masks[1:]))
-        if not p['notes'] and not wholly_blank:
+        if not p['notes'] and not wholly_blank and p['kind'] != 'memory':
             reject('就绪保护没有实际音符。', 'BRIDGE_NOT_READY')
         if p['structure_fingerprint'] != structure_fingerprint(p):
             reject('保护内容指纹不匹配。', 'PROTECTION_CONFLICT')
@@ -266,7 +283,8 @@ def protection_check(p, total, placements, sources):
 def validate_protected_notes(protections, notes):
     """Compare complete supports, including notes originating outside a lock."""
     for p in protections:
-        actual = [n for n in notes if intersects(p, dict(start_tick=n['start_tick'], end_tick=n['start_tick'] + n['duration_tick']))]
+        actual = [n for n in notes if any(intersects(r, dict(start_tick=n['start_tick'], end_tick=n['start_tick'] + n['duration_tick']))
+                                        for r in protection_ranges(p))]
         if p['status'] != 'CONTENT_READY' or structural_notes(actual) != structural_notes(p['notes']):
             reject('实际旋律改变保护区音符或越过保护范围。', 'PROTECTION_CONFLICT')
 
@@ -496,6 +514,13 @@ def _validate(project):
         reject('强度线必须覆盖固定时间轴。')
     for p in indexed(project['protections']).values():
         protection_check(p, total, placements, sources)
+    import curve_memory
+    managed = next((p for p in project['protections'] if p['id'] == curve_memory.managed_id(project)), None)
+    if managed is not None and managed != curve_memory.expected_protection(project):
+        reject('自动记忆范围、基础内容或输入指纹已过期。', 'PROTECTION_CONFLICT')
+    memories = [p for p in project['protections'] if p['kind'] == 'memory' and p['status'] == 'CONTENT_READY']
+    if memories:
+        validate_protected_notes(memories, [n for p in project['placements'] for n in placed_notes(p)])
     records_check(project['records'], project['protections'], placements, total, materials, sources)
     accepted = project['accepted_candidate_id']
     if accepted is not None and not any(r['id'] == accepted and r['kind'] == 'accepted_candidate' for r in project['records']):
@@ -561,7 +586,7 @@ def register_manual_bridge(project, placement, old_version=0):
         manual_bridge_ids=[placement['id']], ranges=[], reasons=['manual placement'], joint_boundary_conditions=[])))
 
 
-def _edit(project, action, **args):
+def _edit(project, action, recompute=None, **args):
     validate(project)
     result = copy.deepcopy(project)
     if action in ('add_source', 'add_material'):
@@ -604,11 +629,13 @@ def _edit(project, action, **args):
             reject('留白不存在。')
         result['blank_regions'].remove(blank)
     elif action == 'set_emotion':
+        if args['emotion'] not in EMOTIONS:
+            reject('未知情绪。')
         ids = objects(args['placement_ids'])
         if not ids or len(ids) != len(set(ids)) or not set(ids) <= {p['id'] for p in result['placements']}:
             reject('请明确选择作品积木。')
         for p in result['placements']:
-            if p['id'] in ids:
+            if p['id'] in ids and p['emotion'] != args['emotion']:
                 p.update(emotion=args['emotion'], emotion_variant=None)
     elif action == 'set_melody_only':
         result['settings']['melody_only'] = args['value']
@@ -630,6 +657,8 @@ def _edit(project, action, **args):
     for r in write_ranges:
         integer(r['start_tick']); integer(r['end_tick'], r['start_tick'] + 1)
         for lock in project['protections']:
+            if recompute is not None and managed_memory(project, lock):
+                continue
             placement_id = r.get('placement_id')
             existing = next((p for p in project['placements'] if p['id'] == placement_id), None)
             own_manual_bridge = (placement_id is not None and existing is not None
@@ -637,14 +666,15 @@ def _edit(project, action, **args):
                 and action in ('move', 'delete', 'set_emotion')
                 and lock['kind'] == 'bridge' and lock['origin'] == 'manual'
                 and lock['placement_id'] == placement_id)
-            if intersects(r, lock) and not own_manual_bridge:
+            if any(intersects(r, domain) for domain in protection_ranges(lock)) and not own_manual_bridge:
                 reject('该范围已受保护，请先通过新的计划更新保护。', 'PROTECTION_CONFLICT')
     invalidate_records(result, project)
     if action == 'place' and placement['base_snapshot']['kind'] == 'bridge':
         register_manual_bridge(result, placement)
     elif action in ('move', 'delete', 'set_emotion'):
         affected = {args['placement_id']} if action in ('move', 'delete') else set(args['placement_ids'])
-        removed = [p for p in result['protections'] if p['placement_id'] in affected]
+        removed = [p for p in result['protections'] if p['placement_id'] in affected
+                   and not (recompute is not None and managed_memory(project, p))]
         if any(p['kind'] != 'bridge' or p['origin'] != 'manual' for p in removed):
             reject('该编辑需要同步重算现有保护，当前数据阶段不能丢弃保护。', 'PROTECTION_RECOMPUTE_REQUIRED')
         result['protections'] = [p for p in result['protections'] if p not in removed]
@@ -653,11 +683,67 @@ def _edit(project, action, **args):
                 if p['id'] in affected and p['base_snapshot']['kind'] == 'bridge':
                     register_manual_bridge(result, p, max((q['plan_version'] or 0 for q in removed if q['placement_id'] == p['id']), default=0))
     result['contract_rev'] = CONTRACT_REV
+    if recompute is not None:
+        apply_recompute(project, result, recompute)
     validate(result)
     return result
 
 
-def edit(project, action, **args):
+def managed_memory(project, protection):
+    return (protection['id'] == 'memory:' + project['project_id']
+            and protection['owner_id'] == protection['id']
+            and protection['kind'] == 'memory' and protection['origin'] == 'automatic')
+
+
+def apply_recompute(before, edited, recompute):
+    """A callback cannot edit geometry, library, fixed locks or arbitrary state."""
+    import curve_memory
+    output = recompute(copy.deepcopy(before), copy.deepcopy(edited))
+    shape(output, 'automatic_memory emotion_variants')
+    expected = curve_memory.expected_protection(edited)
+    if output['automatic_memory'] != expected:
+        reject('保护重算没有返回当前基础素材的正确记忆。', 'PROTECTION_CONFLICT')
+    variants = output['emotion_variants']
+    ids = {p['id'] for p in edited['placements']}
+    if not isinstance(variants, dict) or set(variants) != ids:
+        reject('情绪重算没有覆盖实际放置。', 'PROTECTION_CONFLICT')
+    edited['protections'] = [p for p in edited['protections'] if not managed_memory(edited, p)]
+    if expected is not None:
+        edited['protections'].append(copy.deepcopy(expected))
+    sources = source_index(edited['sources'])
+    fixed = [p for p in edited['protections'] if not managed_memory(edited, p)]
+    original_lock_ids = {p['id'] for p in before['protections']}
+    original_notes = [n for p in before['placements'] for n in placed_notes(p)]
+    for placement in edited['placements']:
+        variant = variants[placement['id']]
+        if variant is None and placement['emotion'] != 'calm':
+            reject('情绪重算缺少该次基础素材的有效结果。', 'PROTECTION_CONFLICT')
+        if variant is not None:
+            material_check(variant, sources)
+            if variant['length_ticks'] != placement['length_ticks']:
+                reject('情绪重算不能改变素材长度。', 'PROTECTION_CONFLICT')
+            generation = variant['generation']
+            if (not isinstance(generation, dict) or generation.get('emotion') != placement['emotion']
+                    or generation.get('base_notes') != placement['base_snapshot']['notes']
+                    or generation.get('input_material_ids') != [placement['material_id']]):
+                reject('情绪结果与当前情绪和基础快照不匹配。', 'PROTECTION_CONFLICT')
+        placement['emotion_variant'] = copy.deepcopy(variant)
+    actual_notes = [n for p in edited['placements'] for n in placed_notes(p)]
+    for lock in fixed:
+        if lock['id'] not in original_lock_ids:
+            continue  # Explicitly replanned manual bridge is validated below.
+        domains = protection_ranges(lock)
+        def inside(notes):
+            return [n for n in notes if any(intersects(r, dict(start_tick=n['start_tick'], end_tick=n['start_tick'] + n['duration_tick']))
+                                            for r in domains)]
+        if structural_notes(inside(original_notes)) != structural_notes(inside(actual_notes)):
+            reject('重算不能改变已有固定保护的内容或休止。', 'PROTECTION_CONFLICT')
+    locks = [p for p in edited['protections'] if p['status'] == 'CONTENT_READY']
+    if locks:
+        validate_protected_notes(locks, actual_notes)
+
+
+def edit(project, action, recompute=None, **args):
     allowed = {
         'add_source': ({'source'}, set()), 'add_material': ({'material'}, set()),
         'place': ({'material_id', 'start_tick'}, {'placement_id'}),
@@ -673,7 +759,7 @@ def edit(project, action, **args):
     if not required <= set(args) or not set(args) <= required | optional:
         reject('工程编辑参数缺失或不受支持。')
     try:
-        return _edit(project, action, **args)
+        return _edit(project, action, recompute=recompute, **args)
     except (KeyError, TypeError, AttributeError) as exc:
         raise ProjectError('INVALID_PROJECT', '工程编辑参数无效。') from exc
 

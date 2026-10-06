@@ -6,6 +6,7 @@ import wave
 import curve_project as model
 import curve_session
 import curve_store
+import curve_memory
 from curve_audition import render_audition
 from export_safe import atomic_export
 
@@ -91,7 +92,7 @@ def combine(project, inputs, label='组合素材'):
 
 class Controller:
     def __init__(self, project=None):
-        self.session = curve_session.ProjectSession(project if project is not None else model.new_project())
+        self.session = curve_session.ProjectSession(project if project is not None else model.new_project(), recompute=curve_memory.recompute)
         self._bundle = curve_store.new_bundle(self.session.project)
         self._initial_fingerprint = model.fingerprint(self.session.project)
         self._loaded = None
@@ -110,11 +111,11 @@ class Controller:
     def state(self):
         return dict(access_mode='legacy_readonly' if self.readonly else 'editable', project=self.project,
             capabilities=dict(edit=not self.readonly, derive=not self.readonly, audition=True,
-                generate_final=False, intensity_edit=False, emotion=False, memory=False),
+                generate_final=False, intensity_edit=not self.readonly, emotion=not self.readonly, memory=not self.readonly),
             is_saved=True if self.readonly else self.session.is_saved,
             saved_path=str(self._saved_path) if self._saved_path else None,
             can_undo=not self.readonly and self.session.can_undo, can_redo=not self.readonly and self.session.can_redo,
-            memory_info=None)
+            memory_info=None if self.readonly else curve_memory.memory_info(self.session.project))
 
     def _editable(self):
         if self.readonly:
@@ -122,8 +123,6 @@ class Controller:
 
     def edit(self, action, **args):
         self._editable()
-        if action == 'set_emotion':
-            model.reject('情绪轻改尚未接通，请等待下一阶段。', 'PIPELINE_NOT_AVAILABLE')
         changed = self.session.edit(action, **args)
         if changed:
             self._jobs.clear()
@@ -247,7 +246,7 @@ class Controller:
 
     def _replace(self, loaded, path=None):
         project = loaded['bundle']['project'] if loaded and loaded['bundle'] else model.new_project()
-        self.session = curve_session.ProjectSession(project)
+        self.session = curve_session.ProjectSession(project, recompute=curve_memory.recompute)
         self._bundle = copy.deepcopy(loaded['bundle']) if loaded and loaded['bundle'] else curve_store.new_bundle(project)
         self._initial_fingerprint = model.fingerprint(project)
         self._loaded = loaded
@@ -267,7 +266,7 @@ class Controller:
         project = model.new_project(grid_count)
         self.autosave_if_needed()
         self._replace(None)
-        self.session = curve_session.ProjectSession(project)
+        self.session = curve_session.ProjectSession(project, recompute=curve_memory.recompute)
         self._bundle = curve_store.new_bundle(project)
         self._initial_fingerprint = model.fingerprint(project)
         return self.state()

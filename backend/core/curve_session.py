@@ -5,7 +5,7 @@ import curve_project as model
 
 
 class ProjectSession:
-    def __init__(self, project):
+    def __init__(self, project, recompute=None):
         model.validate(project)
         self._project = copy.deepcopy(project)
         self._undo = []
@@ -14,6 +14,9 @@ class ProjectSession:
         self._revision = 0
         self._session_id = model.uid()
         self._requests = {}
+        if recompute is not None and not callable(recompute):
+            raise model.ProjectError('INVALID_PROJECT', '保护重算服务无效。')
+        self._recompute = recompute
 
     @property
     def project(self):
@@ -40,7 +43,7 @@ class ProjectSession:
         self._requests.clear()
 
     def edit(self, action, **args):
-        result = model.edit(self._project, action, **args)
+        result = model.edit(self._project, action, recompute=self._recompute, **args)
         if result == self._project:
             return False
         self._undo.append(self._project)
