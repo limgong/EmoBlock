@@ -1,7 +1,7 @@
 # 强度画布 v2 r3 公共契约草案
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p6
+CONTRACT_REV=curve-workflow-v2-r3-p7
 
 **状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 FROZEN (P5-CONTRACT ROUND2 PASS)；第12节p6 FROZEN (P6-CONTRACT ROUND1 PASS)，当前实施至P6。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
 
@@ -904,3 +904,70 @@ preview的桥部分严格由本次request.bridge_ref生成；没有Plan时previe
 队列绑定完整p6 Token、PLANNING或`GENERATION:plan_id:version:fingerprint`及阶段内单调整数seq。progress是非空可读字符串，纯provider调用on_progress(message)；没有百分比/假阶段。Plan发布不消费Token；begin成功后才启动生成线程，线程启动异常走专属fail。所有Tk/Facade在主线程，worker只计算纯输入；终态/取消/阶段错配/乱序迟到都不可更新状态。generic finish_job拒绝CONNECTION，cancel_job转专属取消；保存白名单、Store中断暂存标记及STALE传播正式扩展CONNECTION。保存运行中事实可用，恢复不重启线程。
 
 两个角色只读评审问题已整合，独立P6-CONTRACT ROUND1 PASS，FROZEN；未开始功能实现。
+
+
+## 13. P7 最终处理、完整推荐与一次应用补充（DRAFT）
+
+SPEC_REV=curve-workflow-v2-r3
+CONTRACT_REV=curve-workflow-v2-r3-p7
+STATUS=DRAFT
+
+历史第8–12节冻结正文保留。本补充必须经算法/前端只读评审、lead整合及verifier独立PASS后才能FROZEN和实施。本轮完成P7后停止，不进入P8。所有公开对象是JSON纯数据、音乐时间为PPQ480精确整数tick、半开区间，不含Tk/线程/文件句柄。运行记录/素材样例/渲染输出在仓库外。
+
+### 13.1 产品范围与顺序
+
+每套方案必须真实基础补全→bridge位置→同事务全锁→全部bridge实际READY→保护外连接规划/生成→最终局部边界→整曲独立校验→编配→编配后复核→真实LMMS音频→完整方案。不得共同分配bridge与连接窗口、先连接后桥、调用旧轮换planner或重跑全轮情绪。当前工程无gap时直接已验证真实排布，不伪造P4；选单gap只解决该目标，剩余gap不变，允许明确未完成局部试听/应用，禁止正式整曲导出。P4/P5/P6中间结果不变成最终推荐。
+
+五种最终局部功能是自然延续、动机回应、渐进铺垫、留白进入、回落收束，另有明确none。根据真实句尾/休止/弱起/节奏/情绪/强度选择，不每四拍添加过渡、不默认鼓填充/目标音预示。无空间允许保留主旋律或仅表演/伴奏交接；最终边界不缩桥/重做连接。先收集全部操作，再统一冲突和实际端点检查，一次应用，禁止后写吞掉前写。
+
+### 13.2 初始对象草案与职责
+
+RecommendationRequest绑定完整不可变输入Project、input_contract_rev、原编辑Token(project/session/request/snapshot/revision/content)、selected_gap_id与重新认证的目标、全保护/留白、seed、算法版本、有限搜索budget和mode(melody_only/arranged)。RecommendationOutcome包含有限有效FinalCandidate列表、终止/不足原因与错误；FinalCandidate通过最终处理后按实际pitch/onset/duration/排布/乐句重新去重，力度、名字、ID、seed、情绪标签不算不同。少于两套诚实说明，一套合法可试听/应用；无合法结果保持工程不变。自动补全消费同一Outcome中最高排名合法候选，一次事务应用，不存在绕过桥/保护的另一条路径。
+
+阶段事实保存在独立attempt及对应快照中：基础、桥、连接、边界、谱和音频按明确ID/版本/指纹引用，公共结果不相互覆盖、不把循环嵌套工程作为依赖。原输入、P4候选及当前工程/库/显示编号/undo/player在计算和预览阶段不变。music dirty和staging_dirty分开；取消/失败/迟到/重复/重试各有终态审计，重试新request；undo同内容不能复活原session/revision请求。
+
+### 13.3 BoundaryRequest/Plan/FinalScore 初始接口
+
+lead将当前认证P6 request/plan/outcome/全results及原P5集合组装成actual_layout，验证READY精确集合、none有效性及全部来源/指纹/保护。无P6父或缺失/失败/旧版本禁止进入。
+
+算法接口拟为`plan_boundaries(boundary_request,should_cancel=None,on_progress=None)->BoundaryProposal`，输入包括真实连接后Layout、bridge_plan、protections、connection_results及固定种子参数；lead认证并公布`BoundaryPlan`，再`apply_boundaries(request,plan)->FinalScoreProposal`。`validate_final_score(request,plan,score)->ValidationReport`是lead独立纯校验器，不能用重运行算法验证旧结果。
+
+待只读评审冻结精确字段：请求Token/候选/计划/算法版本，边界ID和真实放置/演奏所有者、完整原始音符快照、局部许可范围、操作类型及输入/输出音符、奏法/音色/力度/伴奏提示、共同端点与冲突依赖、保护摘要、音乐和源血缘指纹、剩余gap及完成能力。声明READY或自报impact不构成保护通过。
+
+桥内pitch/绝对onset/duration/内部休止不变，不得新增主旋律；保护完整记忆跨界音符、组合/短尾、主题/手工/留白。合法边界相接可用，音符实际支撑不得越界。受保护休止不得被填满，素材内部休止不是gap。变换音符保留具体motif父和完整来源，变音高或时值不得复用旧发声slice。只合并同一次放置/演奏、同一原音符、同音高且连续切片；重复用同素材重新起音，不能只凭source_note_id合并。句内四拍线不是独立边界。
+
+### 13.4 编配及输出
+
+新FinalScore直接接现有情绪音色/力度、和声/低音/节奏/条件鼓组能力，不接旧planner，不再次旋律情绪改写。主旋律与伴奏角色有独立来源；禁止将违规新增主旋律改标签伴奏。仅主旋律关闭全部伴奏，统一主旋律音色/力度，保留同一已经规划旋律。
+
+编配前后独立对比固定总长、实际目标完整覆盖/remaining_gaps、全部保护/桥结构/休止/留白、每个主旋律音符时间和来源、合法slice合并、候选及各Plan依赖。伴奏有明确受限生成规则和可独立复核的实音符，不接受任意贴标签层。
+
+MIDI/MMP/WAV和音频对比资产绑定同一已校验score_fingerprint、mode、candidate/版本，记录body_ticks/body_seconds与含尾音audio_seconds。沿用真实LMMS连续渲染和尾音，不用中性素材试听冒充方案。初始约束沿用现有MMP10tick表达能力；任何不可无损表达的onset/duration/全长返回OUTPUT_TIME_UNREPRESENTABLE，不量化/移动/截断保护。精确MIDI能力若扩展须先列冻结接口/文件范围。
+
+### 13.5 试听与资产状态
+
+每候选保存一致快照/模式的原基础拼接comparison_score和处理后FinalScore；二者乐谱先独立认证，真实各自渲染，文件存在/音频可读/内容hash与元信息绑定后才AUDITION_READY。不能拿旧cache或其它候选音频替代。不自动抢播，点击卡只选择，明确Play才使用第三栏底部播放器；后台返回不改当前选材/播放/导出对象。
+
+保存恢复纯事实，不调用作曲、情绪、渲染/线程。RUNNING恢复INTERRUPTED；文件删除/修改/版本失配时对应试听不可用，不假播放就绪。渲染失败/取消结束busy保原工程/历史，不静默换音频。实际文件可用性每次播放/确认/导出重新检查；是否仍可应用独立于正式整曲导出资格，不允许绕过已试听绑定。
+
+### 13.6 一次应用与依赖草案
+
+确认只消费已保存且完整认证的同一FinalCandidate乐谱/阶段/模式，禁止重新随机或重新生成。重新核对工程/session/revision/input snapshot/精确目标gap/所有候选和计划版本及资产；过期拒绝。重复确认transaction_id幂等，无二次素材/编号/undo。
+
+一次事务包含目标基础填充、确实保留的新素材/完整源/整句子块、桥及保护、连接/边界覆盖层、记忆与接受记录；撤销恢复全部先前音乐，重做保存结果不作曲。临时未采用/失败/取消素材不登记。原source文件缺失可用已有快照读取。历史task审计独立于音乐undo。
+
+初始建议：新增p7显式音乐版本，仅在新建或确认事务按明确契约产生；旧p0/p23/p4 Project打开/保存头不迁移。Project保留原基础放置，accepted_overlay保存小型有界引用与实际谱/保护/依赖绑定；所有原输入及完整阶段事实在Bundle快照/attempt registry，不能在每层Project内重复嵌套其历史完整Project。应用后的绑定使用排除自指字段的规范音乐投影，与原input fingerprint区分；事务自身revision增加不使结果失效。后续用户音乐编辑标记受影响结果失效、不静默保留错误连接、不擅自重生成；桥固定保护不会因结果失效被释放。该设计的精确形状及旧stage服务如何读取实际已接受覆盖层需只读评审明确，不能worker自行猜测。
+
+### 13.7 前端契约草案
+
+原三栏/唯一二维画布/底部共用播放器内提供推荐卡、简短差异理由、原始/处理后对比、明确Play/确认/取消/自动补全。区分当前编辑、选中候选、播放对象、已接受/生成版本和导出目标。局部未完成明确余gap并阻止正式整曲导出；无桥/无窗/none合法；不足两套/实际失败/失效直接显示，不新增窗/第四栏/试听窗口/复杂向导。Soft UI/静态Vibrancy、记忆叠放、无右栏BPM/涂色画笔不变；最小1020×700窄窗优先收来源。所有Tk与Controller应用在mainthread，后台纯快照计算及真实渲染，queue完整token/阶段/版本门禁，取消原事件能力不新增另一个框架。
+
+### 13.8 文件所有权草案
+
+lead：curve_final.py、curve_recommendations.py、curve_final_render.py、curve_application.py（新增纯公共服务），curve_project/curve_session/curve_store/curve_workflow、story_engine接线、精确输出兼容与自己的对应tests。算法：独立curve_boundary_music.py及test_curve_boundary_music.py，不改公共schema/UI/story_engine；前端：shared curve_recommendation_ui.py、curve_ui/curve_canvas及必要既有stage/player UI、UI tests，配对适配器仅明确契约需要；verifier只读冻结集成，不改需求/源码/测试。
+
+### 13.9 必验路径与停止
+
+全gap→真实基础/P5/P6/P7/编配/实际音频→明确试听→确认→保存重开；单gap余gap不变/局部确认/不能正式整曲导出；none/无窗/无专门边界；桥pitch/onset/duration/桥内加音/记忆跨界/留白/漏影响独立拒绝；slice同演奏合并与重复起音；最终收敛去重/不足诚实；试听和取消不改工程，确认同谱、幂等、一次undo/redo不作曲；计算期间修改/迟到/重复/session失效；渲染失败/取消/缺文件/运行恢复/已应用后编辑失效；两mode旋律一致/伴奏表达切换/三格式绑定。
+
+固定素材记录基础→桥→连接→最终的实际notes、依赖/源/保护、至少两套实际不同推荐乐谱和真实音频（不足原因另测）。实际窗口坐标、LMMS/设备串行，自动、Tk、渲染、设备、人工视觉听感、Mac/Windows分类，不以模拟替代P7真实渲染。必跑backend-only/check_frontends/full/diff。契约与实现分别最多5轮，匹配RUN/TASK/ROUND/HEAD/前后同fingerprint明确PASS。完成P7停止，不派P8。

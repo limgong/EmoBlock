@@ -1,9 +1,9 @@
 # 强度画布工作流 v2：r3 产品规格
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p6
+CONTRACT_REV=curve-workflow-v2-r3-p7
 
-当前阶段：P6实现已集成，自查后等待独立实施验收；P6契约ROUND1已FROZEN。以下P0–P5启动/停止语句是保留的历史记录，本轮按P6补充执行，完成后停止，不进入P7。
+当前阶段：P6实施ROUND2独立PASS及前后199文件指纹已现场核对；用户启动P7。第13节p7补充为DRAFT，先只读评审与独立契约验收。本轮结束停止，不进入P8；下面旧阶段启动/停止语句仅为保留的历史。
 
 状态：P0–P4已独立PASS（P4实施ROUND3）；用户启动P5 bridge。产品原文保持r3；p0/p23/p4契约FROZEN，公共契约第11节p5已独立ROUND2 PASS并FROZEN，当前开始P5范围实现。
 
