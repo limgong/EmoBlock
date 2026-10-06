@@ -92,6 +92,54 @@ class MemoryBehavior(unittest.TestCase):
         target['notes'][0]['pitch']+=1;target['structure_fingerprint']=m.structure_fingerprint(target)
         with self.assertRaises(m.ProjectError):m.validate(bad)
 
+    def test_crossing_memory_legacy_lock_and_bridge_invalidation_save_and_undo(self):
+        c=w.Controller(fixture(material(length=4000)))
+        c.edit('place',material_id='A1',start_tick=0,placement_id='one')
+        p=c.project
+        old=self.legacy_memory(p)
+        old['notes'][0]['duration_tick']=240
+        old['structure_fingerprint']=m.structure_fingerprint(old)
+        p['protections'].append(old);c=w.Controller(p)
+        c.edit('add_material',material=material('bridge',1920,'bridge'))
+        c.edit('place',material_id='bridge',start_tick=5760,placement_id='bridge-use')
+        c.session.mark_saved();before=c.project
+        bridge=next(x for x in before['protections'] if x['kind']=='bridge')
+        c.edit('set_intensity',points=[dict(tick=0,level=.3),dict(tick=before['total_ticks'],level=.25)])
+        after=c.project;m.validate(after)
+        self.assertEqual(next(x for x in after['protections'] if x['kind']=='bridge'),bridge)
+        self.assertEqual(next(x for x in after['protections'] if x['id']=='manual-memory'),old)
+        history=after['records'][0]['payload']['audit_context']
+        archived=next(x for x in history['protections'] if x['id']==memory.managed_id(after))
+        self.assertEqual((archived['start_tick'],archived['end_tick']),(0,1920))
+        self.assertEqual(archived['notes'][0]['duration_tick'],4000)
+        with tempfile.TemporaryDirectory() as tmp:
+            path=c.save_snapshot(Path(tmp)/'bridge-memory.json');loaded=w.Controller();loaded.load(path)
+            self.assertEqual(loaded.project,after)
+        c.undo();self.assertEqual(c.project,before)
+        c.redo();self.assertEqual(c.project,after)
+        bad=copy.deepcopy(after)
+        archived=next(x for x in bad['records'][0]['payload']['audit_context']['protections']
+                      if x['id']==memory.managed_id(after))
+        archived['notes'][0]['pitch']+=1
+        archived['structure_fingerprint']=m.structure_fingerprint(archived)
+        with self.assertRaises(m.ProjectError):m.validate(bad)
+
+    def test_historical_memory_rest_with_bridge_rejects_inserted_notes(self):
+        item=material(length=4080,kind='phrase');item['notes']=[note('head',120),note('tail',80,4000)]
+        c=w.Controller(fixture(item));c.edit('place',material_id='A1',start_tick=0)
+        c.edit('set_intensity',points=points(c.project['total_ticks'],2100))
+        c.edit('add_material',material=material('bridge',1920,'bridge'))
+        c.edit('place',material_id='bridge',start_tick=5760)
+        c.edit('set_intensity',points=points(c.project['total_ticks'],2200))
+        p=c.project;m.validate(p)
+        history=p['records'][0]['payload']['audit_context']
+        archived=next(x for x in history['protections'] if x['kind']=='memory')
+        self.assertEqual(archived['notes'],[])
+        placement=history['placements'][0]
+        variant=copy.deepcopy(placement['base_snapshot']);variant['notes'].append(note('intruder',100,2000))
+        placement['emotion_variant']=variant
+        with self.assertRaises(m.ProjectError):m.validate(p)
+
     def test_chosen_variant_pitch_short_tail_persists_not_original_source(self):
         item=material(length=240);item['notes'][0]['pitch']=67
         c=w.Controller(fixture(item));c.edit('place',material_id='A1',start_tick=0,placement_id='chosen')

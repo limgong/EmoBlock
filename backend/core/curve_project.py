@@ -289,7 +289,7 @@ def validate_protected_notes(protections, notes):
             reject('实际旋律改变保护区音符或越过保护范围。', 'PROTECTION_CONFLICT')
 
 
-def records_check(records, protections, placements, total, materials, sources):
+def records_check(records, protections, placements, total, materials, sources, project_id=None):
     refs = indexed(records); locks = indexed(protections)
     for record in records:
         shape(record, 'id kind version status input_fingerprint dependencies payload')
@@ -347,7 +347,12 @@ def records_check(records, protections, placements, total, materials, sources):
             for place in scope_placements.values():
                 placement_check(place, scope_total, materials, sources)
             for lock in scope_locks.values():
-                protection_check(lock, scope_total, scope_placements, sources)
+                is_managed = project_id is not None and managed_memory(dict(project_id=project_id), lock)
+                protection_check(lock, scope_total, scope_placements, sources, managed=is_managed)
+            audit_memories = [p for p in scope_locks.values() if project_id is not None
+                             and managed_memory(dict(project_id=project_id), p) and p['status'] == 'CONTENT_READY']
+            if audit_memories:
+                validate_protected_notes(audit_memories, [n for p in scope_placements.values() for n in placed_notes(p)])
         kind = record['kind']
         if kind == 'bridge_plan':
             if payload['automatic_decision'] not in ('none', 'selected'):
@@ -523,7 +528,8 @@ def _validate(project):
     memories = [p for p in project['protections'] if managed_memory(project, p) and p['status'] == 'CONTENT_READY']
     if memories:
         validate_protected_notes(memories, [n for p in project['placements'] for n in placed_notes(p)])
-    records_check(project['records'], project['protections'], placements, total, materials, sources)
+    records_check(project['records'], project['protections'], placements, total, materials, sources,
+                  project_id=project['project_id'])
     accepted = project['accepted_candidate_id']
     if accepted is not None and not any(r['id'] == accepted and r['kind'] == 'accepted_candidate' for r in project['records']):
         reject('接受候选引用不存在。')
