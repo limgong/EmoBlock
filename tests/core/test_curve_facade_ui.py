@@ -55,6 +55,12 @@ class IntegratedFacadeUI(unittest.TestCase):
         self.app.page.method.set('回答句')
         self.app.derive_selected()
         self.settle()
+        # The import already contains this default answer and its children.
+        self.assertEqual(self.controller.project, imported)
+        self.assertIn('不同的新旋律', self.app.status_text.get())
+        self.app.page.method.set('副旋律规则')
+        self.app.derive_selected()
+        self.settle()
         self.assertGreater(len(self.controller.project['materials']), len(imported['materials']))
         self.app.undo()
         self.assertEqual(self.controller.project, imported)
