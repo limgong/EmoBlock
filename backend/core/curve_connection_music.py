@@ -246,6 +246,11 @@ def _compose(request,window,joints,cancel=None,locked_plan=None):
 def _verify_music(request,window,joints,notes,operations):
     if len(notes)<2 or _music(notes)==_music(window['original_notes']):
         _fail('CONNECTION_GENERATION_FAILED','连接必须有至少两次真实发声及实际pitch/time发展。')
+    before=sorted(window['original_notes'],key=lambda n:(n['start_tick'],n['duration_tick']))
+    after=sorted(notes,key=lambda n:(n['start_tick'],n['duration_tick']))
+    same_timing=[(n['start_tick'],n['duration_tick']) for n in before]==[(n['start_tick'],n['duration_tick']) for n in after]
+    if same_timing and sum(a['pitch']!=b['pitch'] for a,b in zip(before,after))==1:
+        _fail('NO_CONNECTION_DEVELOPMENT','节奏不变且仅一处音高变化属于边界微调，不能作为连接块发展。')
     m.indexed(notes)
     if any(n['start_tick']<window['start_tick'] or _support(n)['end_tick']>window['end_tick'] for n in notes):
         _fail('PROTECTION_CONFLICT','实际连接音符越出窗口。')
@@ -374,7 +379,7 @@ def plan_connection_blocks(request,should_cancel=None,on_progress=None):
                             notes,ops,_=_compose(request,w,[],should_cancel)
                         except m.ProjectError as exc:
                             if exc.code=='CANCELLED':raise
-                            if exc.code not in ('EMPTY_MATERIAL','CONNECTION_GENERATION_FAILED','PROTECTION_CONFLICT'):raise
+                            if exc.code not in ('EMPTY_MATERIAL','CONNECTION_GENERATION_FAILED','NO_CONNECTION_DEVELOPMENT','PROTECTION_CONFLICT'):raise
                             continue
                         benefit=analysis['baseline_cost']*.8-.06-.02*(b-a)/1920
                         if benefit>.03:
@@ -421,7 +426,7 @@ def plan_connection_blocks(request,should_cancel=None,on_progress=None):
             try:_compose(request,w,joints,should_cancel)
             except m.ProjectError as exc:
                 if exc.code=='CANCELLED':raise
-                if exc.code not in ('EMPTY_MATERIAL','CONNECTION_GENERATION_FAILED','PROTECTION_CONFLICT'):raise
+                if exc.code not in ('EMPTY_MATERIAL','CONNECTION_GENERATION_FAILED','NO_CONNECTION_DEVELOPMENT','PROTECTION_CONFLICT'):raise
                 bad=w['id'];break
         if bad is None:break
         chosen=[w for w in chosen if w['id']!=bad]

@@ -75,7 +75,80 @@ def notes_music(row):
     return sorted((n['pitch'],n['start_tick'],n['duration_tick']) for n in row['notes'])
 
 
+def single_pitch_counterexample():
+    p=fixture(4,rough=False);sources=[]
+    for material,place in zip(p['materials'],p['placements']):
+        note=dict(copy.deepcopy(material['notes'][0]),pitch=62 if place['start_tick']==0 else 60,duration_tick=1920)
+        material['notes']=[copy.deepcopy(note)];place['base_snapshot']['notes']=[note]
+        sources.append(dict(copy.deepcopy(note),id=note['origin']['source_note_id'],start_tick=place['start_tick']))
+    p['sources'][0]['notes']=sources
+    req=request(p);w=music._window(req,dict(start_tick=1920,end_tick=5760),'diatonic_guide')
+    notes=copy.deepcopy(w['original_notes'])
+    notes[0].update(id='f1-derived-first',pitch=62,lineage=list(dict.fromkeys(notes[0]['lineage']+[notes[0]['id']])),slice=None)
+    operations=[]
+    for i,(parent,note) in enumerate(zip(w['original_notes'],notes)):
+        operations.append(dict(operation='connection-motif-cell',input_note_id=parent['id'],output_note_id=note['id'],
+            parent_ref=service.parent_ref(req,parent['id']),rule='preserve' if i else w['technique'],from_pitch=parent['pitch'],
+            to_pitch=note['pitch'],start_tick=note['start_tick'],duration_tick=note['duration_tick']))
+    return req,w,notes,operations
+
+
 class ConnectionMusicTests(unittest.TestCase):
+    def test_f1_multiple_attacks_single_pitch_change_independently_rejected(self):
+        req,w,notes,operations=single_pitch_counterexample()
+        self.assertEqual([(60,1920,1920),(60,3840,1920)],notes_music(dict(notes=w['original_notes'])))
+        for reverse in (False,True):
+            actual=list(reversed(notes)) if reverse else notes
+            with patch.object(service,'validate_development',side_effect=AssertionError('independent algorithm check')):
+                with self.assertRaises(m.ProjectError) as exc:music._verify_music(req,w,[],actual,operations)
+            self.assertEqual('NO_CONNECTION_DEVELOPMENT',exc.exception.code)
+        locked=plan(req,[w])
+        row=dict(service.result_header(req,locked,w['id']),status='READY',notes=notes,operations=operations,
+            generation=service.generation_data(req,locked,w,operations),content_fingerprint=service.content_fingerprint(dict(start_tick=1920,end_tick=5760),notes),error=None)
+        with self.assertRaises(m.ProjectError) as exc:service.validate_result(req,locked,row)
+        self.assertEqual('NO_CONNECTION_DEVELOPMENT',exc.exception.code)
+        before=copy.deepcopy(req);streamed=[]
+        def microchange(*args,**kwargs):return music._verify_music(req,w,[],notes,operations)
+        with patch.object(music,'_compose',side_effect=microchange),patch.object(service,'validate_result',side_effect=AssertionError('must fail inside music')):
+            raw=music.generate(req,locked,req['actual_layout'],on_result=streamed.append)
+        self.assertEqual('FAILED',raw['status']);self.assertEqual('NO_CONNECTION_DEVELOPMENT',raw['error']['code'])
+        self.assertEqual([],raw['results'][0]['notes']);self.assertEqual(raw['results'],streamed);self.assertEqual(before,req)
+        native=music.generate(req,locked,req['actual_layout']);service.validate_raw(req,locked,native)
+        self.assertEqual('SUCCEEDED',native['status']);self.assertEqual(8,len(native['results'][0]['notes']))
+
+    def test_f1_two_pitch_or_real_rhythm_development_remains_legal(self):
+        req,w,notes,operations=single_pitch_counterexample()
+        for rhythm in (False,True):
+            actual=copy.deepcopy(notes);ops=copy.deepcopy(operations)
+            if rhythm:actual[0]['duration_tick']-=10;ops[0]['duration_tick']-=10
+            else:
+                actual[0]['pitch']=64;ops[0]['to_pitch']=64
+                parent=w['original_notes'][1]
+                actual[1].update(id='f1-derived-second',pitch=62,lineage=list(dict.fromkeys(parent['lineage']+[parent['id']])),slice=None)
+                ops[1].update(rule=w['technique'],output_note_id=actual[1]['id'],to_pitch=62)
+            with patch.object(service,'validate_development',side_effect=AssertionError('independent algorithm check')):
+                music._verify_music(req,w,[],actual,ops)
+            locked=plan(req,[w]);row=dict(service.result_header(req,locked,w['id']),status='READY',notes=actual,operations=ops,
+                generation=service.generation_data(req,locked,w,ops),content_fingerprint=service.content_fingerprint(dict(start_tick=1920,end_tick=5760),actual),error=None)
+            service.validate_result(req,locked,row)
+
+    def test_f1_preview_tries_other_techniques_and_does_not_hide_errors(self):
+        counter_req,w,notes,ops=single_pitch_counterexample();req=request();original=music._compose;tried=[]
+        def reject_microchange(request,window,*args,**kwargs):
+            tried.append(window['technique'])
+            if window['technique']=='diatonic_guide':music._verify_music(counter_req,w,[],notes,ops)
+            return original(request,window,*args,**kwargs)
+        with patch.object(music,'_compose',side_effect=reject_microchange):proposal=music.plan(req)
+        self.assertIn('diatonic_guide',tried);self.assertIn('motif_reply',tried)
+        self.assertEqual('selected',proposal['decision'])
+        locked=service.make_plan(req,proposal);raw=music.generate(req,locked,req['actual_layout']);service.validate_raw(req,locked,raw)
+        with patch.object(music,'_compose',side_effect=m.ProjectError('INVALID_CONNECTION','actual unexpected fault')):
+            with self.assertRaises(m.ProjectError) as exc:music.plan(req)
+        self.assertEqual('INVALID_CONNECTION',exc.exception.code)
+        with patch.object(music,'_compose',side_effect=m.ProjectError('NO_CONNECTION_DEVELOPMENT','no completed preview')):
+            with self.assertRaises(m.ProjectError) as exc:music.plan(request(parameters=dict(max_window_tests=1)))
+        self.assertEqual('SEARCH_BUDGET_EXHAUSTED',exc.exception.code)
+
     def test_long_actual_breath_can_make_connection_unnecessary(self):
         p=fixture(2,rough=False)
         for material in (p['materials'][1],p['placements'][1]['base_snapshot']):
