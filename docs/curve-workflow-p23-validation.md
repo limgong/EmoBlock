@@ -1,7 +1,7 @@
 # r3 P2–P3 验收记录
 
-SPEC_REV=curve-workflow-v2-r3  
-CONTRACT_REV=curve-workflow-v2-r3-p23  
+SPEC_REV=curve-workflow-v2-r3
+CONTRACT_REV=curve-workflow-v2-r3-p23
 RUN_ID=curve-v2-p23-20261006-4022708a
 
 ## 基线及门禁
@@ -42,3 +42,14 @@ check_frontends.py 及 git diff --check 通过。集成全套结果及独立 ver
 ## 待验事项
 
 人工音乐听感、真实鼠标/触控板操作、Windows 实机字体/滚轮/快捷键/播放器，均未因自动测试或 Mac 设备流检查而视为通过。实际截图与程序化 Tk 操作单独记录。未实现原生背景模糊；情绪数据色为已授权例外。没有实施 P4 补全、bridge 或连接算法。
+
+## P2 第一轮复核与修复
+
+ROUND=1、HEAD=dc234fd1bfd44c91cca2d3d92dfc90e99012c77c、指纹 dd513be0f86ecf1475ca4c00df7029ebbd65ddd59c9196bde8f308b65921f260 收到明确 FAIL，审查前后匹配。本轮未进入 P3。
+
+- 新 Facade 导出只保护三种文件，遗漏历史元数据及路径别名：恢复全部历史输出文件保护，并测试 report.json、嵌套 snapshot、符号链接/硬链接目标。
+- 保存 B 后撤销回打开时 A 仍是 dirty，但此前用初始指纹豁免了自动保存：仅真正未编辑的新空工程可以豁免，已编辑/保存/打开的 dirty 内容遵守自动保存失败即停止切换。
+- 试听 WAV 缓存丢失后无法准备：交前端 worker 修复缓存有效性和明确重试，不自动播放。
+- 额外音乐自查：副旋律规则的 .8 缩时产生 768/96 tick 等本来可表达输入的新不可表达输出，交算法 worker 在生成规则中明确处理缩短单位；绝不在输出阶段静默量化原始精确 tick。
+
+verifier 独立运行完整488、后端328、前端契约检查，并额外实际串行 LMMS 渲染与六次导出字节比对通过。该证据不抵消以上失败；实际人工/设备边界见其 P2-R1-review.json。修复后必须重新集成、自测、冻结指纹并进入第2轮，不重置计数。

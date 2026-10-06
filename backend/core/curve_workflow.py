@@ -97,6 +97,7 @@ class Controller:
         self._loaded = None
         self._saved_path = None
         self._jobs = {}
+        self._untouched_new = project is None
 
     @property
     def readonly(self):
@@ -126,6 +127,7 @@ class Controller:
         changed = self.session.edit(action, **args)
         if changed:
             self._jobs.clear()
+            self._untouched_new = False
         return changed
 
     def undo(self):
@@ -133,6 +135,7 @@ class Controller:
         changed = self.session.undo()
         if changed:
             self._jobs.clear()
+            self._untouched_new = False
         return changed
 
     def redo(self):
@@ -140,6 +143,7 @@ class Controller:
         changed = self.session.redo()
         if changed:
             self._jobs.clear()
+            self._untouched_new = False
         return changed
 
     def capture_job(self, kind, target=None):
@@ -215,6 +219,7 @@ class Controller:
         committed = self.session.commit(project, token)
         if committed:
             self._jobs.clear()
+            self._untouched_new = False
         elif not changed:
             self._jobs.pop(token['request_id'], None)
         return dict(changed=committed, added_source_ids=list(sources) if committed else [], added_material_ids=list(materials) if committed else [])
@@ -230,10 +235,13 @@ class Controller:
         path = curve_store.save(self._current_bundle(), path)
         self.session.mark_saved()
         self._saved_path = path
+        self._untouched_new = False
         return path
 
     def autosave_if_needed(self):
-        if self.readonly or self.session.is_saved or model.fingerprint(self.session.project) == self._initial_fingerprint:
+        if self.readonly or self.session.is_saved:
+            return None
+        if self._untouched_new and model.fingerprint(self.session.project) == self._initial_fingerprint:
             return None
         return self.save_snapshot()
 
@@ -244,6 +252,7 @@ class Controller:
         self._initial_fingerprint = model.fingerprint(project)
         self._loaded = loaded
         self._saved_path = Path(path) if path else None
+        self._untouched_new = loaded is None
         self._jobs.clear()
         if loaded is not None:
             self.session.mark_saved()
@@ -292,6 +301,11 @@ class Controller:
         if row is None or not row['availability'][format]:
             model.reject('此版本对应格式文件已不可用，请找回文件或选择其他版本。', 'SOURCE_UNAVAILABLE')
         protected = [Path(path) for item in items for path in item['paths'].values() if path]
+        # Reports, snapshots, render logs and copied resources are generated
+        # sources too. Include all versions and let atomic_export check aliases.
+        directories = {path.parent for path in protected}
+        for directory in directories:
+            protected.extend(path for path in directory.rglob('*') if path.is_file())
         return atomic_export(row['paths'][format], destination, protected)
 
 

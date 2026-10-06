@@ -85,6 +85,58 @@ class FacadeTests(unittest.TestCase):
             self.assertIsNone(c.autosave_if_needed());c.new()
         self.assertFalse(c.state()['is_saved'])
 
+    def test_save_then_undo_to_loaded_content_still_requires_autosave(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            a = store.save(store.new_bundle(project()), folder / 'a.json')
+            c = w.Controller(); c.load(a)
+            c.edit('place', material_id='A1', start_tick=0)
+            c.save_snapshot(folder / 'b.json')
+            c.undo()
+            self.assertFalse(c.state()['is_saved'])
+            before = c.project
+            token = c.capture_job('AUDITION', dict(kind='material', id='A1'))['token']
+            with patch.object(c, 'save_snapshot', side_effect=OSError('not writable')) as save:
+                for switch in (c.new, lambda: c.load(a), c.autosave_if_needed):
+                    with self.assertRaises(OSError): switch()
+                    self.assertEqual(c.project, before)
+                    self.assertTrue(c.accepts(token))
+                    self.assertTrue(c.state()['can_redo'])
+                self.assertEqual(save.call_count, 3)
+
+    def test_undo_of_edited_new_project_does_not_claim_it_was_untouched(self):
+        c = w.Controller(); c.edit('set_melody_only', value=True); c.undo()
+        with patch.object(c, 'save_snapshot', side_effect=OSError('not writable')):
+            with self.assertRaises(OSError): c.new()
+        self.assertTrue(c.state()['can_redo'])
+
+    def test_history_metadata_and_aliases_are_protected_by_facade_export(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp); generated = folder / 'history'; generated.mkdir()
+            (generated / 'composition.mid').write_bytes(b'MIDI actual')
+            metadata = generated / 'report.json'; metadata.write_bytes(b'original metadata')
+            nested = generated / 'source'; nested.mkdir()
+            resource = nested / 'snapshot.json'; resource.write_bytes(b'original snapshot')
+            report = dict(mode='story', report=dict(output_directory=str(generated), duration_seconds=2, bars=1))
+            path = studio_model.save_project(studio_model.materials.new_pool(), None,
+                [dict(emotion='calm', start=.3, end=.5)], [report], path=folder / 'old.json')
+            c = w.Controller(); c.load(path); row = c.history_items()[0]
+            candidates = [metadata, resource]
+            symlink = folder / 'metadata-link'
+            try:
+                symlink.symlink_to(metadata); candidates.append(symlink)
+            except OSError:
+                pass  # Windows can require a privilege for creating symlinks.
+            hardlink = folder / 'metadata-hardlink'; os.link(metadata, hardlink)
+            candidates.append(hardlink)
+            for target in candidates:
+                with self.assertRaises(ValueError): c.export_history(row['id'], 'mid', target)
+            self.assertEqual(metadata.read_bytes(), b'original metadata')
+            self.assertEqual(resource.read_bytes(), b'original snapshot')
+            self.assertEqual((generated / 'composition.mid').read_bytes(), b'MIDI actual')
+            self.assertEqual(c.history_items()[0], row)
+
     def test_job_target_is_immutable_and_bad_target_does_not_leak_requests(self):
         c=w.Controller(project());job=c.capture_job('AUDITION',dict(kind='material',id='A1'))
         job['snapshot']['target']['notes'].clear();self.assertTrue(c.project['materials'][0]['notes'])
