@@ -1,9 +1,9 @@
 # 强度画布 v2 r3 团队与阶段协议
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-draft1
+CONTRACT_REV=curve-workflow-v2-r3-p0
 
-产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)保持 **DRAFT**，必须经P0独立检查才冻结。本轮仅SPEC_REFRESH：三份文档、本地规格提交、干净worktree同步与仓库外记录。不开发功能、不自行进入P1，等待用户角色初始化和P0–P1启动。
+产品依据：[r3完整计划](curve-workflow-v2.md)；[公共契约](curve-workflow-contracts.md)已为 **FROZEN**，P0独立检查 ROUND=2 PASS。用户已启动P0–P1：先完成两角色只读设计评审、整合并冻结提交verifier；PASS后标记FROZEN并同步，再由lead实施P1。P1完成复核后停止，不进入P2。
 
 ## 角色与文件所有权
 
@@ -78,4 +78,4 @@ verifier重点验证占位/未完成不能进桥、生成时已有锁、失败�
 
 ## 本轮交付停止点
 
-SPEC_READY、SPEC_REV、RUN_ID、SPEC_SHA、文档位置、实际角色/pane/目录/分支、worktree快进结果和遗留冲突。规格提交只含三文档；旧源码/测试不改写，不报告r3功能完成。契约保持DRAFT，未自行派发P0独立检查，未进入P1。交付后等待用户角色初始化及P0–P1启动指令。
+P0与P1提交、匹配指纹的verifier结论、自动验证及未验项。P0审核期间契约仍DRAFT，PASS只授权将审核过的规范正文标为FROZEN，不擅改正文。P1仅后端数据/保存/撤销/旧读取；算法与前端不派功能任务。完成后停止等待P2指令。

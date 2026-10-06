@@ -1,7 +1,7 @@
 # 强度画布工作流 v2：r3 产品规格
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-draft1
+CONTRACT_REV=curve-workflow-v2-r3-p0
 
 状态：本次仅 SPEC_REFRESH；产品依据为用户提供的《EmoBlocks 开发计划 r3》。[公共契约](curve-workflow-contracts.md)保持 **DRAFT**，须经 P0 独立检查后才能冻结；[团队协议](curve-workflow-team.md)定义交接与阶段。现有代码仍为开发基线，不代表下列行为已实现。
 
