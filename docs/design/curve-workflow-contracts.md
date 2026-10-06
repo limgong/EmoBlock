@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p5
 
-**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 DRAFT，尚未授权实现。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
+**状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 FROZEN (P5-CONTRACT ROUND2 PASS)，已授权P5范围实现。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
 
 ## 1. 时间、身份、工程和快照
 
@@ -552,9 +552,9 @@ lead：curve_candidates/curve_workflow/curve_store/project/session版本、纯�
 - 必测旧放置自定义seed=99、max_changes=1时，P3默认重算产生不同区外变体仍不能回写；新增记忆实际冲突应拒绝，不能仅因默认重算的旧变体不同误拒合法补全。另测半个empty素材+半个有音符素材覆盖一个目标的伪完成拒绝、取消后同指纹任务进度隔离、预览内警告与真实保护来源。
 
 
-## 11. P5 bridge 补充契约（DRAFT，待双角色评审与独立检查）
+## 11. P5 bridge 补充契约（FROZEN，P5-CONTRACT ROUND2 PASS）
 
-本节只授权设计审查。实现启动须本节独立PASS、状态标FROZEN。处理对象版本p5；历史p0/p23/p4规范和数据不改写。严格顺序为基础输入实际完成→位置判断→位置与全部锁原子登记→完整桥乐句及情绪→独立内容认证→P5就绪；无连接块、最终边界、正式试听／应用／成品导出。P5就绪不是FinalScore。
+本节已独立PASS并标FROZEN；仅授权本节P5实现，历史正文和停止边界不变。处理对象版本p5；历史p0/p23/p4规范和数据不改写。严格顺序为基础输入实际完成→位置判断→位置与全部锁原子登记→完整桥乐句及情绪→独立内容认证→P5就绪；无连接块、最终边界、正式试听／应用／成品导出。P5就绪不是FinalScore。
 
 ### 11.1 版本、输入认证与快照归属
 
@@ -714,7 +714,7 @@ lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览
 提供固定输入基础拼接与bridge后actual notes/来源、窗位置和none理由、锁挂起/部分失败/就绪证据；实际LMMS和设备串行，声音只称P5桥对照，非最终连接作品。后端／专项／完整/check_frontends/diff全部按范围运行；两主题×1020×700及更大窗口程序化Tk，视觉截图、实体Mac鼠标键盘／触控板、人工听感、Windows实机分开记载。契约与实现各最多5轮，匹配RUN/TASK/ROUND/HEAD和完整代码指纹的独立PASS方可交付。完成P5停止，不进入P6、不推送发布或安装模型。
 
 
-### 11.9 已收前端评审后的补充／音乐账本形状（DRAFT）
+### 11.9 已收前端评审后的补充／音乐账本形状（FROZEN）
 
 - 失败结果分派在独立p5 bridge子对象验证，不送P0 Record桥结果的非空素材校验；旧Record规则完全保留。Plan不承担mutable FAILED状态；attempt失败与各锁及结果READY分轴，防止一桥失败令已认证兄弟结果无效。原P4候选放置只在base_project作用域解析，不拿当前input_project替代。
 - 新自动完整桥为phrase，独立children为block，phrase_id指向最终phrase.id；继承手动kind=bridge保持原形状，其children可以为空且不强行切新子块。新自动全主动留白窗口不得被选择为作曲窗口，不用empty notes掩盖生成失败。
@@ -726,10 +726,10 @@ lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览
 - 验收补充：第二个窗冲突整批锁不发布；锁后线程启动异常释放busy但保锁；保存部分成功、禁用所有音乐生成/情绪/重算/渲染后恢复；取消阶段切换与同内容新任务不相互覆盖；P4/P5互斥预览的删除键／控制点／情绪／素材批次均不可编辑；播放中锁、失败、切预览不抢播。
 
 
-已收算法初审确认：现有P0 Record的FAILED父计划不能包含READY子结果，P3 emotion对已有kind=bridge严格保护；P5采用独立阶段对象分派及未处理phrase→一次情绪→最终phrase/子块，保留这些历史门禁。inherited_bridge_ids覆盖全部原活动bridge锁，手动锁原plan_id/version不重绑；新attempt只复制当前基础自身保护，不复制其他旧P5attempt的失败锁到新活动作用域。全部自动窗与共同端点统一发布；reverse-order实际音乐须相同。CONTRACT_REVIEW尚未独立PASS。
+已收算法初审确认：现有P0 Record的FAILED父计划不能包含READY子结果，P3 emotion对已有kind=bridge严格保护；P5采用独立阶段对象分派及未处理phrase→一次情绪→最终phrase/子块，保留这些历史门禁。inherited_bridge_ids覆盖全部原活动bridge锁，手动锁原plan_id/version不重绑；新attempt只复制当前基础自身保护，不复制其他旧P5attempt的失败锁到新活动作用域。全部自动窗与共同端点统一发布；reverse-order实际音乐须相同。CONTRACT_REVIEW ROUND2已独立PASS。
 
 
-### 11.10 双角色ROUND2整合与最终计算约定（DRAFT）
+### 11.10 双角色ROUND2整合与最终计算约定（FROZEN）
 
 - `max_notes`为每个新自动桥base_material的实际作曲音符上限，每产生一音符之前检查并协作取消。最终情绪保持音符数量，children/segment快照不重复计数，继承桥不计；超限失败，不截短，不按兄弟成功/失败重分配。生成顺序反转不改变实际音乐。
 - 指纹固定使用第8.3 canonical/digest。Request域`emoblocks.bridge-request.v1`取完整Request；Plan域`emoblocks.bridge-plan.v1`取删除plan_fingerprint的完整Plan；Result域`emoblocks.bridge-content.v1`取`{range,blank_mask,notes}`；Outcome域`emoblocks.bridge-splice.v1`取`{total_ticks,notes}`。notes为实际绝对Note全字段（包括velocity），排序(start_tick,pitch,duration_tick,id)；mask排序(start_tick,end_tick)。失败/取消未完成音乐指纹null。保护结构指纹沿旧域并排除velocity，初始range_lock_fingerprint沿model.protection_summary；就绪摘要另列，不能混用。
@@ -739,10 +739,10 @@ lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览
 - lead可扩展curve_candidates中既有静态情绪验证的复用入口（保留原P4调用及平静语义），供P5纯验证完整P3快照；不得调用emotion_variant或改变P4来源/完成门禁。普通六方法、已有kind=bridge完整保护及旧Attempt验证保持原样。
 - 前端必要时可修改curve_completion_ui的预览互斥接线；基础/P5控件使用现有三栏内分阶段折叠显示，避免同时堆叠压缩唯一画布。1020×700仍保持画布/底部播放可达，主题及展开不写音乐工程。frontend需检查配对适配器并保留最新Mac删除键行为。
 
-以上为两个只读评审ROUND2的具体修订，未增加P6能力或音乐格式。独立verifier尚未审查；DRAFT不能作为功能开发授权。
+以上为两个只读评审ROUND2的具体修订，未增加P6能力或音乐格式。独立verifier ROUND2已PASS；仅本节P5范围授权实现。
 
 
-### 11.11 独立契约ROUND1修订：公开锁映射及计划前终态（DRAFT）
+### 11.11 独立契约ROUND1修订：公开锁映射及计划前终态（FROZEN）
 
 **公开完整桥身份域。** 自动bridge_id就是Window.id；inherited_bridge_ids是base_project.protections中kind=bridge的owner_id，不是保护ID、素材ID或旧Plan ID。同一活动bridge owner须唯一；重复归属拒绝，不静默选择一个。BridgePlan.protection_refs精确且唯一覆盖windows[].id＋inherited_bridge_ids，shape为`{bridge_id,protection_id}`。新锁ID由lead登记事务分配并立即放入Plan映射；继承锁ID必须逐项等于原基础锁id。所有保护ID互异，自动新锁不得占用输入已有保护ID。生成器用此公开映射填Result.protection_id，不读Controller私有状态，不自行分配或猜测锁ID。
 

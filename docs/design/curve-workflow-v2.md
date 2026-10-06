@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p5
 
-状态：P0–P4已独立PASS（P4实施ROUND3）；用户启动P5 bridge。产品原文保持r3；p0/p23/p4契约FROZEN，公共契约第11节p5为DRAFT，先评审与独立检查再实现。
+状态：P0–P4已独立PASS（P4实施ROUND3）；用户启动P5 bridge。产品原文保持r3；p0/p23/p4契约FROZEN，公共契约第11节p5已独立ROUND2 PASS并FROZEN，当前开始P5范围实现。
 
 本文完整保留 r3 原文。它替代此前固定 A/B/C/D 版本族、先连接后补全、bridge 与连接块共同决策或交错生成、右栏 BPM 控件及独立记忆点标记。旧 `assembly-confirmed-plan.md` 和其他历史文档不能覆盖 r3；旧格式继续独立读取，不迁移为可完整编辑的新工程。
 
@@ -319,3 +319,5 @@ Bridge 生成失败时：
 ## P5 启动补充（DRAFT）
 
 用户已授权P5，P4最终ROUND3 PASS的实际输出、HEAD与前后指纹已核对。已验证的Mac删除键修复六文件单独提交为c767fe6，保留P4所有修复和待人工验收。当前第11节p5补充契约DRAFT，算法/前端只读评审后由lead整合，再经verifier独立PASS冻结。实现只到bridge位置原子锁定、完整乐句、独立就绪认证与暂存；失败保锁，none新版本；不进入P6，不实现连接、最终应用、完整方案试听或正式整曲导出。旧规范正文和数据所属版本不重写。契约和实施分别最多五轮，冻结期间不写集成源码；各角色范围与接口详见契约第11节。
+
+P5契约独立ROUND2 PASS：受检HEAD=9901766，前后指纹186d265ad323c9b7152fcfc220dbd06ac6a892f68eb6a85461c8947774455273；lead现场核对同一RUN/TASK/ROUND及HEAD/指纹，只修改状态标为FROZEN，规范正文未改。worker同步后按11.8派工，实现仍须独立验收。

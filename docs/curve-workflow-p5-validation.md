@@ -29,3 +29,8 @@ P4最终ROUND3明确PASS：HEAD=c1b148bb4bb2eb2a02461270aee26f27e841ad1d，前�
 ## 契约独立ROUND1 FAIL与修订
 
 受检HEAD=f787a3ba1282b0d4f4d4922f4b4d139bc3a5ba44，186文件前后指纹6e4fdbc3b34c8a15dba6b90a0067f81fda76c679e899bae2a6784ca27a7f5ab8，现场与实际verifier输出/review核对。缺少公开bridge→protection映射，及计划创建前FAILED/CANCELLED的plan_fingerprint空值约定。第11.11补齐Plan.protection_refs、明确inherited owner身份域、初始集合重建和终态完整形状，新增往返/篡改/纯恢复验收。仍DRAFT，功能实现尚未开始；下一次独立轮次为2/5。
+
+
+## 契约独立ROUND2 PASS与冻结
+
+受检HEAD=990176694109c1507426973fa478ffa765725842，186文件前后指纹186d265ad323c9b7152fcfc220dbd06ac6a892f68eb6a85461c8947774455273，实际输出、review与lead重算一致。R1两问题闭合，无新增阻断；只修改状态标FROZEN，规范正文未改。此PASS仅契约，不代替P5实现验收；实施轮次从1开始最多5轮。
