@@ -717,7 +717,7 @@ def generate_connection_request(request, plan, actual_layout, should_cancel=None
     import curve_connections
     import curve_connection_music
     curve_connections.validate_request(request); curve_connections.validate_plan(request, plan)
-    if actual_layout != request['actual_layout']:
+    if curve_connections.m.canonical(actual_layout) != curve_connections.m.canonical(request['actual_layout']):
         curve_connections.m.reject('连接生成必须使用捕获的实际bridge布局。', 'LAYOUT_MISMATCH')
     return curve_connection_music.generate_connection_blocks(request, plan, actual_layout,
         should_cancel=should_cancel, on_progress=on_progress, on_result=on_result)

@@ -292,3 +292,19 @@ class ConnectionServiceTests(unittest.TestCase):
         c.record_connection_result(cap['token'],row);bad=copy.deepcopy(row);bad['notes'][0]['velocity']+=1;bad['content_fingerprint']=n.content_fingerprint(bad['range'],bad['notes'])
         self.assertFalse(c.record_connection_result(cap['token'],bad));self.assertEqual(c.connection_state()['status'],'FAILED')
         self.assertEqual(c.connection_state()['results'][0],row)
+
+    def test_source_internal_rest_is_not_gap_and_memory_rest_stays_protected(self):
+        tail=material('rest-phrase',1920)
+        tail['notes'][0]['duration_tick']=240
+        second=copy.deepcopy(tail['notes'][0]);second.update(id='n2',pitch=64,start_tick=1680)
+        second['origin']['source_note_id']='n2';tail['notes'].append(second)
+        c=w.Controller(m.new_project())
+        c.edit('add_source',source=dict(id='S',label='带自然休止的原句',length_ticks=1920,
+            notes=copy.deepcopy(tail['notes']),provenance={'method':'test-fixture'}))
+        c.edit('add_material',material=tail);c.edit('place',material_id=tail['id'],start_tick=0)
+        c.edit('mark_blank',start_tick=1920,end_tick=15360)
+        self.assertEqual(c.gap_items(),[])
+        c=ready_bridge(c);cap=c.capture_connection();req=cap['request']
+        self.assertEqual(req['actual_layout']['remaining_gaps'],[])
+        self.assertEqual(proposal(req,((480,960),))['windows'][0]['original_notes'],[])
+        with self.assertRaises(m.ProjectError):c.plan_connection(cap['token'],proposal(req,((480,960),)))
