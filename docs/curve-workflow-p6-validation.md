@@ -97,3 +97,28 @@ P7建议仅消费当前有效CONNECTIONS_READY与其原P5完整集合、保护�
 - 三份实际LMMS渲染24秒正文/25秒音频，九份格式副本字节一致；串行Mac设备3份PASS。只是中性旋律开发证据，人工听感/外部软件/Windows未验。
 
 接下来实施TASK=P6，ROUND从1开始，最多5轮；冻结目录与完整199文件manifest交现有verifier。PASS必须与本RUN/ROUND/HEAD和前后同一指纹匹配。本页不预写独立PASS，最终事实写仓库外receipt，不以自测或idle/done当通过。
+
+
+## 实施ROUND1 FAIL与修复
+
+独立R1明确FAIL：HEAD=5393c70d628c6d24596b001fb0cfb277a339e6e1，199文件前后指纹7a6c11d8088c74fceba1648be13b0770088ecb4a889ec7d68a0b9327638b9f33，actual pane/review与lead完整manifest核对一致；目录检查期间未改。完整795/后端525/专项48、真实算法Facade映射Tk8、禁用所有生成后的纯恢复均通过，不能抵消P6-R1-F1。
+
+反例[1920,5760)两个pitch60、duration1920的音符，仅第一pitch改62，第二原样，time不变，源父/账本/hash都真实；旧validate_development只要求窗口有两个音符、音乐非完全相同，误放READY及未来P7能力。冻结12.8早已禁止纯单音改高，本次不改规范或schema。
+
+lead8fb1081按实际前后起点/时值序列一一对齐、计算pitch真实变化数，只有一处改高则NO_CONNECTION_DEVELOPMENT（不靠名称/ID/标签）。新增多音符首项/末项两子场景：static gate与Facade终态都拒绝；FAILED无P7能力、当前工程/桥/历史不变且保存重开仍FAILED。20服务项通过；复制原verifier反例到lead隔离目录复跑，validation=NO_CONNECTION_DEVELOPMENT、accepted=false、status=FAILED、can_plan_boundaries=false，原verifier证据未覆盖。算法按同一已有条件做独立音乐检查与合法替代搜索，不以共用后端判定代替自己的判断；交付后重新自查并进入同RUN实施ROUND2，不重置计数。
+
+
+## 实施ROUND2修复后的最终自查
+
+算法修复9879d0b854b73a090204ad65c265879fabdab775集成03405b6d2ed85132259cf8715c8815ec75fa088a，独立按实际音乐拒绝单处音高微调，并在有限试作中寻找合法的其它连接；未知异常仍是失败。合法原生长窗实际八音符仍通过，不因拒绝注入反例而误拒合法发展。
+
+20份已选样例的实际音乐、来源和保护均未改变，只有3份评估记录/计划摘要更新，反映内部不合法试作被过滤。R2样例存music-algorithm/tests/R2，原R1文件未覆盖；lead最终源码独立认证20份、精确重现19份非故障结果。已渲染真实样例的原request/plan/raw在最终源码也完全重现，保存重开仍通过，因此原三份真实LMMS和设备证据对应的音乐仍有效，本轮没有再次渲染相同音乐或声称新听感通过。
+
+- 后端529项PASS，14.740秒，R2-backend.log。
+- 完整799项PASS，148.442秒，R2-full.log；服务20、算法32、UI29在其中。
+- check_frontends及git diff --check、BASE至HEAD diff检查PASS。
+- R2-fixture-replay.json：20份认证/19份精确再生成；R2-rendered-music-replay.json：真实已渲染样例原数据精确重现。
+- R2-pure-restore.json：禁用桥/连接规划与生成、情绪、记忆重算及线程启动，真实归档仍认证并另存成功；新快照独占创建，原文件不改。
+- 真实Facade/算法/映射Tk 8组再次PASS：real-tk-4495e7cb，捕获1.457秒、过程12.806秒，两主题三尺寸、真实窗口坐标命中及状态/失效不变。仍未按GUI播放，不当作设备或人工操作验收。
+
+接下来冻结新HEAD/199文件指纹，交同RUN实施ROUND2独立复验；R1 FAIL保留，计数2/5不重置。最终明确verifier结论与受检前后指纹只写仓库外receipt，检查期间不改本页。截图、人工视觉/听感、物理键鼠触控板、Windows实机/DPI及外部DAW继续待验，不以程序化测试替代。
