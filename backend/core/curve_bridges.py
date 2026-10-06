@@ -25,6 +25,18 @@ OUTCOME_FIELDS = ('schema spec_rev contract_rev request_fingerprint plan_id plan
                   'results base_fingerprint notes content_fingerprint protection_summary remaining_gaps error capabilities')
 
 
+def decide_bridge(request, should_cancel=None, on_progress=None):
+    """Explicit background provider; never called by restoration or validators."""
+    import story_engine
+    return story_engine.decide_bridge_request(request, should_cancel=should_cancel, on_progress=on_progress)
+
+
+def generate_bridges(request, plan, should_cancel=None, on_progress=None, on_result=None):
+    import story_engine
+    return story_engine.generate_bridge_request(request, plan, should_cancel=should_cancel,
+                                               on_progress=on_progress, on_result=on_result)
+
+
 def guard(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
