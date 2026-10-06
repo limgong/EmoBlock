@@ -55,6 +55,9 @@ def import_source(path, track=0, role='auto', policy='reject', assembly_mode=Fal
 
 
 def validate(project, require_source=True):
+    if isinstance(project, dict) and project.get("schema") == "emoblocks.assembly.v2":
+        import curve_project
+        return curve_project.validate(project)
     if assembly.is_project(project):return assembly.validate(project,require_source)
     return _validate_legacy(project,require_source)
 
@@ -251,6 +254,9 @@ def automatic_peak_anchor(project):
 
 
 def plan(project):
+    if isinstance(project, dict) and project.get("schema") == "emoblocks.assembly.v2":
+        from curve_project import ProjectError
+        raise ProjectError("PIPELINE_NOT_AVAILABLE", "强度画布生成流程尚未接通，请等待后续阶段。")
     intensity_curve.validate(project)
     validate(project)
     requested_project=copy.deepcopy(project)
@@ -626,6 +632,9 @@ def compile_score(planned):
 
 
 def generate(project, progress=lambda _:None, render=True):
+    if isinstance(project, dict) and project.get("schema") == "emoblocks.assembly.v2":
+        from curve_project import ProjectError
+        raise ProjectError("PIPELINE_NOT_AVAILABLE", "强度画布生成流程尚未接通，请等待后续阶段。")
     progress('发展关联素材，按情绪线和锚点预留连接窗口…')
     planned=plan(project);score=compile_score(planned)
     folder=flow.structure.ROOT/'renders'/flow.structure.uid();folder.mkdir(parents=True)
