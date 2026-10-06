@@ -15,7 +15,7 @@ P4最终ROUND3明确PASS：HEAD=c1b148bb4bb2eb2a02461270aee26f27e841ad1d，前�
 
 ## 契约状态
 
-第11节p5 DRAFT，已收到算法和前端只读初审，整合范围／集合／部分失败、phrase子块闭包、真实发声来源和两阶段主线程锁定接口。两角色ROUND2要求补齐每桥音符预算、精确指纹域、overlay形状及继承结果计划归属，均已整合；独立契约检查尚未开始，未实现产品功能。契约和实现独立记录轮次，各最多5轮；检查冻结期间不写集成目录。
+第11节p5已FROZEN。算法和前端只读初审及补充评审已整合范围／集合／部分失败、phrase子块闭包、真实发声来源、每桥预算、指纹域、overlay与继承计划归属；契约ROUND2独立PASS后才开始实现。契约和实现独立记录轮次，各最多5轮；检查冻结期间不写集成目录。
 
 ## 预定验收与边界
 
@@ -34,3 +34,58 @@ P4最终ROUND3明确PASS：HEAD=c1b148bb4bb2eb2a02461270aee26f27e841ad1d，前�
 ## 契约独立ROUND2 PASS与冻结
 
 受检HEAD=990176694109c1507426973fa478ffa765725842，186文件前后指纹186d265ad323c9b7152fcfc220dbd06ac6a892f68eb6a85461c8947774455273，实际输出、review与lead重算一致。R1两问题闭合，无新增阻断；只修改状态标FROZEN，规范正文未改。此PASS仅契约，不代替P5实现验收；实施轮次从1开始最多5轮。
+
+## P5 实现与本地集成
+
+lead：curve_bridges独立请求/计划/来源/实际音符/情绪账本认证；curve_workflow原子锁定、流式结果认证及终态事务；curve_store纯恢复与RUNNING→INTERRUPTED；curve_session处理版本Token；story_engine专用P5入口。保留旧工程音乐头和P4处理版本，不因打开、保存或候选计算升级原工程；旧planner/连接块/最终边界未接入。
+
+music-algorithm：02d96a1＋6d0cc42（集成f3bee9e＋d635f43），独立有限选位、保留自然排布的none决策、动机发展完整乐句、相邻共同端点、一次情绪处理及四拍子块。补齐受保护长句的合法内部窗口及真实公共门禁测试，算法专项26项；实际来源/留白/短尾/邻接/单侧样例见music-algorithm/tests/evidence-manifest.json。组合独立扁平ID反例由lead修复并纳入专项回归。
+
+frontend：a2637c6（集成7cfa6fc），现有三栏中的Bridge入口、真实阶段/已用时间/取消、范围锁与就绪分轴、唯一画布只读覆盖预览、互斥P4/P5视图、流式回调及快照门禁。素材、播放器、旧成品逐格式导出保持原语义；不提供最终方案应用/试听/整曲导出。
+
+服务自测14项覆盖真实算法往返、单合法INSUFFICIENT候选、局部剩余空缺、全部锁原子登记、部分成功保留、失败/取消/迟到/重复/编辑后undo、新attempt隔离、手动桥+none、独立扁平ID嵌套组合来源、重新hash仍无法掩盖结构/来源/子块篡改、禁用算法后的纯恢复、保存写入失败。手工构造的事务决策不是选位音乐质量证据；实际算法场景另列。
+
+lead用最终集成源码重跑算法13个对照样例，全部通过独立门禁（含worker旧门禁拒绝的独立扁平ID反例）；相对目录lead-backend/music-algorithm-replay/evidence-manifest.json及测试日志p5-music-replay.txt。精确1tick、实际4080tick短尾、2/3/4/8块、相邻、不同调性单侧、主动留白、嵌套组合和部分失败都有实际数据。算法worker自身未渲染/未调用硬件，其684完整/471后端/26专项结论只对应自身交付分支；集成验收以lead及verifier受检代码为准。
+
+## 自动检查和 GUI 证据边界
+
+已有环境的隔离run-python包装器实际使用仓库.venv解释器和自身源码。
+
+- scripts/check_frontends.py：PASS，共享UI、成对适配器及后端隔离检查。
+- scripts/test.py最终集成：717 PASS，117.774秒；首轮710 PASS为新增测试/最终算法修正前的历史记录。
+- scripts/test.py --backend-only最终集成：476 PASS，4.865秒。
+- 前端首版专项28 PASS、自身完整677 PASS；Mapped Tk双主题×1020×700／1280×800／1440×900，唯一画布可绘制高度166／266／366px，播放按钮44px。使用测试Facade/播放器替身，不等于真实后端或设备结论。真实后端UI集成另行记录。
+- 前端仓库外真实集成5/5 PASS：真实Facade＋实际P4候选/P5算法＋P3记忆保护，通过六组主题/尺寸的READY只读预览、READY保存重开、运行锁保存/取消/迟到/中断、P4→P5及编辑undo失效、自然none、流式第一桥READY后取消第二桥仍保留内容/锁/原播放对象。仅WavePlayer使用替身；所有导入位置确认为该worktree自身。证据frontend/tests/p5-real-integration-evidence.json及同名.log。
+- git diff --check：实现中持续PASS，冻结前和独立验收仍须检查。
+
+## 真实音乐、锁与来源对照材料
+
+所有测试及音频只在仓库外本轮运行目录，不提交音频或用户数据。通过本地/tmp/emoblocks-p5-run定位；相对材料目录lead-backend/music。
+
+- selected-request.json／selected-proposal.json：完整原排布和实际基础音符、选位评价与理由。固定8秒、7680tick场景，自动记忆保护首四拍，自动bridge覆盖[1920,7680)。
+- selected-range-locked.json：生成前已登记全部RANGE_LOCKED；selected-ready.json为实际CONTENT_READY及独立认证内容。
+- natural-none.json：自然旋律的明确none计划、理由和版本，非算法失败的替代。
+- partial-failed-locks.json：第一桥实际READY，第二桥故障模拟FAILED，保留CONTENT_READY与RANGE_LOCKED，下一阶段能力false。
+- music-difference.json：原始/bridge后实际pitch/start/duration对照、逐音符父放置/快照/动机与发展账本；基础排布和保护范围不变。
+- archive-location.json：保存快照路径，重开实际内容一致，不恢复线程。
+- render-assets.json、base 对照.wav／bridge 对照.wav及对应MID/MMP：已有LMMS真实连续渲染。两份正文8.0秒、实际音频9.0秒（保留尾音）；三种格式的开发验收复制与源字节一致。此为私有P5中性旋律对照，尚未处理连接块、最终边界和整曲编配，不授予产品最终导出资格。字节校验不等于第三方软件打开或音乐质量合格。
+- device-check.json：渲染结束后串行使用macOS真实WavePlayer/PortAudio，当前MacBook Air扬声器双声道44100Hz，两份WAV播放位置推进、暂停/恢复、关闭通过，源文件不变。这是程序化设备API证据，非用户点击GUI或人工听感结论。
+- final-source-replay.json：最后算法修正集成后以保存的真实Request/Plan重新生成并独立认证，全部实际Result与音频样例原结果一致，选位窗口亦一致；已有渲染材料仍对应最终音乐实现。
+
+## 待验事项与 Mac 手动流程
+
+实际窗口截图六次均失败，系统screencapture返回“could not create image from window”；未修改权限或设置，截图和人工视觉列为待验，不能用坐标证据冒充截图。实体鼠标/触控板/键盘操作、人工音乐听感、Windows实机（含125%／150%缩放）以及外部DAW打开MIDI/MMP尚未验收。主题是静态跨平台Vibrancy风格，不实现真实背景模糊；情绪数据色为已授权例外。P4与既有删除键修复的实体双端待验项目继续保留。
+
+约5分钟Mac验收：
+
+1. 在隔离工程打开本轮archive-location记录的快照（不要覆盖真实工程），确认原放置、强度、保存状态和历史不变。打开Bridge查看锁/就绪与范围，核对记忆标识独立。
+2. 切换明暗主题及三窗口尺寸，展开/退出Bridge只读预览、横向滚动首尾，核对按钮可达、完整理由可读、无第四栏或另开试听窗口。只读预览按⌫和Fn+Delete不能删当前编辑。
+3. 返回当前编辑，在完整排布或有效单条基础候选上明确点击判断Bridge，观察判断→已保护→生成→就绪；取消后锁保留，重新尝试计划版本不同，不改变素材选择和播放器。
+4. 打开partial-failed-locks对照说明，确认失败范围仍有锁而非普通空缺；工程修改再undo后旧候选仍显示失效，不可继续消费。
+5. 串行人工试听base/bridge对照WAV，检查动机、入口、休止和尾音；另用LMMS打开对应MMP、DAW打开MIDI。记录听感问题，不将就绪认证当作听感合格。P5页面没有最终确认/完整方案试听/整曲导出，属于本阶段边界。
+
+P6建议：lead负责消费匹配版本的READY Plan、CONTENT_READY全集合和保护摘要；算法负责连接块规划/生成，最终边界保持下一阶段；前端显示独立连接状态及候选保护，verifier审查不可改变bridge音高、起点、时值。此处仅派工建议，本轮不开始P6。
+
+## 独立实现检查
+
+实施提交冻结后由现有verifier检查集成目录。验收RUN_ID同文首、TASK_ID=P5，实施ROUND从1起，每轮最多5轮。冻结HEAD、全部已跟踪/未跟踪源码测试指纹、实际pane输出、独立review和前后指纹保存在仓库外RUN_DIR的P5-Rn-freeze.json、verifier-P5-Rn-output.txt、verifier/tests/P5-Rn-review.json及最终P5-final-receipt.json。本文件冻结时不预先声明实现PASS；后续结果仅在这些运行记录和交付汇报登记，避免记录变化破坏受检指纹。契约PASS不代替实施PASS；未验平台与听感项目不因PASS自动关闭。
