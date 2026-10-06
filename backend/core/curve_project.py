@@ -226,7 +226,7 @@ def protection_ranges(protection):
     return ranges
 
 
-def protection_check(p, total, placements, sources):
+def protection_check(p, total, placements, sources, managed=False):
     shape(p, 'id kind owner_id placement_id component_path start_tick end_tick status origin plan_id plan_version input_fingerprint notes structure_fingerprint blank_mask')
     ident(p['id']); ident(p['owner_id']); text(p['input_fingerprint'])
     range_check({k: p[k] for k in ('start_tick', 'end_tick')}, total)
@@ -250,7 +250,7 @@ def protection_check(p, total, placements, sources):
                 reject('保护组件路径不存在。')
     elif p['component_path']:
         reject('保护组件路径缺少放置身份。')
-    if p['kind'] == 'memory' and p['status'] == 'CONTENT_READY':
+    if managed and p['kind'] == 'memory' and p['status'] == 'CONTENT_READY':
         if placement is None:
             reject('记忆保护必须绑定基础放置。', 'PROTECTION_CONFLICT')
         notes_check(p['notes'], total, sources)
@@ -269,7 +269,7 @@ def protection_check(p, total, placements, sources):
     if p['status'] == 'CONTENT_READY':
         masks = sorted(p['blank_mask'], key=lambda r: r['start_tick'])
         wholly_blank = bool(masks) and masks[0]['start_tick'] == p['start_tick'] and masks[-1]['end_tick'] == p['end_tick'] and all(a['end_tick'] == b['start_tick'] for a, b in zip(masks, masks[1:]))
-        if not p['notes'] and not wholly_blank and p['kind'] != 'memory':
+        if not p['notes'] and not wholly_blank and not (managed and p['kind'] == 'memory'):
             reject('就绪保护没有实际音符。', 'BRIDGE_NOT_READY')
         if p['structure_fingerprint'] != structure_fingerprint(p):
             reject('保护内容指纹不匹配。', 'PROTECTION_CONFLICT')
@@ -513,12 +513,14 @@ def _validate(project):
     if points[0]['tick'] != 0 or points[-1]['tick'] != total:
         reject('强度线必须覆盖固定时间轴。')
     for p in indexed(project['protections']).values():
-        protection_check(p, total, placements, sources)
+        # P0/P2 manual memory has the original range-contained snapshot semantics.
+        # Only the identified automatic memory owns P3's full base-note contract.
+        protection_check(p, total, placements, sources, managed=managed_memory(project, p))
     import curve_memory
     managed = next((p for p in project['protections'] if p['id'] == curve_memory.managed_id(project)), None)
     if managed is not None and managed != curve_memory.expected_protection(project):
         reject('自动记忆范围、基础内容或输入指纹已过期。', 'PROTECTION_CONFLICT')
-    memories = [p for p in project['protections'] if p['kind'] == 'memory' and p['status'] == 'CONTENT_READY']
+    memories = [p for p in project['protections'] if managed_memory(project, p) and p['status'] == 'CONTENT_READY']
     if memories:
         validate_protected_notes(memories, [n for p in project['placements'] for n in placed_notes(p)])
     records_check(project['records'], project['protections'], placements, total, materials, sources)
@@ -738,7 +740,8 @@ def apply_recompute(before, edited, recompute):
                                             for r in domains)]
         if structural_notes(inside(original_notes)) != structural_notes(inside(actual_notes)):
             reject('重算不能改变已有固定保护的内容或休止。', 'PROTECTION_CONFLICT')
-    locks = [p for p in edited['protections'] if p['status'] == 'CONTENT_READY']
+    locks = [p for p in edited['protections'] if p['status'] == 'CONTENT_READY'
+             and (p['kind'] != 'memory' or managed_memory(edited, p))]
     if locks:
         validate_protected_notes(locks, actual_notes)
 

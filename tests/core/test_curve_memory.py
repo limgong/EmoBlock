@@ -30,6 +30,68 @@ def points(total, tick, level=1):
 
 
 class MemoryBehavior(unittest.TestCase):
+    def legacy_memory(self, p, bound=False):
+        lock=copy.deepcopy(manual_bridge()['protections'][0])
+        lock.update(id='manual-memory',kind='memory',owner_id='user',
+            placement_id='one' if bound else None,component_path=[],
+            start_tick=0,end_tick=240,plan_id=None,plan_version=None,
+            notes=m.placed_notes(p['placements'][0]) if p['placements'] else [note()],
+            input_fingerprint='legacy-content')
+        lock['structure_fingerprint']=m.structure_fingerprint(lock)
+        return lock
+
+    def assert_legacy_roundtrip(self, p):
+        for rev in m.SUPPORTED_CONTRACT_REVS:
+            with self.subTest(rev=rev),tempfile.TemporaryDirectory() as tmp:
+                p=copy.deepcopy(p);p['contract_rev']=rev;m.validate(p)
+                original=curve_store.save(curve_store.new_bundle(p),Path(tmp)/'legacy.json')
+                original_bytes=original.read_bytes()
+                c=w.Controller();c.load(original)
+                self.assertEqual(c.project,p);self.assertTrue(c.state()['is_saved'])
+                self.assertFalse(c.state()['can_undo']);self.assertFalse(c.state()['can_redo'])
+                saved=c.save_snapshot(Path(tmp)/'copy.json')
+                self.assertEqual(curve_store.load(saved)['bundle']['project'],p)
+                self.assertEqual(original.read_bytes(),original_bytes)
+                self.assertEqual(m.fingerprint(c.project),m.fingerprint(p))
+
+    def test_legacy_unbound_memory_with_and_without_placement_reads_and_saves_exactly(self):
+        p=m.edit(fixture(),'place',material_id='A1',start_tick=0,placement_id='one')
+        p['protections']=[self.legacy_memory(p)]
+        self.assert_legacy_roundtrip(p)
+        p['placements']=[]
+        self.assert_legacy_roundtrip(p)
+
+    def test_legacy_bound_partial_or_current_variant_memory_retains_original_semantics(self):
+        p=m.edit(fixture(),'place',material_id='A1',start_tick=0,placement_id='one')
+        lock=self.legacy_memory(p,bound=True)
+        lock['end_tick']=120;lock['notes'][0]['duration_tick']=120
+        lock['structure_fingerprint']=m.structure_fingerprint(lock);p['protections']=[lock]
+        self.assert_legacy_roundtrip(p)
+        variant=copy.deepcopy(p['placements'][0]['base_snapshot']);variant['notes'][0]['pitch']=67
+        p['placements'][0]['emotion_variant']=variant
+        p['protections']=[self.legacy_memory(p,bound=True)]
+        self.assert_legacy_roundtrip(p)
+
+    def test_legacy_fixed_memory_not_unlocked_and_managed_memory_still_strict(self):
+        p=m.edit(fixture(),'place',material_id='A1',start_tick=0,placement_id='one')
+        p['protections']=[self.legacy_memory(p)]
+        c=w.Controller(p);c.session.mark_saved();before=c.project
+        token=c.capture_job('AUDITION',dict(kind='placement',id='one'))['token']
+        for action,args in [('move',dict(placement_id='one',start_tick=480)),
+                            ('delete',dict(placement_id='one'))]:
+            with self.assertRaises(m.ProjectError):c.edit(action,**args)
+            self.assertEqual(c.project,before);self.assertTrue(c.state()['is_saved'])
+            self.assertFalse(c.state()['can_undo']);self.assertTrue(c.accepts(token))
+        c.edit('set_intensity',points=points(p['total_ticks'],120))
+        self.assertEqual(next(x for x in c.project['protections'] if x['id']=='manual-memory'),p['protections'][0])
+        automatic=next(x for x in c.project['protections'] if x['id']==memory.managed_id(c.project))
+        bad=c.project;target=next(x for x in bad['protections'] if x['id']==automatic['id'])
+        target['placement_id']=None
+        with self.assertRaises(m.ProjectError):m.validate(bad)
+        bad=c.project;target=next(x for x in bad['protections'] if x['id']==automatic['id'])
+        target['notes'][0]['pitch']+=1;target['structure_fingerprint']=m.structure_fingerprint(target)
+        with self.assertRaises(m.ProjectError):m.validate(bad)
+
     def test_chosen_variant_pitch_short_tail_persists_not_original_source(self):
         item=material(length=240);item['notes'][0]['pitch']=67
         c=w.Controller(fixture(item));c.edit('place',material_id='A1',start_tick=0,placement_id='chosen')
