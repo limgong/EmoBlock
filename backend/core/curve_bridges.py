@@ -390,12 +390,19 @@ def inherited_result(request, plan, bridge_id):
             base=place['base_snapshot']; final=place['emotion_variant'] or base
             notes=m.placed_notes(place)
     else:
-        record=next((r for r in project['records'] if r['kind']=='bridge_result' and r['status']=='READY'
-            and r['payload']['bridge_id']==bridge_id and r['payload']['protection_id']==lock['id']),None)
-        parent=next((r for r in project['records'] if r['id']==lock['plan_id'] and r['status']=='READY'),None)
-        if record is not None and parent is not None:
-            final=base=record['payload']['material_snapshot']
-            notes=[dict(n,id=bridge_id+':'+n['id'],start_tick=lock['start_tick']+n['start_tick']) for n in final['notes']]
+        records=[r for r in project['records'] if r['kind']=='bridge_result' and r['status']=='READY'
+            and r['payload']['bridge_id']==bridge_id and r['payload']['protection_id']==lock['id']
+            and r['payload']['plan_id']==lock['plan_id'] and r['payload']['plan_version']==lock['plan_version']]
+        parents=[r for r in project['records'] if r['id']==lock['plan_id'] and r['kind']=='bridge_plan'
+            and r['status']=='READY' and r['version']==lock['plan_version']]
+        if len(records)==1 and len(parents)==1:
+            final=base=records[0]['payload']['material_snapshot']
+            original=[dict(n,id=bridge_id+':'+n['id'],start_tick=lock['start_tick']+n['start_tick']) for n in final['notes']]
+            if m.structural_notes(original)!=m.structural_notes(lock['notes']):
+                m.reject('继承桥原记录与结构保护不匹配。','PROTECTION_CONFLICT')
+            # The record and structural lock stay immutable. Current actual
+            # performance may legally differ in velocity without rewriting melody.
+            notes=[n for n in request['base_notes'] if m.intersects(support(n),lock)]
     if final is None:
         return failure_result(request,plan,bridge_id,error('BRIDGE_NOT_READY','已有桥没有可认证的就绪素材和原计划。'))
     if m.structural_notes(notes)!=m.structural_notes(lock['notes']):

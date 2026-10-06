@@ -9,7 +9,7 @@ import curve_bridges as b
 import curve_project as m
 import curve_store as store
 import curve_workflow as w
-from test_curve_workflow import project, material
+from test_curve_workflow import project, material, manual_bridge
 from test_curve_candidates import fixture, prepared, proposal as completion_proposal
 
 
@@ -46,6 +46,23 @@ def raw(req, plan, rows=(), status='SUCCEEDED', error=None):
     return dict(schema='emoblocks.bridge-raw-outcome.v1',spec_rev=m.SPEC_REV,contract_rev=b.REV,
         request_fingerprint=b.request_fingerprint(req),plan_id=plan['id'],plan_version=plan['version'],
         status=status,results=list(rows),error=error)
+
+
+def historical_automatic(velocity):
+    """Valid old ready record; current performance may differ from its snapshot."""
+    p=manual_bridge();plan=p['records'][0];lock=p['protections'][0]
+    lock['origin']='automatic'
+    plan['payload'].update(automatic_decision='selected',bridge_ids=['P'],manual_bridge_ids=[],
+                           ranges=[dict(start_tick=1920,end_tick=3840)])
+    p['records'].append(dict(id='old-result',kind='bridge_result',version=1,status='READY',
+        input_fingerprint=plan['input_fingerprint'],dependencies=[dict(id=plan['id'],version=plan['version'])],
+        payload=dict(bridge_id='P',plan_id=plan['id'],plan_version=plan['version'],protection_id=lock['id'],
+            material_snapshot=copy.deepcopy(p['placements'][0]['base_snapshot']),validation=dict(valid=True))))
+    p['blank_regions']=[dict(id='left',start_tick=0,end_tick=1920,reason='主动留白'),
+                       dict(id='right',start_tick=3840,end_tick=p['total_ticks'],reason='主动留白')]
+    p['placements'][0]['base_snapshot']['notes'][0]['velocity']=velocity
+    m.validate(p)
+    return p
 
 
 class BridgeServiceTests(unittest.TestCase):
@@ -246,6 +263,43 @@ class BridgeActualMusicTests(unittest.TestCase):
         plan=c.lock_bridge(cap['token'],decision(req,[(0,nested['length_ticks'])]))
         result=w.generate_bridges(req,plan);b.validate_raw(req,plan,result)
         self.assertEqual(result['status'],'SUCCEEDED')
+
+    def test_historical_ready_velocity_only_inheritance_none_selected_and_pure_restore(self):
+        for policy in ('none','selected'):
+            for velocity in (80,100):
+                with self.subTest(policy=policy,velocity=velocity):
+                    p=historical_automatic(velocity)
+                    if policy=='selected':
+                        p['blank_regions']=[];p['materials'].append(material('normal',1920))
+                        for i in (0,2,3,4,5,6,7):
+                            p['placements'].append(dict(id='normal-'+str(i),material_id='normal',base_snapshot=material('normal',1920),
+                                start_tick=i*1920,length_ticks=1920,emotion='calm',emotion_variant=None))
+                    m.validate(p);before=copy.deepcopy(p)
+                    with tempfile.TemporaryDirectory() as tmp:
+                        path=store.save(store.new_bundle(p),Path(tmp)/'old.json')
+                        self.assertEqual(store.load(path)['bundle']['project'],p)
+                        c=w.Controller(p);c.session.mark_saved();cap=c.capture_bridge(parameters={'policy':'none'} if policy=='none' else None)
+                        req=cap['request'];prop=w.decide_bridge(req) if policy=='none' else decision(req,[(5760,9600)])
+                        plan=c.lock_bridge(cap['token'],prop);c.begin_bridge_generation(cap['token'],plan)
+                        generated=w.generate_bridges(req,plan);b.validate_raw(req,plan,generated)
+                        inherited=next(r for r in generated['results'] if r['origin']=='inherited')
+                        self.assertEqual(inherited['notes'][0]['velocity'],velocity)
+                        self.assertEqual(inherited['material']['notes'][0]['velocity'],80)
+                        self.assertEqual(m.structural_notes(inherited['notes']),m.structural_notes(p['protections'][0]['notes']))
+                        for key in ('pitch','start_tick','duration_tick'):
+                            bad=copy.deepcopy(inherited);bad['notes'][0][key]+=1
+                            bad['content_fingerprint']=b.content_fingerprint(bad['range'],[],bad['notes'])
+                            with self.assertRaises(m.ProjectError):b.validate_result(req,plan,bad)
+                        self.assertTrue(c.finish_bridge(cap['token'],generated));self.assertEqual(c.bridge_state()['status'],'READY')
+                        self.assertEqual(c.project,before);self.assertTrue(c.state()['is_saved'])
+                        lock=next(v for v in c.bridge_state()['protections'] if v['id']==p['protections'][0]['id'])
+                        self.assertEqual(lock,p['protections'][0]);self.assertEqual(c.project['records'],before['records'])
+                        c.save_snapshot(Path(tmp)/'ready.json')
+                        with (patch('curve_bridge_music.decide',side_effect=AssertionError('decision')),
+                              patch('curve_bridge_music.generate',side_effect=AssertionError('music')),
+                              patch('curve_emotion.emotion_variant',side_effect=AssertionError('emotion'))):
+                            archive=store.load(Path(tmp)/'ready.json');store.validate_bundle(archive['bundle'])
+                        self.assertEqual(archive['bundle']['attempts'][-1]['bridge']['outcome'],c.bridge_state()['outcome'])
 
 
 if __name__=='__main__':unittest.main()

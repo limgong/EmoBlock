@@ -43,7 +43,7 @@ music-algorithm：02d96a1＋6d0cc42（集成f3bee9e＋d635f43），独立有限�
 
 frontend：a2637c6（集成7cfa6fc），现有三栏中的Bridge入口、真实阶段/已用时间/取消、范围锁与就绪分轴、唯一画布只读覆盖预览、互斥P4/P5视图、流式回调及快照门禁。素材、播放器、旧成品逐格式导出保持原语义；不提供最终方案应用/试听/整曲导出。
 
-服务自测14项覆盖真实算法往返、单合法INSUFFICIENT候选、局部剩余空缺、全部锁原子登记、部分成功保留、失败/取消/迟到/重复/编辑后undo、新attempt隔离、手动桥+none、独立扁平ID嵌套组合来源、重新hash仍无法掩盖结构/来源/子块篡改、禁用算法后的纯恢复、保存写入失败。手工构造的事务决策不是选位音乐质量证据；实际算法场景另列。
+服务自测15项覆盖真实算法往返、单合法INSUFFICIENT候选、局部剩余空缺、全部锁原子登记、部分成功保留、失败/取消/迟到/重复/编辑后undo、新attempt隔离、手动桥+none、独立扁平ID嵌套组合来源、重新hash仍无法掩盖结构/来源/子块篡改、禁用算法后的纯恢复、保存写入失败及R1指出的历史自动桥合法力度继承。手工构造的事务决策不是选位音乐质量证据；实际算法场景另列。
 
 lead用最终集成源码重跑算法13个对照样例，全部通过独立门禁（含worker旧门禁拒绝的独立扁平ID反例）；相对目录lead-backend/music-algorithm-replay/evidence-manifest.json及测试日志p5-music-replay.txt。精确1tick、实际4080tick短尾、2/3/4/8块、相邻、不同调性单侧、主动留白、嵌套组合和部分失败都有实际数据。算法worker自身未渲染/未调用硬件，其684完整/471后端/26专项结论只对应自身交付分支；集成验收以lead及verifier受检代码为准。
 
@@ -52,10 +52,10 @@ lead用最终集成源码重跑算法13个对照样例，全部通过独立门�
 已有环境的隔离run-python包装器实际使用仓库.venv解释器和自身源码。
 
 - scripts/check_frontends.py：PASS，共享UI、成对适配器及后端隔离检查。
-- scripts/test.py最终集成：717 PASS，117.774秒；首轮710 PASS为新增测试/最终算法修正前的历史记录。
-- scripts/test.py --backend-only最终集成：476 PASS，4.865秒。
+- scripts/test.py实施R1集成：717 PASS，117.774秒；首轮710 PASS为新增测试/最终算法修正前的历史记录。R2修复后的检查另列。
+- scripts/test.py --backend-only实施R1集成：476 PASS，4.865秒。
 - 前端首版专项28 PASS、自身完整677 PASS；Mapped Tk双主题×1020×700／1280×800／1440×900，唯一画布可绘制高度166／266／366px，播放按钮44px。使用测试Facade/播放器替身，不等于真实后端或设备结论。真实后端UI集成另行记录。
-- 前端仓库外真实集成5/5 PASS：真实Facade＋实际P4候选/P5算法＋P3记忆保护，通过六组主题/尺寸的READY只读预览、READY保存重开、运行锁保存/取消/迟到/中断、P4→P5及编辑undo失效、自然none、流式第一桥READY后取消第二桥仍保留内容/锁/原播放对象。仅WavePlayer使用替身；所有导入位置确认为该worktree自身。证据frontend/tests/p5-real-integration-evidence.json及同名.log。
+- 前端首份仓库外真实集成5/5记录对应最终选位修正前的输入，verifier在R1复跑4/5：原第五项预设双桥，但默认预算只选出一桥，不能作为最终双桥证据。verifier换用合法960tick音符输入后补验流式取消通过。lead在R2同样更新真实输入及完整来源，使用实际Facade/P4/P5/P3重新跑5/5 PASS（7.351秒），涵盖六主题/尺寸预览、保存重开、取消/迟到/中断、P4→P5、undo失效、自然none及双桥流式取消。仅WavePlayer替身。最终对应lead-backend/p5-real-integration-r2.py、lead-backend/tests/p5-real-integration-evidence.json及p5-real-r2.log；旧frontend证据保留作为历史，不冒充最终结论。
 - git diff --check：实现中持续PASS，冻结前和独立验收仍须检查。
 
 ## 真实音乐、锁与来源对照材料
@@ -89,3 +89,9 @@ P6建议：lead负责消费匹配版本的READY Plan、CONTENT_READY全集合和
 ## 独立实现检查
 
 实施提交冻结后由现有verifier检查集成目录。验收RUN_ID同文首、TASK_ID=P5，实施ROUND从1起，每轮最多5轮。冻结HEAD、全部已跟踪/未跟踪源码测试指纹、实际pane输出、独立review和前后指纹保存在仓库外RUN_DIR的P5-Rn-freeze.json、verifier-P5-Rn-output.txt、verifier/tests/P5-Rn-review.json及最终P5-final-receipt.json。本文件冻结时不预先声明实现PASS；后续结果仅在这些运行记录和交付汇报登记，避免记录变化破坏受检指纹。契约PASS不代替实施PASS；未验平台与听感项目不因PASS自动关闭。
+
+### 实施 ROUND1 FAIL 和修复
+
+受检HEAD=fa5ffb7c5de60756716726d1d4032ca279ce9ad7，192文件前后指纹e94532f85d0a81d21914f7ae905977146618364336909c3ba969387c9bb33b7e，实际pane/review/lead重算匹配，检查期间无修改。独立专项40、后端476、完整717和前端检查均PASS，另完成禁用全部算法的纯恢复及13组音乐认证。明确缺陷P5-R1-F1：合法历史自动桥当前实际velocity=100、历史记录velocity=80，但pitch/start/duration/身份完全不变，继承认证却从旧记录重建预期音符，误拒绝整个none计划。
+
+修复：历史记录和锁完全保留，独立认证原记录与结构保护后，再认证当前实际发声结构；当前合法力度用于实际Result.notes和新包装指纹，不把旧力度误当成不许变化的旋律结构。原计划类型/版本、唯一记录及保护映射同时严格匹配。新增none/selected×80/100四子场景，实际生成READY，非法音高/起点/时值重新hash仍拒绝，禁用算法后保存恢复通过；不放宽保护或旧格式校验。复制verifier最小反例到lead隔离目录重跑，两种力度均ACCEPTED/READY，旧记录和锁未改；原verifier证据不覆盖。补正双桥Tk材料并实测通过，未把测试输入差异当成产品算法缺陷。后续复验轮次为2/5，未重置计数。
