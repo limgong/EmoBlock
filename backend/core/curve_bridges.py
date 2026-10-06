@@ -230,10 +230,14 @@ def validate_proposal(request, proposal):
     for w in windows.values():
         m.shape(w, 'id start_tick end_tick placement_ids context emotion_segments blank_mask')
         m.range_check({k: w[k] for k in ('start_tick','end_tick')}, total)
+        if w['end_tick']-w['start_tick'] > request['parameters']['max_window_blocks']*m.BAR:
+            m.reject('桥窗口超出本次范围预算。','INVALID_PARAMETERS')
         if not any(r['start_tick'] <= w['start_tick'] and w['end_tick'] <= r['end_tick'] for r in request['resolved_ranges']):
             m.reject('桥窗口跨越未解决空缺。', 'TARGET_GAPS_UNRESOLVED')
         if any(m.intersects(w, r) for r in request['protection_summary']['ranges']):
             m.reject('桥窗口侵入记忆、主题、手工或既有桥保护。', 'PROTECTION_CONFLICT')
+        if any(m.intersects(w,support(n)) for p in request['base_project']['protections'] for n in p['notes']):
+            m.reject('桥窗口侵入保护音符的完整支撑。','PROTECTION_CONFLICT')
         if any(m.intersects(w, other) for other in windows.values() if other['id'] != w['id']):
             m.reject('桥窗口互相覆盖。', 'PROTECTION_CONFLICT')
         for n in parents.values():
@@ -404,8 +408,10 @@ def joint_endpoints(plan, window):
 def segment_protection_ranges(request, plan, window, segment, base):
     regions=[dict(start_tick=a,end_tick=b) for a,b in memory.protected_ranges(request['base_project']['protections'])
              if m.intersects(dict(start_tick=a,end_tick=b),window)]
-    for r in window['emotion_segments']:
-        if r!=segment: regions.append({k:r[k] for k in ('start_tick','end_tick')})
+    if window['start_tick']<segment['start_tick']:
+        regions.append(dict(start_tick=window['start_tick'],end_tick=segment['start_tick']))
+    if segment['end_tick']<window['end_tick']:
+        regions.append(dict(start_tick=segment['end_tick'],end_tick=window['end_tick']))
     regions += copy.deepcopy(window['blank_mask'])
     for _,ep in joint_endpoints(plan,window):
         if ep: regions.append(support(ep))
@@ -431,7 +437,10 @@ def _emotion_result(request, plan, window, result):
                      protections=[dict(kind='manual',start_tick=r['start_tick'],end_tick=r['end_tick']) for r in ranges])
         placement=dict(id=window['id'],base_snapshot=base,start_tick=window['start_tick'],length_ticks=base['length_ticks'],emotion=entry['emotion'])
         variant=entry['variant']; m.integer(entry['seed'],0,2**32-1)
-        if variant.get('generation',{}).get('seed')!=entry['seed']: m.reject('桥情绪种子记录不匹配。','INVALID_BRIDGE')
+        seed=int(m.digest('emoblocks.bridge-emotion-seed.v1',dict(music_seed=base['generation']['seed'],
+                 range=entry['range'],emotion=entry['emotion']))[:8],16)
+        if entry['seed']!=seed or variant.get('generation',{}).get('seed')!=entry['seed']:
+            m.reject('桥情绪种子记录不匹配。','INVALID_BRIDGE')
         completion._variant_check(context,placement,variant,allow_calm_snapshot=True)
         notes=m.indexed(variant['notes'])
         for n in base['notes']:
@@ -501,11 +510,23 @@ def validate_result(request, plan, result):
     required={'method','parameters','seed','rng_version','algorithm_version','input_fingerprint','input_material_ids','base_notes','key_context','operations'}
     if not isinstance(gen,dict) or not required<=set(gen) or gen['method']!='bridge_phrase' or gen['algorithm_version']!=ALGORITHM:
         m.reject('基础桥缺少真实作曲记录。','INVALID_BRIDGE')
-    if gen['parameters'].get('target_ticks')!=base['length_ticks'] or gen['seed']!=request['seed'] or gen['key_context']!=window['context']['key_context']:
+    musical_joints=[dict(tick=j['tick'],relation=j['relation'],left_endpoint=j['left_endpoint'],right_endpoint=j['right_endpoint'])
+                    for j in plan['joint_boundary_conditions'] if window['id'] in (j['left_bridge_id'],j['right_bridge_id'])]
+    musical_joints.sort(key=m.canonical)
+    seed=int(m.digest('emoblocks.bridge-music-seed.v1',dict(base_fingerprint=request['base_fingerprint'],seed=request['seed'],
+             range=result['range'],joints=musical_joints))[:8],16)
+    if gen['parameters'].get('target_ticks')!=base['length_ticks'] or gen['seed']!=seed or gen['key_context']!=window['context']['key_context']:
         m.reject('桥作曲参数、种子或调性与计划不匹配。','INVALID_BRIDGE')
     m.ident(gen['input_fingerprint']);m.ident(gen['rng_version'])
     parents=m.indexed(request['base_notes'])
     motifs=[parents[n] for n in window['context']['motif_note_ids']]
+    endpoints=[None,None]
+    for which,ep in joint_endpoints(plan,window):endpoints[0 if which=='first' else 1]=ep
+    compose_input=dict(base_fingerprint=request['base_fingerprint'],range=result['range'],motif=motifs,
+                       key=gen['key_context'],blank_mask=window['blank_mask'],endpoints=tuple(endpoints),
+                       seed=seed,algorithm_version=ALGORITHM)
+    if gen['input_fingerprint']!=m.digest('emoblocks.bridge-compose-input.v1',compose_input):
+        m.reject('桥作曲输入指纹不匹配实际音乐上下文。','INVALID_BRIDGE')
     if gen['base_notes']!=motifs or result['operations']!=gen['operations'] or len(result['operations'])!=len(base['notes']):
         m.reject('桥作曲账本必须回指实际动机父快照。','INVALID_BRIDGE')
     material_ids=set()
@@ -521,7 +542,14 @@ def validate_result(request, plan, result):
                 or any(op[k]!=n[k] for k in ('start_tick','duration_tick'))
                 or n['origin']!=parent['origin'] or n['lineage']!=list(dict.fromkeys(parent['lineage']+[parent['id']])) or n['slice'] is not None):
             m.reject('桥实际音高时间来源与具体父音符账本不符。','INVALID_BRIDGE')
-    if set(gen['input_material_ids'])!=material_ids: m.reject('桥生成素材来源集合错误。','INVALID_BRIDGE')
+    captured={parent_ref(request,n['id'])['material_snapshot_id'] for n in motifs}
+    if set(gen['input_material_ids'])!=captured: m.reject('桥生成素材来源集合错误。','INVALID_BRIDGE')
+    placements=m.indexed(request['base_project']['placements']);snapshots={}
+    for n in motifs:
+        ref=parent_ref(request,n['id']);place=placements[ref['placement_id']]
+        snapshots[place['id']]=place['emotion_variant'] or place['base_snapshot']
+    if base['provenance'].get('parent_snapshots')!=snapshots or final['provenance']!=base['provenance']:
+        m.reject('桥来源快照不是实际动机放置。','INVALID_BRIDGE')
     _emotion_result(request,plan,window,result); _children(final,result['children'],source_index)
     notes=ordered([dict(n,id=window['id']+':'+n['id'],start_tick=n['start_tick']+window['start_tick']) for n in final['notes']])
     if result['notes']!=notes: m.reject('桥绝对音符与真实母句不符。','INVALID_BRIDGE')
