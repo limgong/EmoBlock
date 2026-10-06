@@ -268,6 +268,49 @@ class CandidateTests(unittest.TestCase):
 
 
 class StagingTests(unittest.TestCase):
+    def test_new_composed_notes_keep_specific_parent_origin_in_prepare_and_restore(self):
+        import curve_completion
+        p=fixture().project
+        alternative=dict(id='S2',label='另一合法来源',length_ticks=240,
+            notes=[dict(copy.deepcopy(p['sources'][0]['notes'][0]),id='alternate',duration_tick=240,
+                        origin=dict(source_id='S2',track_id='t2',source_note_id='alternate'))],provenance={})
+        p=m.edit(p,'add_source',source=alternative)
+        ctrl=w.Controller(p);ctrl.session.mark_saved();req=c.make_request(p,c.gap_items(p)[0]['id'])
+        raw_result=curve_completion.propose(req)
+        source_proposal=next(v for v in raw_result['proposals'] if any(s['material']['generation'] for s in v['placements']))
+        expected=copy.deepcopy(next(s for s in source_proposal['placements'] if s['material']['generation'])['material']['notes'][0]['origin'])
+        self.assertIsNotNone(expected)
+        cases=[(None,False),(alternative['notes'][0]['origin'],False),(dict(expected,track_id='wrong-track'),False),(expected,True)]
+        for wrong, corrupt_lineage in cases:
+            with self.subTest(origin=wrong,lineage=corrupt_lineage),tempfile.TemporaryDirectory() as tmp:
+                job=ctrl.capture_completion(ctrl.gap_items()[0]['id']);request=job['request']
+                forged=copy.deepcopy(source_proposal)
+                selection=next(s for s in forged['placements'] if s['material']['generation'])
+                selection['material']['notes'][0]['origin']=copy.deepcopy(wrong)
+                if corrupt_lineage:selection['material']['notes'][0]['lineage'].append('invented-ancestor')
+                with patch.object(curve_completion,'propose',return_value=raw([forged])):
+                    failed=c.prepare_completion(request)
+                self.assertEqual(failed['status'],'FAILED');self.assertFalse(failed['candidates'])
+                self.assertTrue(ctrl.finish_completion(job['token'],failed));self.assertEqual(ctrl.completion_state()['status'],'FAILED')
+                self.assertEqual(ctrl.project,p);self.assertTrue(ctrl.state()['is_saved'])
+                saved=ctrl.save_snapshot(Path(tmp)/'failed.json');self.assertEqual(store.load(saved)['bundle']['project'],p)
+                # Emulate the former missing gate to create a corrupt persisted
+                # fixture. Only this test's bypass constructs it; real storage
+                # and restore below must independently reject it.
+                with patch.object(c,'_material'):
+                    malformed=c._candidate(request,forged)
+                with self.assertRaises(m.ProjectError):c.validate_candidate(request,malformed)
+                bad_bundle=store.new_bundle(p)
+                bad_bundle['snapshots']=[dict(id=request['snapshot_id'],spec_rev=m.SPEC_REV,contract_rev=p['contract_rev'],
+                    content_fingerprint=m.fingerprint(p),project=copy.deepcopy(p))]
+                invalid=c.outcome(request,'INSUFFICIENT',[malformed],raw([forged])['search'],shortage=[c.error('TEST_FIXTURE','损坏测试夹具')])
+                bad_bundle['attempts']=[dict(id=request['request_id'],snapshot_id=request['snapshot_id'],input_fingerprint=request['input_fingerprint'],
+                    state='READY',records=[],protections=[],staged_materials=[],error=None,
+                    completion=dict(schema='emoblocks.completion-attempt.v1',spec_rev=m.SPEC_REV,contract_rev=c.REV,request=request,outcome=invalid))]
+                with self.assertRaises(m.ProjectError):store.validate_bundle(bad_bundle)
+                broken=Path(tmp)/'corrupt.json';broken.write_text(json.dumps(bad_bundle))
+                with self.assertRaises(m.ProjectError):store.load(broken)
+
     def test_success_cancel_repeat_late_and_failure_no_current_state_change(self):
         ctrl=fixture();ctrl.session.mark_saved();before=ctrl.project;undo=ctrl.state()['can_undo']
         job=ctrl.capture_completion(ctrl.gap_items()[0]['id']);req=job['request']

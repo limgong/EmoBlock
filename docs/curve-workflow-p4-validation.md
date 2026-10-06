@@ -91,3 +91,15 @@ provenance改为JSON对象，placements保存每目标素材来源与生成记�
 第二轮证据以`lead-backend/tests/P4-music-R2/P4-real-smoke.json`、`P4-R2-real-Tk.json`、`P4-R2-fixtures/`为准；第一轮原样保留用于审计。复用同一原始Project/MIDI重新生成，provenance为对象，两套实际音乐仍有上述pitch+rhythm差异，actual LMMS再次3渲染、9份字节一致副本与3次串行Mac设备流，保存重开原编辑/候选完全一致。真实算法+Facade+Tk两主题三尺寸再验通过，当前工程与播放对象不变。六个新合法样例独立重放一致，数据含1/239/240/4080和多gap/theme-c；不把旧不合规attempt伪称已经迁移通过。
 
 P4第二轮沿用原RUN_ID，ROUND递增为2；最终独立结论与前后指纹仍在仓库外记录，不因自测或修复提交预写PASS。截图、人工视觉/听感、物理鼠标/触控板及Windows实机/DPI、第三方软件交互打开仍待验。
+
+## P4实施第二轮FAIL及新音符来源闭包修复
+
+P4 ROUND2明确FAIL：HEAD=d5e085f55889cb2b98ce2858e3ae626bce09f92b，185文件前后指纹ac9a07b419eea04708ff2a318c641a2033a74e73a48bb69280fc1904e6f02691，lead独立重算一致。第一轮两问题已关闭；独立完整643/后端435/双端契约/diff与真实Tk/LMMS检查通过。新反例：completion_exact音符仍有基础ID血缘但origin被清空，完成与存储门禁错误接受。
+
+修复为逐音符绑定实际motif_cell操作记录中的具体基础父音符：来源三字段、完整派生血缘、实际pitch/start/duration与操作一一一致；已知来源不得清空、错指另一个合法来源/轨道，也不得伪造祖先。改变音高或时值仍清除旧slice，原材料和旧版本读取规则不动。生成器本身原本保留来源，本次仅加强独立完成/恢复认证，不改变音乐算法或冻结契约。
+
+新增行为在真实算法提案上模拟空来源、另一个合法Source、错误track、伪造lineage；均FAILED且无有效候选，不能READY；失败保存重开保留原编辑。模拟旧缺门禁生成损坏暂存夹具后，独立candidate验证、Bundle验证和load均拒绝，只在临时目录操作。复跑verifier原反例的lead隔离副本`P4-R3-origin-probe.json`：FAILED、0 candidates、INVALID_CANDIDATE。
+
+最新候选/算法53项专项、完整644项（85.200秒）、后端436项（2.498秒）、check_frontends及diff通过。六份R2合法样例新门禁下重放一致，R2真实音乐与attempt快照纯验证/恢复通过，故沿用实际音频材料，不以新模拟代替音频证据。仅修来源门禁，实际样例音乐与原生成器未改动。
+
+第三轮仍为同RUN_ID，ROUND=3/5，再次冻结后交独立复验；最终结论保存在仓库外，不预写通过。完成P4后仍停止，不进入P5。

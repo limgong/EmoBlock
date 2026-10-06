@@ -178,12 +178,19 @@ def _material(request, material):
     if material['phrase_id'] is not None or material['kind'] not in ('block', 'phrase'):
         m.reject('新作曲必须有独立素材身份，不能冒充旧句子块。', 'INVALID_CANDIDATE')
     base_notes = m.indexed(base['notes'])
-    for n in material['notes']:
-        if not n['lineage'] or not any(v in base_notes for v in n['lineage']):
+    operations = m.objects(generation['operations'])
+    if len(operations) != len(material['notes']):
+        m.reject('新作曲必须逐音符保留具体基础来源记录。', 'INVALID_CANDIDATE')
+    for n, operation in zip(material['notes'], operations):
+        if not isinstance(operation, dict) or operation.get('type') != 'motif_cell':
+            m.reject('新作曲音符缺少实际动机来源记录。', 'INVALID_CANDIDATE')
+        parent = base_notes.get(operation.get('source_note_id'))
+        if (parent is None or n['lineage'] != list(dict.fromkeys(parent['lineage'] + [parent['id']]))
+                or n['origin'] != parent['origin']
+                or any(operation.get(k) != n[k] for k in ('pitch', 'start_tick', 'duration_tick'))):
             m.reject('新作曲音符缺少基础动机血缘。', 'INVALID_CANDIDATE')
         if n['slice'] is not None:
-            old = next((base_notes[v] for v in n['lineage'] if v in base_notes), None)
-            if old is None or any(n[k] != old[k] for k in ('pitch', 'start_tick', 'duration_tick', 'slice')):
+            if any(n[k] != parent[k] for k in ('pitch', 'start_tick', 'duration_tick', 'slice')):
                 m.reject('变更音高或时值的新音符不能沿用旧切片。', 'INVALID_CANDIDATE')
 
 
