@@ -53,6 +53,7 @@ def make_request(project,token,selected_gap_id=None,seed=31,values=None,mode=Non
     value['request_fingerprint']=request_fingerprint(value);return value
 
 
+@final.guard
 def validate_request(request):
     m.shape(request,REQUEST_FIELDS);final.version(request,'emoblocks.recommendation-request.v1')
     selected=request['target_gaps'][0]['id'] if request['scope']=='selected' else None
@@ -295,6 +296,7 @@ def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_pro
 
 
 @m.validated_operation
+@final.guard
 def validate_outcome(request,value):
     validate_request(request);m.shape(value,OUTCOME_FIELDS);final.version(value,'emoblocks.recommendation-outcome.v1')
     if value['request_fingerprint']!=request['request_fingerprint'] or value['outcome_fingerprint']!=outcome_fingerprint(value):m.reject('完整推荐身份或内容指纹不一致。','STALE_SNAPSHOT')

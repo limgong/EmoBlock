@@ -35,7 +35,7 @@ def guard(fn):
     def wrapped(*args, **kwargs):
         try:
             with m.validation_scope() as context:
-                key=m.digest('emoblocks.final-validation-cache.v1',dict(function=fn.__name__,args=args,kwargs=kwargs)) if fn.__name__.startswith('validate_') else None
+                key=m.digest('emoblocks.final-validation-cache.v1',dict(function=fn.__module__+'.'+fn.__name__,args=args,kwargs=kwargs)) if fn.__name__.startswith('validate_') else None
                 if key is not None and key in context['final_checks']:return copy.deepcopy(context['final_checks'][key])
                 result=fn(*args, **kwargs)
                 if key is not None and len(context['final_checks'])<32:context['final_checks'][key]=copy.deepcopy(result)

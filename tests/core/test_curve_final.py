@@ -159,6 +159,18 @@ class RecommendationTransactionTests(unittest.TestCase):
         self.assertTrue(out['candidates'],out['failures']);self.assertTrue(controller.finish_recommendations(cap['token'],out))
         return controller,cap,out
 
+    def test_rehashed_stage_and_mode_bindings_cannot_borrow_another_result(self):
+        controller,cap,out=self.ready()
+        bad=copy.deepcopy(out);bad['candidates'][0]['stage_refs']['bridge_attempt_id']='borrowed-other-plan'
+        bad['outcome_fingerprint']=rec.outcome_fingerprint(bad)
+        with self.assertRaises(m.ProjectError):rec.validate_outcome(cap['request'],bad)
+        bundle=controller._current_bundle();candidate=out['candidates'][0]
+        bundle['attempts'][-1]['recommendation']['mode_bindings'][candidate['id']]['arranged']['asset_version']+=1
+        with self.assertRaises(m.ProjectError):store.validate_bundle(bundle)
+        missing=copy.deepcopy(out);row=next(r for r in missing['facts'] if r['kind']=='final_score' and r['data']['kind']=='final');row['dependencies']=row['dependencies'][:-1]
+        missing['outcome_fingerprint']=rec.outcome_fingerprint(missing)
+        with self.assertRaises(m.ProjectError):rec.validate_outcome(cap['request'],missing)
+
     def test_no_gap_full_same_audition_apply_undo_redo_and_pure_reopen(self):
         controller=complete();before=controller.project;saved=controller.state()['is_saved'];undo=copy.deepcopy(controller.session._undo)
         controller,cap,out=self.ready(controller)
