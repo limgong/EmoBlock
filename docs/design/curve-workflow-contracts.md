@@ -600,7 +600,8 @@ JointBoundary={id,left_bridge_id,right_bridge_id,tick,relation,reasons:Warning[]
 BridgePlan={schema:"emoblocks.bridge-plan.v1",spec_rev,contract_rev:p5,
  id,version,request_id,snapshot_id,input_fingerprint,base_fingerprint,
  candidate_id:ID?,request_fingerprint,decision,windows:BridgeWindow[],
- inherited_bridge_ids:ID[],reasons,assessments,joint_boundary_conditions,search,
+ inherited_bridge_ids:ID[],protection_refs:[{bridge_id,protection_id}],
+ reasons,assessments,joint_boundary_conditions,search,
  range_lock_fingerprint,plan_fingerprint}
 ```
 
@@ -739,3 +740,16 @@ lead独占新增curve_bridges.py（纯请求/计划/结果/保护认证与预览
 - 前端必要时可修改curve_completion_ui的预览互斥接线；基础/P5控件使用现有三栏内分阶段折叠显示，避免同时堆叠压缩唯一画布。1020×700仍保持画布/底部播放可达，主题及展开不写音乐工程。frontend需检查配对适配器并保留最新Mac删除键行为。
 
 以上为两个只读评审ROUND2的具体修订，未增加P6能力或音乐格式。独立verifier尚未审查；DRAFT不能作为功能开发授权。
+
+
+### 11.11 独立契约ROUND1修订：公开锁映射及计划前终态（DRAFT）
+
+**公开完整桥身份域。** 自动bridge_id就是Window.id；inherited_bridge_ids是base_project.protections中kind=bridge的owner_id，不是保护ID、素材ID或旧Plan ID。同一活动bridge owner须唯一；重复归属拒绝，不静默选择一个。BridgePlan.protection_refs精确且唯一覆盖windows[].id＋inherited_bridge_ids，shape为`{bridge_id,protection_id}`。新锁ID由lead登记事务分配并立即放入Plan映射；继承锁ID必须逐项等于原基础锁id。所有保护ID互异，自动新锁不得占用输入已有保护ID。生成器用此公开映射填Result.protection_id，不读Controller私有状态，不自行分配或猜测锁ID。
+
+纯Plan验证可仅凭Request＋Plan恢复初始保护集合：原base_project.protections完整拷贝，按Window与protection_refs构建新RANGE_LOCKED（第11.3固定字段）；再算range_lock_fingerprint。Plan/全部锁发布仍同一事务，Result与映射及真实锁完全一致。无桥Plan映射仍完整覆盖继承桥。补测公开捕获→锁定→仅用Request/Plan生成→认证往返、映射缺项/重复/额外/错锁ID、继承owner_id与旧plan_id域不混。
+
+**计划创建前失败／取消。** capture已成功但decision线程启动失败、decide抛错或锁定前取消：attempt.state=FAILED或CANCELLED，bridge.phase=BRIDGE_DECISION，bridge.plan=null，bridge.results=[]，records=[]，staged_materials=[]，protections恰等base_project原保护。必须有对应BridgeOutcome：status等于终态，request_fingerprint及base_fingerprint照原事实；plan_id/plan_version等Request预留身份，plan_fingerprint=null（唯一允许null的计划指纹情形）；results=[]、notes=null、content_fingerprint=null，protection_summary=原基础保护摘要，remaining_gaps原样、所有下游能力false，error为实际结构化错误并等attempt.error。预留身份不是Plan，不创建none或伪锁，不公布位置。
+
+已锁后的失败／取消Outcome用实际Plan指纹；保留每条已认证READY及CONTENT_READY，尚未产出项按固定Plan集合登记明确FAILED/CANCELLED事实行（material/base_material/null，notes/children=[]），注明未生成及终止原因，不造音符。终态bridge.results与outcome.results恰为完整必需集合；未验证的错误/额外回复不落库。全部已认证内容恰进入staged_materials，原锁不退级；整体终态仍无P6资格，即使刚好所有内容已READY。运行／中断可保留真实部分集合，未伪造已完成。
+
+STALE保留此前Plan/锁/结果/Outcome/error不变；决策前RUNNING重开INTERRUPTED时plan/results/outcome仍null/[]/null；决策前FAILED/CANCELLED恢复上述终态，不再生成计划。补测计划前线程异常／计算异常／取消保存重开、禁用全部生成函数、重复迟到回调不创建锁或none、旧失败记录不复活；锁后部分成功＋取消/异常仍保留真实音乐。

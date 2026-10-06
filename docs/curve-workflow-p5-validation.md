@@ -24,3 +24,8 @@ P4最终ROUND3明确PASS：HEAD=c1b148bb4bb2eb2a02461270aee26f27e841ad1d，前�
 自动测试、程序化Tk、实际LMMS渲染、设备播放、人工视觉/听感和Windows实机分别记录。P4已有真实材料和未验清单保留，不能充当P5实测。P5不开放最终应用/完整方案试听/整曲导出；验收音频仅是基础与bridge后对照。完成P5后停止不进P6。
 
 基线doctor确认Mac Python3.11/Tk9、现有LMMS和样本可用；436后端测试通过（2.239秒），这仅是P5实现前的基线检查，不是P5功能验收。
+
+
+## 契约独立ROUND1 FAIL与修订
+
+受检HEAD=f787a3ba1282b0d4f4d4922f4b4d139bc3a5ba44，186文件前后指纹6e4fdbc3b34c8a15dba6b90a0067f81fda76c679e899bae2a6784ca27a7f5ab8，现场与实际verifier输出/review核对。缺少公开bridge→protection映射，及计划创建前FAILED/CANCELLED的plan_fingerprint空值约定。第11.11补齐Plan.protection_refs、明确inherited owner身份域、初始集合重建和终态完整形状，新增往返/篡改/纯恢复验收。仍DRAFT，功能实现尚未开始；下一次独立轮次为2/5。
