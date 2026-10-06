@@ -1,9 +1,9 @@
 # 强度画布 v2 r3 公共契约草案
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p0
+CONTRACT_REV=curve-workflow-v2-r3-p23
 
-**状态：FROZEN。P0 ROUND=2 独立检查 PASS；规范已冻结，功能尚未实现。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
+**状态：p0历史正文FROZEN；第9节p23补充DRAFT待独立审查。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。本次只更新文档；以下对象、方法名、字段和错误码是候选接口，不代表现有代码能力。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。
 
 ## 1. 时间、身份、工程和快照
 
@@ -279,3 +279,107 @@ P4以后执行：总7680已有[0,1200)与[1440,3360)，真实240tick补全[1200,
 `protection_summary([]) = 2cf0a485a17a17a09bc172687a4418b1b6bb09e2acbd7ae175e5560dd98a2837`。非空测试必须验证列表换序摘要不变、力度变化不变、range/status/plan_version/pitch改变摘要变化，失败状态保锁仍与原保护摘要一致；删除/移动的旧摘要从 audit_context 重算，仅作审计。新明确none计划不删除手动保护，摘要仍包含该桥。
 
 P1补充夹具：手动桥p1/L1被 READY计划/结果引用→移动→删除→保存重开→undo/redo；活动引用全部可解析，失效历史通过audit_context解析，内容/版本可追溯；旧token依然拒绝。
+
+## 9. P2–P3 补充契约（优先于第8节的阶段边界与下述明确修订）
+
+SPEC_REV=curve-workflow-v2-r3
+CONTRACT_REV=curve-workflow-v2-r3-p23
+CONTRACT_STATUS=FROZEN
+
+P0规范正文作为历史冻结版本保留。此节是两角色只读评审后的补充草案，独立审查PASS后才FROZEN；不恢复ABCD族、不实施P4补全或bridge/连接算法。P2独立PASS后才能实现P3。
+
+### 9.1 版本与时间、兼容
+
+新工程仍为 assembly.v2，新的 contract_rev 为 p23；Project/Bundle/InputSnapshot 接受 p0 或 p23，两者必须按自己的数据版本验证，Bundle头与当前Project版本一致、Snapshot头与其Project一致。打开p0 v2只读取，保留原指纹、保护、记录及saved状态，不批量升级；首次成功音乐编辑在同一事务将**当前Project**标为p23，产生dirty/undo，撤销可回p0。旧输入快照/历史保留原版本、原指纹；运行 RequestToken.contract_rev 固定为p23，SPEC及会话/请求/修订门禁仍匹配。仅打开、保存、查询、主题、滚动不升级、不生成、不重算。v1及其他旧格式继续legacy_readonly，不做完整编辑迁移。
+
+用户落点吸附：`floor((tick+240)/480)*480`，正数半拍向上；保留鼠标抓取偏移，再转canvasx坐标。越界拒绝，不用clamp把越界拖入偷偷移动到边缘。已有精确tick绘制与点击不量化。PPQ=480，四拍1920，总长由grid_count决定，BPM内部120，无速度输入。
+
+### 9.2 算法与批次、来源
+
+纯算法模块 `curve_melody`：
+
+- `prepare_source(source, seed=31) -> {materials:Material[], candidates:ID[], warnings:Warning[]}`。materials是**完整待加入集合**，包括原始块/启发式句及其子块、有效默认新候选和其子块；candidates只是materials中最多3个候选父素材ID，不再重复提交。固定顺序variant/answer/rhythm，失败或音乐重复不凑数。
+- `derive(material, method, seed=31, parameters=None) -> Material`。仅variant/answer/counter/rhythm/develop/density；输入不变、固定总长、单旋律。没有实际差异返回NO_VALID_VARIATION。counter是替换素材，不叠声部。组合派生为新phrase（children=[]），原组合不变；来源元数据保留原组件快照/occurrence路径，不把已改音符称为原组件未改的拼接。
+- `split_phrase(phrase) -> Material[]`：父句完整音符不变，子块按父句相对四拍切分，短尾保留；子块phrase_id指向实际父句，provenance.relative_start_tick及source_start_tick明确。新父句与全部子块一次加入；独立派生子块不继续指向未修改的旧父句，其原归属入provenance。
+- `music_signature(material) -> str`：以实际pitch/start_tick/duration_tick及实际length去重，排除ID/label/seed/velocity。
+
+Source由lead的`prepare_import(path,track=0,seed=31)`规范化，保留开头留白，长度为最后实际note end（至少1tick），不沿用旧去头/截音逻辑。读取MIDI/MMP的固定4/4音符，PPQ转换沿现解析器round并记录政策；不执行原插件/效果。单旋律轨默认拒绝同时起音或重叠，不隐式提取声部；无音符/未知格式结构化失败。provenance至少 `{path,file_fingerprint,track_id,original_bpm,ppq_policy,key_context}`，key_context含tonic/mode/confidence/method；调性推断记录，不默认为C。原Source.note.id稳定且origin引用Source/track/note。
+
+原始块按来源坐标四拍切，纯休止块可以保留但不当生成基准；启发式分句边界不得切穿持续音，保存segmentation_version/parameters/reasons；无法确定有音符完整句则默认基准为首个有音符块。phrase.children=[]，通过独立块phrase_id表达句归属；新音符有新id、origin保留血缘、lineage保存派生链，真正切片有parent_emission_id/offset/parent_duration。变化过的音符不能沿用旧发声的slice；新句完成后再切分。
+
+Generation至少 `{method,parameters,seed,rng_version,algorithm_version,input_fingerprint,input_material_ids,base_notes,key_context,operations}`；provenance保留完整来源及组合路径。Warning为 `{code:str,message:str,details:JSON-object}`。错误为ProjectError，至少 EMPTY_MATERIAL/UNSUPPORTED_METHOD/INVALID_PARAMETERS/NO_VALID_VARIATION/PROTECTION_CONFLICT，失败不入库。
+
+统一批次 `Batch={sources:Source[], materials:Material[], warnings:Warning[]}`；生成和组合sources=[]。每个文件独立一个导入批次，UI一次选择一个文件，失败不半导入。批次prepare不改变工程或编号；apply校验完整来源/phrase引用后一次commit、一次undo。显示编号由服务在接受时分配并持久化label_counters；取消/过期不消耗编号；已有编号不重排。
+
+### 9.3 lead Facade 与提交权限
+
+模块 `curve_workflow` 提供：
+
+```text
+prepare_import(path, track=0, seed=31) -> Batch
+prepare_generation(project, material_id, method, seed=31, parameters=None) -> Batch
+combine(project, inputs, label="组合素材") -> Material
+# inputs为有序material ID或完整快照，允许重复、嵌套；草稿仅内存，确认才Batch apply
+render_audition(snapshot, bpm=120) -> AuditionAsset
+Controller(project=None)
+  state() -> {access_mode,project|null,capabilities,is_saved,saved_path|null,
+              can_undo,can_redo,memory_info|null}
+  new(grid_count=8); load(path); save_snapshot(path=None)->Path
+  autosave_if_needed()->Path|null（关闭前复用；失败不关闭）
+  edit(action,**args)->bool; undo()->bool; redo()->bool
+  capture_job(kind,target=None)->{token,snapshot:{project:Project|null,target:JSON|null}}
+  accepts(token)->bool; cancel_job(token)->bool; finish_job(token)->bool
+  apply_batch(batch,token)->{changed,added_source_ids,added_material_ids}
+  history_items()->HistoryItem[]
+  export_history(result_id,format,destination)->Path
+```
+
+kind为IMPORT/DERIVE/AUDITION/COMBINE。target描述 `{kind:source|material|placement|draft,id?,snapshot?}`，捕获时解析成不可变Source/Material；IMPORT可为null；DERIVE的project来自同次快照。旧只读仅允许历史播放和导出；不能通过Facade.edit/apply_batch绕过。前端不读Session私有字段、不解析旧工程、不构造任意新Project。
+
+`ProjectSession.commit(project,token=None)->bool`限素材批次附加：来源/库只追加完整快照及显示编号，已有项不可改/删；几何、强度、留白、基础快照、保护和设置不变，Record只按既定失效审计规则更新。token先匹配，完整校验后一次提交，成功或noop消耗token，失败不部分写；新工程身份不能在commit中偷换。其他编辑走Session.edit的正式操作，不用commit任意替换受保护工程。
+
+Controller保存整个Bundle，历史快照/attempt原样带上；save成功后才mark_saved。load先完整验证目标，再自动保存有实际未保存工作的当前工程，成功后才切换；new/close同样保护，保存失败保留工程/历史/请求。文件选择取消不调用load、不改变播放。新Session切换使旧token失效；新建空工程不声称自动保存。旧p0 v2首次编辑升级规则见9.1，p0输入快照不重写。
+
+HistoryItem=`{id,label,generated_at,body_seconds,audio_seconds,availability:{wav,mid,mmp},paths:{wav,mid,mmp},edit_fingerprint|null}`，服务统一解析旧report，缺失文件保留记录；audio_seconds优先实际WAV头，主体与尾音分开。选择不播放，导出绑定显式id/格式/路径，点击时逐文件再检查。backend纯文件安全模块复用现atomic_export语义，不依赖frontend：保护源文件、临时写+fsync+原子替换、失败保旧目标。旧shared导出接口可重导出同一实现，调用契约不变。
+
+### 9.4 独立试听与播放器、前端归属
+
+AuditionAsset=`{wav_path,midi_path,mmp_path,body_ticks,body_seconds,audio_seconds,fingerprint,renderer_version}`。snapshot为Source、Material、放置有效变体或未提交组合草稿（均相对起点）；单旋律、中性统一音色、保留实际力度，不补休止。指纹域`emoblocks.audition.v1`覆盖pitch/start/duration/velocity、length_ticks、bpm、neutral-tone策略及renderer_version，不含UI选中或随机ID。只用实际LMMS连续渲染，不走旧planner，不把素材试听登记为成品。现MMP不能无损表达的tick明确OUTPUT_TIME_UNREPRESENTABLE，不静默量化；主体时长与含尾音实WAV时长分别返回。
+
+后台prepare只缓存ready资产，**不调用播放器、不自动切换播放对象**；用户明确点击播放已就绪对象才开始。素材、来源、句、草稿、情绪变体、历史都用一个WavePlayer（play/status/pause/resume/close契约不变）。播放对象、当前选择、历史选择、导出绑定分别管理；过期或取消prepare返回不应用，不覆盖新ready状态，不抢播。
+
+新公开入口为`CurveApplication(root,controller=None)`，shared CurvePage/Canvas/Cards/Theme模块；lead修改shared/app.py入口，旧UnifiedApp/StoryPage保留测试但不实例化为隐藏编辑器。撤下精细入口。左来源可折叠、中素材卡纵滚/等大、右唯一Canvas横滚、底部播放器常驻。P2只显示强度线及位置，P3才开放控制点/手绘/行内情绪与记忆。
+
+Canvas绘制/命中/拖动同一scale及canvasx/canvasy；跨栏用x_root/y_root转换，拖动阈值后才抓取，保留偏移、边缘滚动后重算落点，Esc取消、不半提交。卡左/右组合顺序→行内草稿确认或取消；有显式试听。主要状态与错误常驻可读，不用颜色单独表达；长名称有点击全文入口。两主题用语义角色，dark严格灰阶容器+1px边框+最大12px圆角、蓝仅交互标识、情绪色为数据例外；light柔和浅底/圆角/软层次。无真实模糊、无装饰动画。1020×700优先折叠来源，较大窗口复测。
+
+### 9.5 P3 记忆、跨界、情绪与事务
+
+lead的`curve_memory.memory_info(project)`返回 `{peak_tick,lookup_tick,state:BOUND|PENDING_GAP|PRESERVE_BLANK,placement_id|null,component_path,range|null,protection_id|null}`。无过冲曲线最大值在控制点取得；同峰最早；内边界半开归右。peak=total_ticks时lookup=total_ticks-1，落在末音乐片段则BOUND，末空缺则PENDING_GAP，末主动留白则PRESERVE_BLANK；**不越过尾空缺/留白回搜较早音乐**。
+
+所选四拍范围相对素材/最深组合组件起点计算，短尾裁至实际length；不用全局四拍线代替。组合component_path使用occurrence_id；整句不用生成细分当独立外框。素材内部休止仍BOUND，不是空缺；完整休止子范围可有空memory.notes，但必须独立核验确为该base相交音符的空集合，不靠blank_mask冒充用户主动留白。
+
+自动记忆保护使用id/owner_id=`memory:<project_id>`、kind=memory、origin=automatic，唯一受管条目；BOUND保存为CONTENT_READY并持久化。PENDING/BLANK没有音乐保护条目，状态由持久化布局/曲线/留白确定，保存重开必须一致，不是UI私有标记。输入域`emoblocks.memory-input.v1`投影 `{total_ticks,placements:[id,base_snapshot,start_tick,length_ticks]按id排序,intensity_points,blank_regions}`，排除派生memory、emotion_variant、运行ID，禁止自引用。
+
+**仅memory例外**：notes取对应placement.base_snapshot中与名义四拍range相交的完整音符，转绝对起点和placement发声ID；允许支撑超出名义range但必须在工程内、与range相交且与base独立核验一致。不得裁onset/duration。有效不可写域包括名义range及完整notes支撑，后续连接规划/情绪/最终校验都考虑；bridge/theme/manual仍保持P0严格包含规则。结构指纹排除velocity，保留身份/来源/重复数量。保护所选基础素材，不恢复原始Source。
+
+算法`curve_emotion.emotion_variant(base,emotion,intensity_points,start_tick,protected_notes,protected_ranges=None,seed=31,parameters=None)->Material`。protected_notes是完整绝对音符，id使用**该base的Note.id**（lead移除placement前缀后传入）；结果相对素材，保护音符保留base身份、pitch/start/duration及血缘，力度可独立变化。从base重新计算，固定length，组合变体可转phrase并在generation保存原组件映射；placement.base_snapshot原组合不变。轻度旋律变化和实质编配提示保存于generation.operations/accompaniment_hints；只有音量变化不算旋律处理，素材不足/全保护不能合法变化时明确提示，不破保护强行变化。不实现整曲伴奏或bridge情绪算法。变体ID、音符及元数据按输入/seed确定，不制造重算漂移。
+
+正式受管重算接口 `recompute(before,edited)->{automatic_memory:Protection|null,emotion_variants:{placement_id:Material|null}}`，仅由lead服务注入Session/curve_project的可选recompute；前端不传函数。事务：校验原工程→独立草稿编辑→检查其他固定保护与范围→保存失效前审计→重算新自动memory→从每个base重算相应情绪变体→完整校验保护/变体/引用→一次提交/undo。仅在明确有受管重算时，旧自动memory允许转移；没有回调仍执行P1拒绝策略。回调窄返回，不能改变来源、库、base、位置、曲线、留白、bridge或其他保护；抛错/错误返回则全事务原样。桥数据保留原先严格门禁，既有合法手动移动删除仍由正式编辑事务更新计划版本，不借记忆重算删桥或解锁失效自动桥。
+
+P3轻改是有界纯规则，可以同步在正式编辑事务执行；异步试听及素材生成仍受完整token门禁，快速情绪变化立即失效旧任务。若引入异步情绪prepare也须同一token/基础快照与窄结果原子门禁，不因旧任务迟到覆盖较新选择。undo/redo恢复已存派生快照，不重新随机。
+
+手绘规范化由lead服务`curve_memory.normalize_trace(points,total_ticks,tolerance=.02)->Point[]`：points为tick/level，先校验有限范围、按tick排序/同tick最后值，补两端，保留局部峰谷和方向反转；允许删除接近直线误差内的中间点，不能删峰谷或生成越界点。前端拖动只本地预览，释放一次set_intensity提交；Esc丢弃草稿，noop不改redo。命中优先级：显式控件→控制点→积木→画布；手绘模式只处理画布，不意外移动积木；跨栏素材拖入优先于手绘。
+
+### 9.6 文件所有权与独立验收
+
+lead独占curve_project/curve_session/curve_store/curve_workflow/curve_memory/curve_audition、story_engine主流程、shared/app入口、纯文件导出模块及shared导出重导出、集成与这些服务测试。算法仅curve_melody.py/curve_emotion.py及独立测试与仓库外音乐夹具；不改公共schema或UI。前端仅shared/curve_ui.py、curve_canvas.py、curve_cards.py、curve_theme.py、必要配对适配器与独立UI测试；不改backend/旧UnifiedApp/story_engine/入口。verifier只读冻结集成目录。
+
+P2验收：4080tick短尾+跨1920长音、启发式句/子块独立、默认3规则和六方法重放/去重/失败、嵌套/重复组合取消确认、卡左右顺序、真实窗口拖放/首尾滚动、拒绝重叠/越界/缩短/取消、版本兼容/原子批次/保存undo、selection≠play、后台ready不抢播、旧只读历史逐格式导出。P2通过才P3。
+
+P3验收：手绘峰谷/一次undo/Esc、缩放滚动后的真实坐标、相对四拍/嵌套组件/短尾/并列峰/内部边界/终点音乐与gap/blank、跨界完整音符和全休止片段、所选新旋律基础保护、重复使用独立、情绪A→B→A不累计、memory重定位与变体重算确定、故障不改saved/history、旧/取消/重复响应拒绝、bridge失败锁保留。固定素材保存原始/新旋律/情绪音符对照及实际LMMS WAV；设备播放串行，未人工听感/实机不冒称完成。每阶段check_frontends/full/backend/diff检查及独立冻结最多5轮，P3结束停止、不进P4。
+
+### 9.7 补充R1反例修订：休止与不可写域
+
+`curve_emotion.emotion_variant`的protected_ranges参数为不可变的绝对半开Range[]，即所有适用保护的名义范围及完整受保护音符支撑，可能在当前素材之外但算法只处理素材内相交部分。未提供等同空列表，不等同“从notes猜范围”。lead始终显式传入所有适用的保护范围（含全休止memory）；算法不能增加/移动/延长未保护音符使其完整支撑进入这些范围，不能填入受保护休止。已保护音符仅允许力度/音色提示，不改身份/pitch/start/duration。
+
+lead事务独立按保护名义range与完整音符支持读取实际变体，校验音符集合和结构，不能只信算法自报遵守保护。全休止memory的实际相交主旋律必须仍为空；区外轻改可以合法发生，整段全部保护而无法旋律变化时如实提示。新增验收：基础phrase长3840，前四拍notes=[]，后四拍有旋律；保护[0,1920)且protected_notes=[]，在480增音拒绝，而后半段合法局部变化通过。bridge、theme、manual的不可写范围也继续按冻结记录传入，不放宽门禁。
