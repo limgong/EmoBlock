@@ -1,7 +1,7 @@
 # 强度画布 v2 r3 公共契约草案
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p7
+CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1
 
 **状态：p0历史正文FROZEN；第9节p23 FROZEN (P23-CONTRACT ROUND2 PASS)，第10节p4 FROZEN (P4-CONTRACT ROUND1 PASS)；第11节p5 FROZEN (P5-CONTRACT ROUND2 PASS)；第12节p6 FROZEN (P6-CONTRACT ROUND1 PASS)，当前实施至P6。** 产品依据为 [r3完整规格](curve-workflow-v2.md)。公共接口不依赖 Tk，旧规划不得用来绕过 r3 门禁。历史正文所述阶段能力以相应独立验收为准。
 
@@ -1130,3 +1130,15 @@ sources为上述全部逻辑notes、父notes及material_snapshots的notes/childr
 ```
 
 实现专项必须机械复核这两个常量；并在真正P4/P5/P6实际最终请求上模拟清空origin、借另一个合法Source、伪造lineage/parent_ref/旧accepted_score来源，重新计算source/score/asset元数据hash后仍独立拒绝。保存重开重算同来源指纹且不调用任何生成/渲染。scope=LOCAL与FULL、comparison和final各按自身真实父闭包认证，不把比较谱要求含本轮自动桥。
+
+### 13.18 运行时来源闭包补充（DRAFT）
+
+服务契约修订 `CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1` 是第13节已冻结音乐对象之上的可加运行时捕获修订；第13.1–13.17及其对象schema/数据头 `contract_rev=curve-workflow-v2-r3-p7` 保持原版，P4/P5/P6对象及旧Project/Bundle也保持所属版本，不迁移持久化数据。各新任务使用runtime1服务修订，token和Boundary/FinalScore/AudioAsset仍使用已冻结p7数据版本。第13.12 capture返回形状由本节明确扩充，旧调用只读取原三个字段仍兼容。
+
+`capture_recommendations(selected_gap_id=None,seed=31,parameters=None,mode=None)` 返回精确 `{token,request,attempt_id,source_facts}`；source_facts是与本次input_project同时捕获的当前Bundle.final_facts有限深复制（旧v1输入为[]），在主线程完成。它只用于后台 `prepare_recommendations(...,source_facts=...)` 的运行时闭包参数，不写入RecommendationRequest、每个Project或嵌套历史快照。worker不得自行读取可变Controller/当前工程代替该捕获。
+
+后台私有Controller建立后、任何阶段捕获前先登记并纯校验该原闭包。不能用旧接受音符去构造没有依赖registry的阶段Bundle；完整旧Score/Boundary请求与计划的原生引用必须解析。只需要源事实的有限引用闭包，最多沿用2048条/32层/128MiB预算，不读取原导入文件、不生成或渲染来补事实。闭包缺失、篡改、跨工程或版本不匹配中止本次请求，不改当前编辑、保护与undo；输入随后变化由原Token/修订/seq门禁拒绝。
+
+源读取文件范围补充：lead可在 `curve_melody._bridge_parent_table` 与其 parent_snapshots 键解析处加入p7 accepted_score源适配，保存真实旧FinalScore叶快照和Ref；只改源读取、父身份、真实现有快照解析，不改变旧P5构作音乐规则、算法版本或旧输入验证。算法worker仍仅curve_boundary_music与对应测试，公共入口/源适配由lead独占。
+
+验收：已接受p7工程→新推荐捕获→私有P4/5/6→最终score，保原真实音乐/桥锁与完整来源；捕获后立即编辑、撤销同内容与取消均不能用旧闭包绕过会话门禁；缺闭包/借另工程合法闭包/伪造旧Score重新计算hash均拒绝；保存重开不调用生成/渲染。新项目的source_facts=[]兼容原正常路径。只读评审与独立PASS后才能将本节标为FROZEN并实施新增捕获字段。
