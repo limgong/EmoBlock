@@ -977,7 +977,7 @@ lead：curve_final.py、curve_recommendations.py、curve_final_render.py、curve
 
 统一Ref=`{id,version,fingerprint}`。所有schema前缀emoblocks、版本v1；本节对象spec_rev=r3/contract_rev=p7。所有Note沿用P3八字段，音高12–119，不夹紧；时间精确tick。字符串ID不能为空，数字/预算禁止bool。
 
-BoundaryRequest精确字段：`schema spec_rev contract_rev token input_contract_rev input_fingerprint candidate_ref connection_ref actual_layout layout_fingerprint protection_summary plan_id plan_version seed algorithm_version parameters`。schema=emoblocks.boundary-request.v1，token为P1八字段p7 Token，candidate_ref为P4 candidate的Ref或无gap时null。connection_ref精确`{attempt_id,request,plan,results,outcome}`，全部P6对象独立认证；input_project、P5完整桥集合和目标从实际P6请求追溯，不能相信caller布局。新Boundary request不得以STALE父授予能力。algorithm_version=curve-boundary-v1。
+BoundaryRequest精确字段：`schema spec_rev contract_rev id token input_contract_rev input_fingerprint candidate_ref connection_ref actual_layout layout_fingerprint protection_summary plan_id plan_version seed algorithm_version parameters`。schema=emoblocks.boundary-request.v1，token为P1八字段p7 Token，candidate_ref为P4 candidate的Ref或无gap时null。connection_ref精确`{attempt_id,request,plan,results,outcome}`，全部P6对象独立认证；input_project、P5完整桥集合和目标从实际P6请求追溯，不能相信caller布局。新Boundary request不得以STALE父授予能力。algorithm_version=curve-boundary-v1。
 
 ActualLayout精确`{total_ticks,bpm,base_project,notes,segments,coverage_ranges,remaining_gaps,protections,blank_regions,emission_ledger}`。notes精确等P6已认证outcome.notes；base_project为P5 request.base_project；coverage由基础放置、主动留白与真实剩余gap推导，不用新增空notes填表。Segment=`{id,performance_id,owner_ref,start_tick,end_tick,phrase_id,component_path,emotion,key_context,intensity_start,intensity_end,kind}`；kind=placement|bridge|connection|blank。桥及连接按真实覆盖范围替换显示所有者，原排布保留，内部四拍不另切边界。ledger每实际Note一条`{note_id,parent_ref,performance_id}`，parent_ref=`{stage,owner_id,note_id,component_path,material_snapshot_id,content_fingerprint}`，stage=placement|bridge|connection|final_score；从真实P6结果与P5/放置数据逐项解析，禁止用材料/source ID冒充演奏所有者。performance_id绑定真实placement与嵌套occurrence，桥/连接绑定各自执行实例。只读阶段不改变current库或编号。
 
@@ -1107,3 +1107,26 @@ Queue envelope精确`{token,seq,kind,payload}`；kind=progress/result/error，se
 ModeOutcome/asset registration必须两个资产同candidate/mode/asset_version与各自score_ref一致；任一侧失败不发布新pair、不冒充AUDITION_READY。已有另一mode/旧同谱有效pair保留，只解释本次失败；不能回退别的候选音频当成功。mode rendering/cancel不改音乐saved/undo/选材/playing对象，只staging audit。推荐缺文件后用户可明确重试mode；不重新补全/生成/桥/连接/边界。
 
 前端可独立依冻结 DTO/Facade实现mock行为测试，但真实集成必须再用真实Controller、真实算法及LMMS验证。所有渲染与设备任务互斥串行，生成到音频/明确Play/确认/保存重开是本轮交付，不留模拟音频到P8。完成P7独立验收后停止；P8建议只供后续用户授权。
+
+
+### 13.17 独立契约R1修复：请求身份与来源闭包（DRAFT）
+
+独立R1明确FAIL F1/F2，前后200文件/HEAD/完整manifest一致；只修本节精确缺口，仍不开始产品实现，不重置计数。
+
+BoundaryRequest增加必需`id`（13.10字段列表同步），由域emoblocks.boundary-request-id.v1对精确`{recommendation_request_id:token.request_id,candidate_ref,connection_attempt_id:connection_ref.attempt_id,plan_id,plan_version}`计算；不取默认token ID、不借Plan ID。一个推荐request多candidate各有独立P6 attempt/plan，因此Request.id唯一；即使无gap candidate_ref=null，不同真实connection attempt仍区分。Ref.id即此id、version=1、fingerprint=13.15 BoundaryRequest全文摘要（含id）；stage_refs.boundary_request_id与FinalScore.boundary_request_ref及Registry.entry.id必须一致。旧Token随事实保存不重写，加载纯重算公式验证；确认新session授权不会改变已有BoundaryRequest身份。重复ID但不同数据/父/计划一律拒绝，不把两候选串到同一请求。
+
+FinalScore.source_fingerprint唯一公式：域emoblocks.final-source.v1对精确`{kind,notes,sources,parents}`的规范JSON。kind=final|comparison。notes列表元素精确`{id,origin,lineage,slice,parent_ids}`，从该Score全部逻辑notes取实际四字段（不取velocity/渲染层/path）；parent_ids按字典序去重。notes按id字典序排序，ID不可重复。对final未结构变化Note，parent_ids为同一BoundaryRequest.actual_layout原Note ID；replace/add必须从该已认证Plan Operation逐项读取真正parent_note_ids，remove不产生descriptor。对comparison各Note即已补齐真实base的Note，parent_ids为其本身；用单独从P5 request.base_project有效音乐重建的基底ledger，不误拿被本轮自动Bridge替换后的父。不同mode不改变此逻辑来源投影。
+
+parents元素精确`{note,parent_ref,material_snapshots,accepted_score_ref,accepted_source_fingerprint}`，note是实际原始父的完整P3八字段（含其velocity、来源、lineage、slice），parent_ref为13.10六字段NoteRef，必须由真Layout/base/源registry独立解析，不接收caller自填。parents按note.id排序、唯一完整覆盖notes.parent_ids，无额外或遗漏。placement的material_snapshots为该次基础快照与实际情绪变体（若有）的真实完整快照；bridge为该结果的base_material与material（继承分支只取真实现有非null快照）；connection的快照为空，其真实发声通过原P6 Result.content_fingerprint解析；final_score父快照为空，但accepted_score_ref精确旧源Score的Ref，accepted_source_fingerprint等该旧Score真实source_fingerprint。其余类型后二字段均null。material_snapshots按id排序去重，同ID不同数据拒绝，组合children与generation保持原实际快照，不压成标签。
+
+parent_ref.content_fingerprint：placement为域emoblocks.material-snapshot.v1对实际使用Snapshot全文（emotion_variant或base_snapshot）；bridge/connection用原结果content_fingerprint；final_score用旧Score.score_fingerprint。父Note必须在该具体Snapshot/Result/旧Score中按真实演奏映射解析，不能借另一合法Source或另一place的同名音符。旧accepted父由源Registry与原输入Project实际绑定授权，旧score/source摘要经其本身独立闭包验证；当前Score不得作为自身父，Registry全图无环。Ref/旧来源指纹是叶锚点，不在source投影中递归嵌套整谱/整Project。
+
+sources为上述全部逻辑notes、父notes及material_snapshots的notes/children/generation.base_notes中所有非null origin.source_id的精确闭包。每Source从该BoundaryRequest对应已认证P5 base_project.sources取真实完整`{id,label,length_ticks,notes,provenance}`，Sources按id排序，各Source.notes按(start_tick,pitch,duration_tick,id)排序；其余字典canonical排序，lineage/component_path保持语义次序。不查询原文件是否存在，不从UI/当前后来修改工程取Source。known origin三字段必须解析到具体原Note/track，不允许清空/错指另一合法来源；Parent变换血缘按原完整lineage+真父ID核对，hash不是授权。无origin的真实手工基础Note闭包Sources可空，但不能把原已知origin伪称手工清空。
+
+固定摘要向量（只证明摘要算法，不授予音乐READY）：空投影`{"kind":"final","notes":[],"sources":[],"parents":[]}` → b7e9e8d9b68a835c5828297af15ecc977f7aa8c096059a073d598e904c87fd88。非空手工来源向量如下，预期摘要 9f5f557644d0f0d7e769b47cd9eb00671af1b1de6554b096ac684878c30e4e24：
+
+```json
+{"kind":"final","notes":[{"id":"p:n","lineage":[],"origin":null,"parent_ids":["p:n"],"slice":null}],"parents":[{"accepted_score_ref":null,"accepted_source_fingerprint":null,"material_snapshots":[{"children":[],"generation":null,"id":"m","kind":"block","label":"fixed-vector","length_ticks":480,"notes":[{"duration_tick":480,"id":"n","lineage":[],"origin":null,"pitch":60,"slice":null,"start_tick":0,"velocity":80}],"phrase_id":null,"provenance":{"method":"manual-fixed-vector"}}],"note":{"duration_tick":480,"id":"p:n","lineage":[],"origin":null,"pitch":60,"slice":null,"start_tick":0,"velocity":80},"parent_ref":{"component_path":[],"content_fingerprint":"93e617d632a20c7078f33d2b870f55e2a401e904b6a2411ddc7b0d90b40dba33","material_snapshot_id":"m","note_id":"p:n","owner_id":"p","stage":"placement"}}],"sources":[]}
+```
+
+实现专项必须机械复核这两个常量；并在真正P4/P5/P6实际最终请求上模拟清空origin、借另一个合法Source、伪造lineage/parent_ref/旧accepted_score来源，重新计算source/score/asset元数据hash后仍独立拒绝。保存重开重算同来源指纹且不调用任何生成/渲染。scope=LOCAL与FULL、comparison和final各按自身真实父闭包认证，不把比较谱要求含本轮自动桥。
