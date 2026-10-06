@@ -13,6 +13,7 @@ import curve_project as model
 PPQ = 480
 BAR = 4 * PPQ
 ALGORITHM_VERSION = 'curve-melody-rules-v1'
+COUNTER_ALGORITHM_VERSION = 'curve-melody-counter-v2'
 SEGMENTATION_VERSION = 'rest-phrases-v1'
 RNG_VERSION = 'python.random-v3'
 METHODS = ('variant', 'answer', 'counter', 'rhythm', 'develop', 'density')
@@ -226,13 +227,23 @@ def _rules(notes, length, method, parameters, scale, rng):
         operations.append(dict(operation='motif-contour-answer', input_note_ids=[n['id'] for n in notes],
                                degree_shift=parameters['degree_shift']))
     elif method == 'counter':
+        articulation = []
         for i, n in enumerate(out):
             motif_note = notes[(i + 1) % len(notes)]
             n['pitch'] = _step(scale, motif_note['pitch'], parameters['degree_shift'])
             n['lineage'] = list(dict.fromkeys(n['lineage'] + [motif_note['id']]))
-            n['duration_tick'] = max(1, n['duration_tick'] * 4 // 5)
+            duration = n['duration_tick']
+            # Shorten expressible durations by whole LMMS units, not the
+            # rendered output. Preserve nonmultiple input ticks verbatim.
+            reduction = (duration // 50) * 10 if duration % 10 == 0 else 0
+            n['duration_tick'] = duration - reduction
+            articulation.append(dict(input_note_id=notes[i]['id'], original_duration_tick=duration,
+                shortened_by_tick=reduction, output_duration_tick=n['duration_tick'],
+                preserved_exact_tick=bool(duration % 10)))
         operations.append(dict(operation='replacement-motif-rotation', input_note_ids=[n['id'] for n in notes],
-                               degree_shift=parameters['degree_shift'], articulation_ratio=.8, voices=1))
+            degree_shift=parameters['degree_shift'], target_articulation_ratio=.8, voices=1,
+            rule_unit_ticks=10, duration_rule='floor-fifth-reduction-to-unit; preserve-nonmultiple-duration',
+            articulation=articulation))
     elif method == 'rhythm':
         slots = [(n['duration_tick'], (notes[i + 1]['start_tick'] if i + 1 < len(notes) else length)
                   - n['start_tick'] - n['duration_tick']) for i, n in enumerate(notes)]
@@ -326,7 +337,8 @@ def derive(material, method, seed=31, parameters=None):
     key = _key(material, notes)
     new_notes, operations = _rules(notes, material['length_ticks'], method, parameters, _scale(key), random.Random(seed))
     input_fingerprint = _id('input', material)
-    ident = _id('derived-material', [input_fingerprint, method, seed, parameters, ALGORITHM_VERSION])
+    algorithm_version = COUNTER_ALGORITHM_VERSION if method == 'counter' else ALGORITHM_VERSION
+    ident = _id('derived-material', [input_fingerprint, method, seed, parameters, algorithm_version])
     for i, note in enumerate(new_notes):
         parent = note['id']
         note.update(id=_id('derived-note', [ident, i]), slice=None,
@@ -341,7 +353,7 @@ def derive(material, method, seed=31, parameters=None):
         kind='phrase' if material['kind'] in ('phrase', 'combination') else 'block',
         length_ticks=material['length_ticks'], notes=new_notes, provenance=provenance,
         generation=dict(method=method, parameters=parameters, seed=seed, rng_version=RNG_VERSION,
-            algorithm_version=ALGORITHM_VERSION, input_fingerprint=input_fingerprint,
+            algorithm_version=algorithm_version, input_fingerprint=input_fingerprint,
             input_material_ids=[material['id']], base_notes=copy.deepcopy(material['notes']), key_context=key, operations=operations),
         phrase_id=None, children=[])
     if music_signature(result) == music_signature(material):
