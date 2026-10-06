@@ -42,6 +42,30 @@ def _pcm_samples(source,first,last):
     return value.reshape(-1,channels)
 
 
+def _output_samples(sd,samples,rate):
+    """Adapt the playback buffer to the current default device, leaving WAVs intact."""
+    device=sd.query_devices(kind='output')
+    channels=min(samples.shape[1],int(device['max_output_channels']))
+    if channels<1:raise ValueError('当前音频设备没有输出声道，请选择可用的扬声器或耳机。')
+    if channels<samples.shape[1]:
+        samples=samples.mean(axis=1,keepdims=True,dtype=np.float32)
+    try:
+        sd.check_output_settings(channels=channels,samplerate=rate,dtype='float32')
+    except sd.PortAudioError:
+        output_rate=round(device['default_samplerate'])
+        if output_rate==rate:raise
+        sd.check_output_settings(channels=channels,samplerate=output_rate,dtype='float32')
+        # Only resample when this device rejects the file's rate. Position and
+        # fade timing use the actual output rate, so segment boundaries survive.
+        count=max(1,round(len(samples)*output_rate/rate))
+        positions=np.arange(count,dtype=np.float64)*rate/output_rate
+        source_positions=np.arange(len(samples))
+        samples=np.column_stack([np.interp(positions,source_positions,samples[:,i])
+                                 for i in range(channels)]).astype(np.float32)
+        rate=output_rate
+    return samples,rate
+
+
 class WavePlayer:
     def __init__(self):
         self.opened=False;self.stream=None;self.samples=None;self.paused=False;self.sd=None
@@ -58,10 +82,12 @@ class WavePlayer:
             self.samples=_pcm_samples(source,first,last)
             self.start=first/self.rate;self.end=last/self.rate
         if not len(self.samples):raise ValueError('试听范围过短。')
-        self.frame=0;self.gain=0.;self.fade_frames=max(1,round(.012*self.rate))
+        self.frame=0;self.gain=0.
         self.paused=False;self.finished=False;self.quiet.clear()
         try:
             self.sd=_sounddevice()
+            self.samples,self.rate=_output_samples(self.sd,self.samples,self.rate)
+            self.fade_frames=max(1,round(.012*self.rate))
             self.stream=self.sd.OutputStream(samplerate=self.rate,channels=self.samples.shape[1],dtype='float32',
                                              latency='high',callback=self._output,finished_callback=self._finished)
             self.stream.start();self.opened=True

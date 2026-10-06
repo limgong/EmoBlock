@@ -2,6 +2,7 @@
 import copy
 import json
 import math
+import os
 from pathlib import Path
 import flow_engine as flow
 import structure_engine as structure
@@ -125,10 +126,17 @@ def save_project(pool,doc,curve,results,settings=None,path=None):
         flow.validate(doc)
         if doc['pool']!=pool:raise ValueError('素材池与结构不同步，无法保存。')
     data=dict(schema=SCHEMA,pool=pool,doc=doc,curve=curve,results=results,settings=settings or {})
+    serialized=json.dumps(data,ensure_ascii=False,indent=2,allow_nan=False)
     if path is None:
         folder=structure.ROOT/'projects';folder.mkdir(exist_ok=True)
         path=folder/('studio-'+structure.uid()+'.json')
-    with Path(path).open('x',encoding='utf-8') as f:json.dump(data,f,ensure_ascii=False,indent=2)
+    path=Path(path);created=False
+    try:
+        with path.open('x',encoding='utf-8') as f:
+            created=True;f.write(serialized);f.flush();os.fsync(f.fileno())
+    except Exception:
+        if created:path.unlink(missing_ok=True)  # Only our incomplete new snapshot, never an old file.
+        raise
     return Path(path)
 
 

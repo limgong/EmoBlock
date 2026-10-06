@@ -9,8 +9,8 @@ import hashlib
 import json
 import queue
 import random
-import shutil
 import threading
+import traceback
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog
@@ -24,6 +24,7 @@ import story_ui
 from ui_hints import Tooltip
 from window_ui import IconButton, RoundedPanel, FixedRail, WindowChrome
 from preview_ui import Navigation, PreviewAudio
+from project_session import ProjectSession
 
 flow=model.flow;structure=model.structure;materials=model.materials
 ROOT=structure.ROOT
@@ -45,6 +46,13 @@ class ScrollPage(ttk.Frame):
         self.item=self.canvas.create_window(0,0,anchor='nw',window=self.body)
         self.body.bind('<Configure>',lambda e:self.canvas.configure(scrollregion=self.canvas.bbox('all')))
         self.canvas.bind('<Configure>',lambda e:self.canvas.itemconfigure(self.item,width=e.width))
+
+
+def is_text_input(widget):
+    try:kind=widget.winfo_class()
+    except (AttributeError,tk.TclError):return False
+    if kind in ('Entry','TEntry','Text','Spinbox','TSpinbox'):return True
+    return kind=='TCombobox' and 'readonly' not in widget.state()
 
 
 def button(parent,text,command,accent=False):
@@ -146,7 +154,7 @@ class CurveEditor(ttk.Frame):
         if not self.busy():self.commit(selected_index(self.first),selected_index(self.last),self.emotion.get(),self.start.get(),self.end.get())
 
 
-class UnifiedApp(PreviewAudio):
+class UnifiedApp(ProjectSession,PreviewAudio):
     def __init__(self,root):
         import ui_theme
         import ui_scale
@@ -156,6 +164,8 @@ class UnifiedApp(PreviewAudio):
         BG=theme_color('bg');CARD=theme_color('panel');INK=theme_color('ink');MUTED=theme_color('muted');ACCENT=theme_color('accent')
         self.root=root;self.pool=materials.new_pool();self.doc=None;self.results=[];self.source=None;self.source_path=None
         self.busy=False;self.dirty=False;self.undo_stack=[];self.messages=queue.Queue();self.disabled=[];self.preview_cache={}
+        self.job_serial=0;self.active_job=None;self.job_context=threading.local()
+        self.last_job_error=''
         self.input_themes=[];self.player=WavePlayer();self.playing_path=None;self.play_blocks=[];self.play_duration=0.;self.play_position=0.
         self.curve=[dict(emotion='calm',start=.2,end=.4),dict(emotion='suspense',start=.4,end=.55),dict(emotion='crisis',start=.55,end=.9),dict(emotion='resolve',start=.7,end=.95)]
         root.title('EmoBlocks · 音乐积木工作室')
@@ -173,7 +183,8 @@ class UnifiedApp(PreviewAudio):
         self.logo=IconButton(header,'blocks',lambda:None,size=38)
         self.logo.pack(side='left',padx=(0,8))
         brand=ttk.Label(header,text='EmoBlocks',font=scaled_font(('Segoe UI',16,'bold')),foreground=INK);brand.pack(side='left')
-        caption=ttk.Label(header,text='  音乐积木工作室',style='Muted.TLabel');caption.pack(side='left',padx=10)
+        caption=ttk.Label(header,text='新工程 · 尚未保存',style='Muted.TLabel');caption.pack(side='left',padx=10)
+        self.save_status_label=caption;Tooltip(caption,lambda _:self.save_location_text())
         self.chrome=WindowChrome(root,header,self.close)
         self.chrome.bind_drag(brand);self.chrome.bind_drag(self.logo);self.chrome.bind_drag(caption)
         right=ttk.Frame(header);right.pack(side='right',padx=(0,12))
@@ -183,7 +194,10 @@ class UnifiedApp(PreviewAudio):
         self.theme_button.pack(side='left',padx=(0,8))
         button(right,'＋ 新建',lambda:self.safe(self.new_project)).configure(style='Quiet.TButton')
         button(right,'▱ 打开',lambda:self.safe(self.open_project)).configure(style='Quiet.TButton')
-        button(right,'保存',lambda:self.safe(self.save_project))
+        button(right,'保存快照',lambda:self.safe(self.save_project))
+        self.save_location_button=button(right,'位置',self.show_save_location)
+        self.save_location_button.available_while_busy=True
+        Tooltip(self.save_location_button,lambda _:self.save_location_text())
         workspace=ttk.Frame(outer);workspace.pack(fill='both',expand=True)
         workspace.columnconfigure(0,weight=1);workspace.columnconfigure(1,minsize=300);workspace.rowconfigure(0,weight=1)
         main=ttk.Frame(workspace);main.grid(row=0,column=0,sticky='nsew',padx=(0,12))
@@ -220,21 +234,34 @@ class UnifiedApp(PreviewAudio):
         self.detail_pages=pages
         ttk.Label(rail,text='试听',font=scaled_font(('Microsoft YaHei UI',11,'bold'))).pack(anchor='w')
         self.summary=ttk.Label(rail,text='尚无结构\n先导入旋律或打开工程。',wraplength=235,justify='left')
-        self.play_origin_label=ttk.Label(rail,text='未在试听',wraplength=250)
-        self.play_origin_label.pack(anchor='w',pady=(4,4))
+        from ui_hints import BoundedLabel
+        self.play_origin_label=BoundedLabel(rail,text='未在试听',lines=1)
+        self.play_origin_label.pack(fill='x',pady=(4,4))
         self.result_list=tk.Listbox(rail,height=3,bg=CARD,fg=INK,selectbackground=theme_color('#355b60'),relief='flat',highlightthickness=0,font=scaled_font(('Microsoft YaHei UI',10)),width=27,exportselection=False)
         self.result_list.bind('<<ListboxSelect>>',lambda e:self.show_result())
         self.play_label=ttk.Label(rail,text='尚未播放',wraplength=245)
         self.seek_drag=None;self.transport_running=False
         self.play_progress=ttk.Scale(rail,from_=0,to=100,orient='horizontal')
         self.result_block=ttk.Combobox(rail,state='readonly',width=26)
+        self.audition_blocks=[]
         self.build_preview_audio(rail)
-        ttk.Label(self.rail_page.footer,text='导出成品',font=scaled_font(('Microsoft YaHei UI',11,'bold'))).pack(anchor='w',pady=(0,4))
-        ttk.Label(self.rail_page.footer,text='当前试听版本',style='Muted.TLabel').pack(anchor='w',pady=(0,5))
+        from export_files import FORMATS
+        self.exporting=False;self.export_outcome='';self.last_export_path=None
+        heading=ttk.Frame(self.rail_page.footer);heading.pack(fill='x',pady=(0,4))
+        self.export_title=ttk.Label(heading,text='导出成品',font=scaled_font(('Microsoft YaHei UI',11,'bold')))
+        self.export_title.pack(side='left')
+        ttk.Button(heading,text='格式 / 位置',style='Compact.TButton',command=self.show_export_info).pack(side='right')
+        self.export_status=BoundedLabel(self.rail_page.footer,text='请先生成或选择历史成品',lines=1,style='Muted.TLabel')
+        self.export_status.pack(fill='x',pady=(0,5))
+        self.export_status.bind('<Button-1>',lambda _:self.show_export_info())
+        self.export_status.bind('<Return>',lambda _:self.show_export_info())
         row=ttk.Frame(self.rail_page.footer);row.pack(fill='x')
+        self.export_buttons={}
         for i,(ext,label) in enumerate([('wav','WAV'),('mid','MIDI'),('mmp','MMP')]):
             row.columnconfigure(i,weight=1,uniform='exports')
-            ttk.Button(row,text=label,width=1,command=lambda kind=ext:self.safe(lambda:self.export_result(kind))).grid(row=0,column=i,sticky='ew',padx=(0,5 if i<2 else 0))
+            export=ttk.Button(row,text=label,width=1,command=lambda kind=ext:self.safe(lambda:self.export_result(kind)))
+            export.grid(row=0,column=i,sticky='ew',padx=(0,5 if i<2 else 0));self.export_buttons[ext]=export
+            Tooltip(export,lambda _,kind=ext:self.export_hint(kind))
         self.result_info=tk.Text(rail,height=2,width=27,bg=CARD,fg=MUTED,relief='flat',wrap='word',font=scaled_font(('Microsoft YaHei UI',10)))
         Tooltip(self.play_label,lambda _:self.result_info.get('1.0','end').strip())
         rail.bind('<Configure>',lambda e:[label.configure(wraplength=max(150,e.width-12)) for label in (self.summary,self.play_label)],add='+')
@@ -244,10 +271,12 @@ class UnifiedApp(PreviewAudio):
         self.progress=ttk.Progressbar(outer,mode='indeterminate')
         statusbar=ttk.Frame(outer);statusbar.pack(side='bottom',fill='x',before=workspace,pady=(8,0))
         ttk.Label(statusbar,text='●',foreground=ACCENT).pack(side='left',padx=(0,6))
-        self.notice=ttk.Label(statusbar,text='就绪',wraplength=750,style='Muted.TLabel');self.notice.pack(side='left')
+        self.notice=ttk.Label(statusbar,text='就绪',width=1,style='Muted.TLabel')
+        Tooltip(self.notice,lambda _:getattr(self,'notice_detail','') or self.last_job_error or self.notice.cget('text'))
         self.status_duration=ttk.Label(statusbar,text='',style='Muted.TLabel');self.status_duration.pack(side='right')
         self.edit_status_label=ttk.Label(statusbar,text='当前编辑尚未生成',style='Muted.TLabel')
         self.edit_status_label.pack(side='right',padx=(8,12))
+        self.notice.pack(side='left',fill='x',expand=True)
         self.progress.configure(style='Slim.Horizontal.TProgressbar')
         self.timer=root.after(100,self.poll);root.protocol('WM_DELETE_WINDOW',self.close)
         self.bars.trace_add('write',lambda *args:self.refresh_quick())
@@ -256,6 +285,7 @@ class UnifiedApp(PreviewAudio):
         self.refresh()
         self.story_page=story_ui.StoryPage(self.modes,self)
         self.update_edit_status()
+        self.update_result_controls()
         # Keep legacy widgets alive for saved-project/detail-editor compatibility,
         # but replace their public tab with the current story workflow.
         self.modes.forget(self.quick_page)
@@ -264,9 +294,11 @@ class UnifiedApp(PreviewAudio):
         root.bind_all('<MouseWheel>',self.wheel,add='+')
         bind_touchpad(root,self.touchpad_scroll)
         ui_platform.setup_window(root,self)
+        for sequence in ui_platform.EDIT_SHORTCUT_EVENTS:root.bind(sequence,self.edit_shortcut)
         root.after_idle(self.refresh_surfaces)
         from ui_scale import ResponsiveLayout
         self.responsive=ResponsiveLayout(self,workspace)
+        self.init_persistence()
 
     def set_theme(self,name):
         import ui_theme
@@ -479,7 +511,15 @@ class UnifiedApp(PreviewAudio):
         try:return fn()
         except Exception as exc:self.tell(str(exc),True)
 
-    def tell(self,text,error=False):self.notice.configure(text=text,foreground=theme_color('#f4a59d') if error else ACCENT)
+    def edit_shortcut(self,event):
+        # Text fields keep their own editing keys; only the visible story page owns project undo.
+        if is_text_input(event.widget) or self.modes.select()!=str(self.story_page):return None
+        page=self.story_page
+        self.safe(page.redo if ui_platform.edit_shortcut(event)=='redo' else page.undo)
+        return 'break'
+
+    def tell(self,text,error=False):
+        self.notice_detail='';self.notice.configure(text=text,foreground=theme_color('#f4a59d') if error else ACCENT)
 
     def story_fingerprint(self,project):
         return hashlib.sha256(json.dumps(project,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
@@ -492,6 +532,9 @@ class UnifiedApp(PreviewAudio):
         try:old=json.loads(path.read_text(encoding='utf-8'))
         except (OSError,ValueError,TypeError):return '较上一版修改记录不可用 · '+overview
         changes=[]
+        if old.get('schema')!=project.get('schema'):changes.append('编辑模式')
+        if old.get('uses')!=project.get('uses'):changes.append('积木组装')
+        if old.get('library')!=project.get('library'):changes.append('分块库')
         if old.get('sources')!=project['sources']:changes.append('旋律素材')
         if any(old.get(key)!=project.get(key) for key in ('curve','intensity_points','anchors','overrides')):changes.append('情绪线')
         if any(old.get(key)!=project.get(key) for key in ('duration','bpm','melody_only')):changes.append('时长/播放设置')
@@ -499,16 +542,18 @@ class UnifiedApp(PreviewAudio):
 
     def update_edit_status(self):
         if not hasattr(self,'story_page'):return
+        self.update_save_status()
         try:current=self.story_fingerprint(self.story_page.snapshot())
         except (ValueError,TypeError):
             self.edit_status_label.configure(text='当前编辑参数尚未完成 · 已生成音频是历史快照')
             return
         latest=next((r for r in reversed(self.results) if r.get('story_fingerprint') or (r['mode']=='快速成品' and (Path(r['report']['output_directory'])/'story.json').is_file())),None)
-        if latest and not latest.get('story_fingerprint'):
+        fingerprint=latest.get('story_fingerprint') if latest else None
+        if latest and not fingerprint:
             path=Path(latest['report']['output_directory'])/'story.json'
-            try:latest['story_fingerprint']=self.story_fingerprint(json.loads(path.read_text(encoding='utf-8')))
+            try:fingerprint=self.story_fingerprint(json.loads(path.read_text(encoding='utf-8')))
             except (OSError,ValueError,TypeError):pass
-        matching=bool(latest and latest.get('story_fingerprint')==current)
+        matching=bool(fingerprint==current)
         self.edit_status_label.configure(text='当前编辑与最新成品一致' if matching else '当前编辑尚未生成 · 已生成音频是历史快照')
 
     def update_play_origin(self):
@@ -519,7 +564,8 @@ class UnifiedApp(PreviewAudio):
         if identity.startswith('source:'):
             audio=self.story_page.source_audio
             source=next((s for s in self.story_page.project['sources'] if audio and s['id']==audio['id']),None)
-            name=source['name'] if source else '旋律素材'
+            material=getattr(self.story_page,'material_audio',None)
+            name=material['name'] if material and identity=='source:'+str(material['path']) else source['name'] if source else '旋律素材'
             block=getattr(self.story_page,'source_block_playing',None)
             suffix=f' · 第 {block[1]+1} 块' if block and audio and block[0]==audio['id'] else ''
             self.play_origin_label.configure(text=prefix+'素材 '+name+suffix)
@@ -637,41 +683,101 @@ class UnifiedApp(PreviewAudio):
             model.validate_curve(curve);self.curve=curve
         self.dirty=True;self.refresh();self.tell('情绪线已更新。已有试听保留，重新生成才会使用新设置。')
 
-    def job(self,title,work,done):
+    def job(self,title,work,done,on_progress=None,on_error=None):
+        if self.busy:return False
+        self.job_serial+=1;ident=self.job_serial
+        self.last_job_error=''
+        self.active_job=dict(id=ident,done=done,progress=on_progress,error=on_error,stage=title)
         self.busy=True;self.tell(title);self.progress.place(relx=0,rely=1,anchor='sw',relwidth=1,height=3);self.progress.start(12);self.disabled=[]
         def visit(widget):
             for child in widget.winfo_children():
-                if isinstance(child,(ttk.Button,ttk.Entry,ttk.Combobox,ttk.Checkbutton,ttk.Scale,ttk.Radiobutton)):
-                    if isinstance(child,ttk.Button) and child.cget('text')=='■ 停止':continue
-                    self.disabled.append((child,child.state()));child.state(['disabled'])
+                if isinstance(child,(ttk.Button,ttk.Entry,ttk.Combobox,ttk.Checkbutton,ttk.Scale,ttk.Radiobutton,ttk.Menubutton,ttk.Spinbox)):
+                    if getattr(child,'available_while_busy',False):continue
+                    self.disabled.append((child,child.instate(['disabled'])));child.state(['disabled'])
                 visit(child)
-        visit(self.root)
         def worker():
-            try:self.messages.put(('done',(done,work())))
-            except Exception as exc:self.messages.put(('error',str(exc)))
-        threading.Thread(target=worker,daemon=True).start()
+            self.job_context.ident=ident
+            try:self.messages.put((ident,'done',work()))
+            except Exception:self.messages.put((ident,'error',traceback.format_exc()))
+            finally:del self.job_context.ident
+        try:
+            if hasattr(self,'story_page'):self.story_page.cancel_drag()
+            visit(self.root)
+            self.update_result_controls()
+            threading.Thread(target=worker,daemon=True).start()
+        except Exception:
+            try:self.job_failed(self.active_job,traceback.format_exc())
+            finally:self.finish_job()
+        return True
+
+    def job_failed(self,job,detail):
+        self.last_job_error=detail
+        reason=detail.strip().splitlines()[-1] if detail.strip() else '未知错误'
+        message='未完成；编辑与旧成品已保留，可调整后重试。'
+        self.tell(message if job['error'] else '未完成：'+reason+'；编辑与旧成品已保留，可调整后重试。',True)
+        if job['error']:job['error'](job['stage'],detail)
+
+    def finish_job(self):
+        self.active_job=None;self.busy=False
+        self.progress.stop();self.progress.place_forget()
+        for widget,was_disabled in self.disabled:
+            if widget.winfo_exists():widget.state(['disabled'] if was_disabled else ['!disabled'])
+        self.disabled=[]
+        if hasattr(self,'story_page'):self.story_page.update_generation_controls()
+        self.update_result_controls()
+
+    def update_result_controls(self):
+        try:folder=Path(self.selected_report()['output_directory'])
+        except (ValueError,KeyError):folder=None
+        playable=folder is not None and (folder/'preview.wav').is_file()
+        self.result_block.state(['!disabled'] if not self.busy and playable and self.audition_blocks else ['disabled'])
+        for control in self.result_transport_buttons:
+            active=control is self.transport_play and bool(self.playing_path)
+            control.set_enabled(not self.busy and (active or playable))
+        for ext,widget in self.export_buttons.items():
+            name='preview.wav' if ext=='wav' else 'composition.'+ext
+            ready=not self.busy and not self.exporting and folder is not None and (folder/name).is_file()
+            widget.state(['!disabled'] if ready else ['disabled'])
+        selected=self.result_list.curselection()
+        self.export_title.configure(text=f'导出成品 V{selected[0]+1:02}' if selected else '导出成品')
+        if not self.export_outcome:
+            available=folder and any((folder/name).is_file() for name in ('preview.wav','composition.mid','composition.mmp'))
+            self.export_status.configure(text=('所选历史快照 · 不含后续编辑' if available else '文件不可用 · 找回文件或重新生成') if folder else '请先生成或选择历史成品')
 
     def poll(self):
         try:
             while True:
-                kind,payload=self.messages.get_nowait()
-                if kind=='progress':self.tell(payload);continue
-                self.busy=False;self.progress.stop();self.progress.place_forget()
-                for widget,state in self.disabled:
-                    if widget.winfo_exists():widget.state(['!disabled']);widget.state(state)
-                self.disabled=[]
-                if kind=='error':self.tell('未完成：'+payload+'；原项目与旧结果已保留。',True)
-                else:
-                    done,result=payload;self.safe(lambda:done(result))
+                ident,kind,payload=self.messages.get_nowait()
+                job=self.active_job
+                if job is None or ident!=job['id']:continue
+                terminal=kind!='progress'
+                try:
+                    if kind=='progress':
+                        job['stage']=str(payload);self.tell(payload)
+                        if job['progress']:job['progress'](payload)
+                        continue
+                    if kind=='error':self.job_failed(job,payload)
+                    else:
+                        job['stage']='整理生成结果'
+                        job['done'](payload)
+                except Exception:
+                    terminal=True;self.job_failed(job,traceback.format_exc())
+                finally:
+                    if terminal:self.finish_job()
         except queue.Empty:pass
         self.update_playback()
+        if self.save_status_pending:self.update_save_status()
         if hasattr(self,'story_page'):
+            self.story_page.update_generation_elapsed()
             self.story_page.preview_planner.poll()
             try:self.story_page.sync_source_player()
             except (ValueError,tk.TclError):pass
         self.timer=self.root.after(100,self.poll)
 
-    def progress_message(self,text):self.messages.put(('progress',text))
+    def progress_message(self,text):
+        # Only the owning worker can report progress; late messages keep its old id.
+        ident=getattr(self.job_context,'ident',None)
+        if ident is not None:self.messages.put((ident,'progress',text))
 
     def quick_generate(self):
         themes=copy.deepcopy(self.input_themes)
@@ -921,6 +1027,7 @@ class UnifiedApp(PreviewAudio):
         else:self.selected_version_label.configure(text='尚无成品版本')
         if hasattr(self,'story_page'):self.update_edit_status()
         self.draw_history();self.draw_result_tiles()
+        self.update_result_controls()
 
     def selected_report(self):
         ids=self.result_list.curselection()
@@ -933,7 +1040,9 @@ class UnifiedApp(PreviewAudio):
             index=self.result_list.curselection()[0];result=self.results[index]
             stamp=result.get('generated_at','')[:16].replace('T',' ') or '生成时间未记录'
             summary=result.get('edit_summary') or '历史版本，未记录编辑摘要'
-            self.selected_version_label.configure(text=f'所选成品 V{index+1:02} · {result["mode"]}\n{stamp} · {summary}')
+            missing=[name for name in ('preview.wav','composition.mid','composition.mmp') if not (Path(report['output_directory'])/name).is_file()]
+            availability=(' · 音频不可用' if 'preview.wav' in missing else ' · 部分导出不可用') if missing else ''
+            self.selected_version_label.configure(text=f'所选成品 V{index+1:02} · {result["mode"]}{availability}\n{stamp} · {summary}')
             self.load_waveform(report);self.draw_history()
             try:snapshot_blocks=model.playback_blocks(report)
             except (ValueError,OSError,KeyError):snapshot_blocks=[]
@@ -942,7 +1051,7 @@ class UnifiedApp(PreviewAudio):
             self.result_block.configure(values=[f'{i+1:02} · '+b['name'].replace('默认 · ','').split(' / ')[0][:18] for i,b in enumerate(snapshot_blocks)])
             if snapshot_blocks:self.result_block.current(max(0,min(old,len(snapshot_blocks)-1)))
             self.draw_result_tiles()
-            if self.playing_path!=report['output_directory']:
+            if self.playing_path!=report['output_directory'] and not getattr(self,'switching_project',False):
                 self.stop_playback()
                 try:self.play_blocks=model.playback_blocks(report)
                 except (ValueError,OSError,KeyError):self.play_blocks=[]
@@ -953,7 +1062,9 @@ class UnifiedApp(PreviewAudio):
             self.set_info(f'主体 {report["duration_seconds"]:.1f} 秒 + 1 秒尾音\n{report["bars"]} 小节 · {len(report.get("boundaries",[]))} 处边界\n连接：'+('开启' if report.get('connections_enabled') else '关闭')+'\n\n'+'\n'.join(actions)+'\n\n这是生成时的快照；后续编辑不改变此试听。\n\n位置：'+report['output_directory'])
             if report.get('local_revision'):
                 self.set_info('局部修改版本\n'+local_engine.summary(dict(report=report))+'\n\n位置：'+report['output_directory'])
+            if missing:self.set_info('缺失文件：'+', '.join(missing)+'。历史记录已保留，请找回文件或重新生成。\n\n'+self.result_info.get('1.0','end'))
         except (ValueError,KeyError):pass
+        self.update_result_controls()
 
     def play(self):
         report=self.selected_report();path=Path(report['output_directory'])/'preview.wav'
@@ -1018,6 +1129,7 @@ class UnifiedApp(PreviewAudio):
         self.segment_end=None;self.segment_label=''
         if hasattr(self,'play_label'):
             self.play_label.configure(text='已停止');self.play_progress['value']=0;self.draw_playback()
+        if hasattr(self,'export_buttons'):self.update_result_controls()
 
     def update_playback(self):
         if not self.playing_path:return
@@ -1038,19 +1150,67 @@ class UnifiedApp(PreviewAudio):
                 elif 'intensity' in current:text+=f' · {current["intensity"]:.0%}'
             self.play_label.configure(text=(self.segment_label+'\n' if self.segment_label else '')+text+f'\n{seconds:.1f} / {self.play_duration:.1f} 秒');self.draw_playback()
         except Exception as exc:self.stop_playback();self.tell(str(exc),True)
+        finally:self.update_result_controls()
 
+
+    def export_hint(self,kind):
+        from export_files import FORMATS
+        label,name,description=FORMATS[kind]
+        try:available=(Path(self.selected_report()['output_directory'])/name).is_file()
+        except (ValueError,KeyError):available=False
+        return label+'：'+description+('' if available else '\n源文件不可用，请找回文件或重新生成；其他格式可独立导出。')
+
+    def show_export_info(self):
+        from export_files import FORMATS
+        window=tk.Toplevel(self.root);window.title('成品导出 · 格式与位置');window.transient(self.root)
+        window.geometry('620x360')
+        text=self.export_outcome or '导出的是所选历史成品，不包含随后尚未生成的编辑。'
+        text+='\n\n'+'\n\n'.join(self.export_hint(kind) for kind in FORMATS)
+        box=tk.Text(window,wrap='word',height=10);bar=ttk.Scrollbar(window,command=box.yview)
+        bar.pack(side='right',fill='y');box.configure(yscrollcommand=bar.set)
+        actions=ttk.Frame(window);actions.pack(side='bottom',fill='x',padx=12,pady=8)
+        # Bind this window to the path it displays, even if a later export succeeds.
+        path=self.last_export_path
+        if path:ttk.Button(actions,text='打开所在文件夹',command=lambda:self.open_export_folder(path)).pack(side='left')
+        ttk.Button(actions,text='关闭',command=window.destroy).pack(side='right')
+        box.pack(fill='both',expand=True,padx=12,pady=12);box.insert('1.0',text);box.configure(state='disabled')
+        window.bind('<Escape>',lambda _:window.destroy())
+
+    def open_export_folder(self,path):
+        try:ui_platform.open_folder(Path(path).parent)
+        except Exception as exc:self.tell('无法打开文件夹，请从“格式 / 位置”复制完整路径手动打开：'+str(exc),True)
 
     def export_result(self,kind):
-        selected=self.result_list.curselection()
-        report=self.selected_report();version=selected[0]+1
-        folder=Path(report['output_directory']);source=folder/('preview.wav' if kind=='wav' else 'composition.'+kind)
-        if not source.is_file():raise ValueError('原输出文件已移动或缺失。')
-        target=filedialog.asksaveasfilename(parent=self.root,title=f'导出所选成品 V{version:02} · {self.results[selected[0]]["mode"]}',
-                                            initialfile=f'EmoBlocks-V{version:02}.'+kind,defaultextension='.'+kind,filetypes=[(kind.upper(),'*.'+kind)])
-        if target:
-            if Path(target).resolve()!=source.resolve():shutil.copyfile(source,target)
-            self.tell(f'已导出所选成品 V{version:02}：{target}')
-            self.tell('已导出：'+target)
+        from export_files import FORMATS,atomic_export
+        if self.busy or self.exporting:return
+        if kind not in FORMATS:raise ValueError('不支持的导出格式。')
+        label,name,_=FORMATS[kind];selected=self.result_list.curselection()
+        if not selected:return
+        version=f'V{selected[0]+1:02}';result=self.results[selected[0]]
+        source=Path(result['report']['output_directory'])/name;mode=result['mode']
+        protected=[Path(r['report']['output_directory'])/info[1] for r in self.results for info in FORMATS.values()]
+        # Reports, snapshots and copied resources also belong to the original output.
+        for r in self.results:protected.extend(p for p in Path(r['report']['output_directory']).rglob('*') if p.is_file())
+        self.exporting=True;self.update_result_controls();target=None
+        try:
+            if not source.is_file():raise FileNotFoundError('原生成文件已移动或缺失，请找回文件或重新生成。')
+            target=filedialog.asksaveasfilename(parent=self.root,title=f'导出所选成品 {version} · {mode} · {label}',
+                initialfile=f'EmoBlocks-{version}.'+kind,defaultextension='.'+kind,filetypes=[(label,'*.'+kind)])
+            if not target:return
+            destination=atomic_export(source,target,protected)
+        except Exception as exc:
+            message=f'{version} · {label} 导出失败'
+            self.export_outcome=message+'。原成品和已有目标文件未被本次导出修改。\n请检查源文件、磁盘空间和目录权限，或换一个可写目录后重试。\n'
+            self.export_outcome+='源文件：'+str(source)+'\n目标：'+str(target or '尚未选择')+'\n详情：'+str(exc)
+            if self.last_export_path:self.export_outcome+='\n上次成功导出位置：'+str(self.last_export_path)
+            self.export_status.configure(text=message+' · 点击查看恢复说明');self.tell(message+'，请查看“格式 / 位置”后重试。',True)
+        else:
+            self.last_export_path=destination
+            message=f'{version} · {label} 已导出：{destination.name}'
+            self.export_outcome=message+'\n完整位置：'+str(destination)+'\n导出的是所选历史成品，不包含后续编辑。'
+            self.export_status.configure(text=message);self.tell(message)
+        finally:
+            self.exporting=False;self.update_result_controls()
 
     def refresh(self,selected=None):
         self.refresh_inner()
@@ -1072,53 +1232,3 @@ class UnifiedApp(PreviewAudio):
         else:
             self.detail_curve.set_rows([]);self.slot.configure(values=[]);self.slot.set('');self.replacement.set('');self.answer.set('')
             self.summary.configure(text='等待生成')
-
-    def save_project(self):
-        settings=dict(connections=self.connections.get(),seed=self.seed.get(),source_path=self.source_path,track=self.track_var.get(),start_bar=self.start_bar.get(),bars=self.bars.get(),policy=self.policy.get(),trim=self.trim.get(),key=self.key.get(),input_themes=self.input_themes)
-        settings['story']=self.story_page.snapshot()
-        path=model.save_project(self.pool,self.doc,self.curve,self.results,settings);self.dirty=False;self.tell('已另存项目快照：'+str(path));return path
-
-    def load_project(self,path):
-        data=model.load_project(path)
-        story=data.get('settings',{}).get('story',story_ui.engine.new_project())
-        story_ui.engine.validate(story,require_source=False)
-        if self.dirty:self.save_project()
-        self.stop_playback()
-        self.input_themes=copy.deepcopy(data.get('settings',{}).get('input_themes',[]))
-        self.pool,self.doc,self.curve,self.results=data['pool'],data['doc'],data['curve'],data['results'];self.undo_stack=[];self.preview_cache={};self.dirty=False
-        settings=data.get('settings',{});self.connections.set(settings.get('connections',True));self.seed.set(str(settings.get('seed',31)))
-        self.source=None;self.source_path=None;self.track_var.set('');self.source_text.set('工程已恢复；如需再次快速创作，请导入参考旋律。')
-        for box in self.track_boxes:box.configure(values=[])
-        source_issue=''
-        if settings.get('source_path'):
-            try:
-                self.load_source(settings['source_path'])
-                if settings.get('track') in self.track_boxes[0]['values']:self.track_var.set(settings['track'])
-            except Exception as exc:source_issue=' 原导入文件无法读取，但已保存素材仍可编辑：'+str(exc)
-        for var,key in ((self.start_bar,'start_bar'),(self.bars,'bars'),(self.policy,'policy'),(self.trim,'trim'),(self.key,'key')):
-            if key in settings:var.set(settings[key])
-        self.count.set(str(len(self.curve)));self.refresh_inputs();self.refresh();self.refresh_results();self.modes.select(1)
-        if self.doc:self.detail_tabs.select(2)
-        self.story_page.restore(story)
-        if story['sources']:self.modes.select(self.story_page)
-        self.dirty=False;self.tell('工程已打开。结构、情绪和结果在同一窗口恢复。'+source_issue)
-
-    def open_project(self):
-        path=filedialog.askopenfilename(parent=self.root,filetypes=[('EmoBlocks 工程','*.json')])
-        if path:self.load_project(path)
-
-    def new_project(self):
-        if self.dirty or self.pool['items']:self.save_project()
-        self.stop_playback();self.input_themes=[];self.play_blocks=[];self.draw_playback();self.refresh_inputs()
-        self.pool=materials.new_pool();self.doc=None;self.results=[];self.undo_stack=[];self.dirty=False;self.name.set('A');self.refresh();self.refresh_results();self.set_info('已新建项目。前一个项目已自动另存，不覆盖。');self.tell('新项目就绪。')
-        self.story_page.restore(story_ui.engine.new_project())
-        self.modes.select(self.story_page)
-
-    def close(self):
-        if self.busy:self.tell('正在生成，请完成后再关闭。',True);return
-        try:
-            if self.dirty:self.save_project()
-        except Exception as exc:self.tell('自动保存失败，未关闭：'+str(exc),True);return
-        self.story_page.preview_planner.close()
-        if hasattr(self.story_page,'file_drop'):self.story_page.file_drop.close()
-        self.stop_playback();self.root.after_cancel(self.timer);self.root.destroy()

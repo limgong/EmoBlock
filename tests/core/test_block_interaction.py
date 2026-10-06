@@ -6,12 +6,13 @@ import unittest
 import intensity_curve
 import story_engine as engine
 from unified_ui import UnifiedApp
+from legacy_story_fixture import restore_legacy
 
 
 class BlockInteractionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.root=tk.Tk();cls.root.withdraw();cls.app=UnifiedApp(cls.root)
+        cls.root=tk.Tk();cls.root.withdraw();cls.app=UnifiedApp(cls.root);restore_legacy(cls.app)
         cls.root.update_idletasks();cls.page=cls.app.story_page
         cls.original=copy.deepcopy(cls.page.project)
 
@@ -37,12 +38,12 @@ class BlockInteractionTests(unittest.TestCase):
 
     def test_cancel_discards_preview_and_mouse_capture(self):
         p=self.page;p.press(self.event(4));p.motion(self.event(24));p.cancel_drag()
-        self.assertEqual(p.project,self.original);self.assertEqual(p.history,[])
+        self.assertEqual(p.project,self.original);self.assertEqual(len(p.history),0)
         self.assertIsNone(p.line.grab_current());self.assertIsNone(p.scroll_timer)
 
     def test_click_selects_without_creating_undo_entry(self):
         p=self.page;p.press(self.event(4));p.release(self.event(4))
-        self.assertEqual(p.selected_region,('curve',1));self.assertEqual(p.history,[])
+        self.assertEqual(p.selected_region,('curve',1));self.assertEqual(len(p.history),0)
 
     def test_single_click_paints_exactly_one_block(self):
         p=self.page;p.select_palette('hope');p.press(self.event(7));p.release(self.event(7))
@@ -56,7 +57,7 @@ class BlockInteractionTests(unittest.TestCase):
         p.select_palette('hope');self.assertEqual(p.paint_emotion,'hope')
         p.select_palette('sad');self.assertEqual(p.paint_emotion,'sad')
         p.select_palette('sad');self.assertIsNone(p.paint_emotion)
-        self.assertEqual(p.history,[])
+        self.assertEqual(len(p.history),0)
         p.press(self.event(4));p.motion(self.event(24));p.release(self.event(24))
         self.assertEqual([v['emotion'] for v in p.project['curve']],['calm','crisis','sad','resolve','suspense','calm'])
 
@@ -98,11 +99,11 @@ class BlockInteractionTests(unittest.TestCase):
             if paint:p.select_palette('hope')
             p.press(self.event(4,135));p.motion(self.event(24,135));p.release(self.event(24,135))
             self.assertEqual(p.project,self.original)
-            self.assertEqual(p.history,[])
+            self.assertEqual(len(p.history),0)
 
     def test_block_drag_crossing_intensity_area_does_not_edit_strength(self):
         p=self.page;p.press(self.event(4));p.motion(self.event(4,144));p.release(self.event(4,144))
-        self.assertEqual(p.project,self.original);self.assertEqual(p.history,[])
+        self.assertEqual(p.project,self.original);self.assertEqual(len(p.history),0)
 
 
 
@@ -115,13 +116,20 @@ class BlockInteractionTests(unittest.TestCase):
 
 
     def test_scrolled_canvas_intensity_drag_hits_the_visible_point(self):
-        p=self.page;p.select_palette('hope');p.line.xview_moveto(.5)
-        self.assertGreater(p.line.canvasx(0),0)
-        index=10;time=p.project['intensity_points'][index]['time'];_,_,y=p.intensity_handles[index]
-        p.press(self.event(time,y));p.motion(self.event(time,144));p.release(self.event(time,144))
-        self.assertAlmostEqual(p.project['intensity_points'][index]['level'],1)
-        self.assertEqual(p.project['curve'],self.original['curve'])
-        self.assertEqual(len(p.history),1)
+        # Establish a real viewport smaller than the timeline. A withdrawn root
+        # can retain a full-width canvas, in which case there is nothing to scroll.
+        self.root.geometry('1020x700');self.root.deiconify()
+        self.page.line.pack_configure(padx=(0,250));self.root.update_idletasks()
+        try:
+            p=self.page;p.draw();p.select_palette('hope');p.line.xview_moveto(.5)
+            self.assertGreater(p.line.canvasx(0),0)
+            index=10;time=p.project['intensity_points'][index]['time'];_,_,y=p.intensity_handles[index]
+            p.press(self.event(time,y));p.motion(self.event(time,144));p.release(self.event(time,144))
+            self.assertAlmostEqual(p.project['intensity_points'][index]['level'],1)
+            self.assertEqual(p.project['curve'],self.original['curve'])
+            self.assertEqual(len(p.history),1)
+        finally:
+            self.page.line.pack_configure(padx=0);self.root.withdraw()
 
 
 if __name__=='__main__':unittest.main()

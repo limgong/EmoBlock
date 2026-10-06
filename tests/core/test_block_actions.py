@@ -7,12 +7,14 @@ from unittest.mock import patch
 
 import story_engine as engine
 from unified_ui import UnifiedApp
+from legacy_story_fixture import restore_legacy
+from edit_history import EditHistory
 
 
 class BlockActionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.root=tk.Tk();cls.root.withdraw();cls.app=UnifiedApp(cls.root)
+        cls.root=tk.Tk();cls.root.withdraw();cls.app=UnifiedApp(cls.root);restore_legacy(cls.app)
         cls.root.update_idletasks();cls.page=cls.app.story_page
         cls.original=copy.deepcopy(cls.page.project)
 
@@ -79,7 +81,7 @@ class BlockActionTests(unittest.TestCase):
     def test_invalid_region_source_does_not_mutate_project_or_history(self):
         p=self.page;before=copy.deepcopy(p.project)
         with self.assertRaises(ValueError):p.set_region_source(1,'missing-source')
-        self.assert_unchanged(before,[])
+        self.assert_unchanged(before,EditHistory())
 
     def test_clear_local_changes_preserves_outside_ramps_and_can_be_undone(self):
         p=self.page;project=copy.deepcopy(self.original)
@@ -122,7 +124,7 @@ class BlockActionTests(unittest.TestCase):
             p.undo();self.assertEqual(p.project,before)
             p.context_click(self.event(8.5,190))
             self.assertEqual(p.project,before)
-            self.assertEqual(p.history,[])
+            self.assertEqual(len(p.history),0)
 
     def test_context_menu_is_ignored_while_busy_or_dragging_and_outside_regions(self):
         p=self.page;before=copy.deepcopy(p.project)
@@ -133,7 +135,7 @@ class BlockActionTests(unittest.TestCase):
             finally:p.host.busy=False
             p.press(self.event(4));p.context_click(self.event(8,190));p.cancel_drag()
             popup.assert_not_called()
-        self.assert_unchanged(before,[])
+        self.assert_unchanged(before,EditHistory())
 
 
 if __name__=='__main__':unittest.main()

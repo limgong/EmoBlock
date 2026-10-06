@@ -12,9 +12,9 @@ import ui_platform
 class IconButton(tk.Canvas):
     def __init__(self,parent,icon,command,hint='',size=32,surface='bg',primary=False):
         super().__init__(parent,width=size,height=size,highlightthickness=0,takefocus=True,cursor='hand2')
-        self.icon=icon;self.command=command;self.size=size;self.hovered=False;self.surface=surface;self.primary=primary
-        self.bind('<Button-1>',lambda _:command())
-        self.bind('<Return>',lambda _:command());self.bind('<space>',lambda _:command())
+        self.icon=icon;self.command=command;self.size=size;self.hovered=False;self.surface=surface;self.primary=primary;self.enabled=True
+        self.bind('<Button-1>',lambda _:self.invoke())
+        self.bind('<Return>',lambda _:self.invoke());self.bind('<space>',lambda _:self.invoke())
         self.bind('<Enter>',lambda _:self.highlight(True));self.bind('<Leave>',lambda _:self.highlight(False))
         self.bind('<FocusIn>',lambda _:self.highlight(True));self.bind('<FocusOut>',lambda _:self.highlight(False))
         if hint:Tooltip(self,hint)
@@ -22,10 +22,17 @@ class IconButton(tk.Canvas):
 
     def highlight(self,value):self.hovered=value;self.refresh_theme()
 
+    def invoke(self):
+        if self.enabled:return self.command()
+
+    def set_enabled(self,enabled):
+        if self.enabled==bool(enabled):return
+        self.enabled=bool(enabled);self.configure(cursor='hand2' if enabled else '');self.refresh_theme()
+
     def refresh_theme(self):
         self.configure(width=round(self.size*ui_scale.factor),height=round(self.size*ui_scale.factor))
         self.configure(bg=color(self.surface));self.delete('all')
-        size=self.size;mid=size/2;fg=color('onaccent') if self.primary else color('ink')
+        size=self.size;mid=size/2;fg=(color('onaccent') if self.primary else color('ink')) if self.enabled else color('muted')
         bg=color('accent') if self.primary else color('hover') if self.hovered else color(self.surface)
         rounded(self,1,1,size-1,size-1,bg)
         if self.icon=='play':self.create_polygon(mid-4,mid-7,mid+7,mid,mid-4,mid+7,fill=fg,outline='')
@@ -91,10 +98,10 @@ class RoundedPanel(tk.Canvas):
 class FixedRail(ttk.Frame):
     def __init__(self,parent):
         super().__init__(parent)
-        self.columnconfigure(0,weight=1);self.rowconfigure(2,weight=1)
+        self.columnconfigure(0,weight=1);self.rowconfigure(0,weight=1)
         self.audition=RoundedPanel(self,padding=14,height=490)
-        self.audition.grid(row=0,column=0,sticky='ew',pady=(0,16))
-        self.export=RoundedPanel(self,padding=14,height=124)
+        self.audition.grid(row=0,column=0,sticky='nsew',pady=(0,16))
+        self.export=RoundedPanel(self,padding=14,height=132)
         self.export.grid(row=1,column=0,sticky='ew')
         self.body=self.audition.body;self.footer=self.export.body
 

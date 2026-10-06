@@ -7,6 +7,7 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 import flow_engine as flow
+import assembly
 
 music = flow.music
 PPQ = music.PPQ
@@ -24,7 +25,7 @@ def number(value, low, high, label):
     return value
 
 
-def import_source(path, track=0, role='auto', policy='reject'):
+def import_source(path, track=0, role='auto', policy='reject', assembly_mode=False):
     source = music.load_source(path)
     if not 0 <= track < len(source.tracks):
         raise ValueError('请选择有效旋律音轨。')
@@ -44,7 +45,7 @@ def import_source(path, track=0, role='auto', policy='reject'):
         end = min(n.start+n.duration, ns[i+1].start) if i+1 < len(ns) else n.start+n.duration
         notes.append(dict(pitch=n.pitch, start=n.start-origin, duration=end-n.start, velocity=n.velocity))
     length = max(n['start']+n['duration'] for n in notes)
-    if length > PPQ*256:
+    if length > PPQ*256 and not assembly_mode:
         raise ValueError('首版每段输入最多 256 拍，请截取主要旋律。')
     tonic, mode, confidence = music.infer_key([music.Note(**n) for n in notes])
     return dict(id=flow.structure.uid(), name=Path(path).stem+' · '+source.tracks[track].name,
@@ -54,36 +55,41 @@ def import_source(path, track=0, role='auto', policy='reject'):
 
 
 def validate(project, require_source=True):
+    if assembly.is_project(project):return assembly.validate(project,require_source)
+    return _validate_legacy(project,require_source)
+
+
+def _validate_legacy(project, require_source=True, assembled=False):
     if not isinstance(project, dict) or project.get('schema') != SCHEMA:
         raise ValueError('简要工程格式无效。')
-    duration = number(project['duration'], 4, 480, '作品时长（4–480 秒）')
+    duration = number(project['duration'], 1e-6 if assembled else 4, float('inf') if assembled else 480, '作品时长')
     number(project['bpm'], 40, 220, '速度')
     sources = project['sources']
-    if not isinstance(sources, list) or len(sources) > 12 or (require_source and not sources):
+    if not isinstance(sources, list) or (len(sources) > 12 and not assembled) or (require_source and not sources):
         raise ValueError('请提供 1–12 段旋律。')
     ids = set()
     for s in sources:
         if s['id'] in ids or s['role'] not in ROLES:
             raise ValueError('素材 ID 重复或角色无效。')
         ids.add(s['id'])
-        number(s['ticks'], 1, PPQ*256, '素材长度')
+        number(s['ticks'], 1, float('inf') if assembled else PPQ*256, '素材长度')
         if type(s['tonic']) is not int or not 0 <= s['tonic'] <= 11 or s['mode'] not in ('major', 'minor'):
             raise ValueError('素材调性无效。')
         ns = [music.Note(**n) for n in s['notes']]
-        music._check_notes(ns)
+        if ns or not assembled:music._check_notes(ns)
         last = 0
         for n in ns:
             if any(type(v) is not int for v in (n.start, n.duration, n.pitch, n.velocity)) or n.start < last or n.start+n.duration > s['ticks']:
                 raise ValueError('素材音符时间或单声部顺序无效。')
             last = n.start+n.duration
     for key in ('curve', 'anchors', 'overrides'):
-        if not isinstance(project[key], list) or len(project[key]) > 256:
+        if not isinstance(project[key], list) or (len(project[key]) > 256 and not assembled):
             raise ValueError('情绪或编辑记录过多。')
     for key in ('curve', 'overrides'):
         previous = 0
         for v in sorted(project[key], key=lambda v: v['start']):
             number(v['start'], 0, duration, '区间起点');number(v['end'], 0, duration, '区间终点')
-            if v['start'] < previous-1e-8 or v['end']-v['start'] < .1-1e-8:
+            if v['start'] < previous-1e-8 or v['end']-v['start'] < (1e-8 if assembled else .1-1e-8):
                 raise ValueError('同类区间不能重叠，长度至少 0.1 秒。')
             previous = v['end']
             expression(v)
@@ -91,8 +97,8 @@ def validate(project, require_source=True):
                 raise ValueError('区间引用了不存在的旋律。')
     previous = -1
     for a in sorted(project['anchors'], key=lambda a: a['time']):
-        number(a['time'], 0, duration-.1, '锚点时间')
-        number(a.get('hold', 2.), .1, 6 if a.get('auto_peak') else 4, '锚点保持时间')
+        number(a['time'], 0, duration-(1e-8 if assembled else .1), '锚点时间')
+        number(a.get('hold', 2.), 1e-8 if assembled else .1, float('inf') if assembled else (6 if a.get('auto_peak') else 4), '锚点保持时间')
         if a['time'] < previous-1e-8 or a['time']+a.get('hold', 2.) > duration+1e-8:
             raise ValueError('锚点保持区间互相冲突或超出作品结尾，请调整时间/保持时长。')
         previous = a['time']+a.get('hold', 2.)
@@ -152,7 +158,7 @@ def develop(project):
     result=[]
     for source in project['sources']:
         ns=source['notes'];length=source['ticks']
-        span=max(n['pitch'] for n in ns)-min(n['pitch'] for n in ns)
+        span=max((n['pitch'] for n in ns),default=60)-min((n['pitch'] for n in ns),default=60)
         density=len(ns)/max(1,length/PPQ)
         energy=min(1, .3*density+.4*span/24)
         role=source['role'] if source['role']!='auto' else ('climax' if energy>.7 else 'ending' if density<.6 else 'main')
@@ -195,6 +201,7 @@ def block_grid(project):
 
 def automatic_memory_project(project):
     """Migrate the quick editor to derived memory without losing legacy data."""
+    if assembly.is_project(project):return copy.deepcopy(project)
     result=copy.deepcopy(project)
     if result.get('anchors'):
         result.setdefault('legacy_memory_anchors',copy.deepcopy(result['anchors']))
@@ -204,7 +211,17 @@ def automatic_memory_project(project):
 
 def automatic_peak_anchor(project):
     """Derived from the current curve; never overwrite user anchors or overrides."""
+    if assembly.is_project(project):return automatic_peak_anchor(assembly.render_project(project))
     if not project.get('auto_peak_memory',False) or not project['curve'] or not project['sources']:return None
+    if project.get('assembly_mode'):
+        points=intensity_curve.controls(project);peak=max(points,key=lambda p:(p['level'],-p['time']))
+        time=min(project['duration']-1e-8,peak['time']);region=next(v for v in project['curve'] if v['start']<=time<v['end'])
+        rate=project['bpm']*PPQ/60;asset=next(s for s in project['sources'] if s['id']==region['source_id'])
+        leaf=next(p for p in assembly.leaves(asset) if p['start']/rate<=time-region['start']<p['end']/rate)
+        bar=240/project['bpm'];origin=region['start']+leaf['start']/rate
+        start=origin+math.floor((time-origin)/bar)*bar;end=min(region['start']+leaf['end']/rate,start+bar)
+        return dict(time=start,hold=end-start,emotion=region['emotion'],level=peak['level'],source_id=region['source_id'],
+                    use_id=region['use_id'],original_only=True,auto_peak=True,memory_time=peak['time'])
     if project.get('continuous_intensity'):
         points=intensity_curve.controls(project);peak=max(points,key=lambda p:(p['level'],-p['time']))
         bar=240/project['bpm'];start=max(0,peak['time']-bar/2);end=min(project['duration'],start+bar)
@@ -237,7 +254,8 @@ def plan(project):
     intensity_curve.validate(project)
     validate(project)
     requested_project=copy.deepcopy(project)
-    project=copy.deepcopy(project)
+    assembled=assembly.is_project(project)
+    project=assembly.render_project(project) if assembled else copy.deepcopy(project)
     automatic=automatic_peak_anchor(project)
     if automatic:
         if project.get('memory_mode')=='automatic':
@@ -253,10 +271,10 @@ def plan(project):
                     retained.append(piece)
             project['overrides']=retained
         project['anchors'].append(automatic)
-    validate(project)
+    _validate_legacy(project,assembled=assembled)
     requested_anchors=copy.deepcopy(project['anchors'])
     bpm=project['bpm'];rate=bpm*PPQ/60
-    tick=lambda s:round(s*rate/10)*10
+    tick=(lambda s:round(s*rate)) if assembled else (lambda s:round(s*rate/10)*10)
     project['duration']=tick(project['duration'])/rate
     for key in ('curve','overrides'):
         for v in project[key]:
@@ -269,7 +287,7 @@ def plan(project):
     originals=[m for m in bank if m['version']=='original']
     main=max(originals,key=lambda m:(m['role']=='main',len(m['notes'])/(1+m['energy'])))
     aligned=project.get('block_aligned',False)
-    grid=block_grid(project)
+    grid=assembly.generation_edges(requested_project) if assembled else block_grid(project)
     points=set(grid)
     for key in ('curve','overrides'):
         for v in project[key]:points.update((tick(v['start']),tick(v['end'])))
@@ -376,7 +394,8 @@ def plan(project):
                 f=(start-window['start'])/max(1,window['end']-window['start'])
                 state=dict(state,emotion=window['from_state']['emotion'] if f<.5 else window['target']['emotion'],
                            level=window['from_state']['level']+(window['target']['level']-window['from_state']['level'])*f)
-            preferred=state.get('source_id')
+            binding=next(((a,b,u) for a,b,u in assembly.ranges(requested_project) if a<=start<b),None) if assembled else None
+            preferred=binding[2]['id'] if binding else state.get('source_id')
             selection_level=state_at(project,(start+end)/2/rate)['level'] if project.get('continuous_intensity') else state['level']
             targetrole='climax' if selection_level>=.7 else 'ending' if seconds>=project['duration']*.88 else 'main'
             chosen=next((m for m in originals if m['source_id']==preferred),None)
@@ -386,10 +405,13 @@ def plan(project):
                 else:
                     chosen=max(originals,key=lambda m:(m['role']==targetrole, -abs(m['energy']-selection_level), m['id']==main['id']))
             sid=chosen['source_id'];offset=cursor_by_source.get(sid,0);cycle=cycle_by_source.get(sid,0)
+            if binding:
+                offset=start-binding[0]
+                cycle=sum(u['material_id']==binding[2]['material_id'] for a,b,u in assembly.ranges(requested_project) if a<binding[0])
             version=('original','variant','answer','secondary')[cycle%4]
             material=next(m for m in bank if m['source_id']==sid and m['version']==version)
             if state.get('original_only'):material=chosen;cycle=0
-            if state.get('anchor') and (last_source!=sid or any(tick(a['time'])==start for a in project['anchors'])):
+            if not assembled and state.get('anchor') and (last_source!=sid or any(tick(a['time'])==start for a in project['anchors'])):
                 offset=0;material=chosen
             size=end-start;notes=[];remaining=size;pos=0;source_spans=[]
             # Continue rather than shuffle the source. Short inspirations repeat into a phrase.
@@ -416,7 +438,13 @@ def plan(project):
                              name=('Bridge' if window and window['kind']=='bridge' else '连接' if window else chosen['name'])+' · '+str(len(rows)+1),
                              kind=window['kind'] if window else 'content',notes=notes,emotion=state['emotion'],level=state['level'],end_level=final_state['level'],
                              pinned=bool(state.get('anchor')),order_policy='source-order; explicit target may interrupt',version=material['version']))
-            if size!=music.BAR:warnings.append('%.2f–%.2fs 为固定时间/结尾约束截段（%g 拍）；普通块固定 4 拍，后续拍网格不重排。'%(seconds,end/rate,size/PPQ))
+            if binding:
+                use=binding[2]
+                rows[-1].update(use_id=use['id'],assembly_material_id=use['material_id'],assembly_order=requested_project['uses'].index(use),
+                    assembly_sources=[dict(source_id=leaf['origin']['source_id'],block_index=leaf['origin']['block_index'],
+                        material_id=leaf['id'],name=leaf['name'],start_tick=max(start,leaf['start']),end_tick=min(end,leaf['end']))
+                        for leaf in assembly.leaves(use['material'],binding[0]) if leaf['start']<end and leaf['end']>start])
+            if size!=music.BAR and not assembled:warnings.append('%.2f–%.2fs 为固定时间/结尾约束截段（%g 拍）；普通块固定 4 拍，后续拍网格不重排。'%(seconds,end/rate,size/PPQ))
     # Actual neighboring endpoints determine every transition run.
     for w in windows:
         if w['kind']=='transition_ending':
@@ -425,7 +453,7 @@ def plan(project):
         group=[r for r in rows if w['start']<=r['start_tick'] and r['end_tick']<=w['end']]
         left=next((r for r in reversed(rows) if r['end_tick']<=w['start']),None)
         right=next((r for r in rows if r['start_tick']>=w['end']),None)
-        lp=left['notes'][-1]['pitch'] if left and left['notes'] else main['notes'][0]['pitch']
+        lp=left['notes'][-1]['pitch'] if left and left['notes'] else (main['notes'][0]['pitch'] if main['notes'] else 60+main['tonic'])
         rp=right['notes'][0]['pitch'] if right and right['notes'] else lp
         tonic=next(m['tonic'] for m in originals if m['source_id']==(right or group[0])['source_id'])
         mode=next(m['mode'] for m in originals if m['source_id']==(right or group[0])['source_id'])
@@ -454,8 +482,11 @@ def plan(project):
         if not row['pinned'] or row['emotion']!=a['emotion']:
             raise ValueError('锚点量化与区间冲突，未生成；请将时间稍作调整。')
         anchors.append(dict(requested=requested['time'],actual=actual,error_seconds=actual-requested['time'],entry_id=row['id'],
-                            auto_peak=bool(a.get('auto_peak')),original_only=bool(a.get('original_only'))))
-    return dict(schema='emoblocks.story-plan.v1',project=requested_project,materials=bank,blocks=rows,anchors=anchors,
+                            auto_peak=bool(a.get('auto_peak')),original_only=bool(a.get('original_only')),
+                            **(dict(use_id=row['use_id'],material_id=row['assembly_material_id'],sources=row['assembly_sources']) if assembled else {})))
+    return dict(source_catalog=project['sources'],assembly_blocks=[dict(use_id=u['id'],material_id=u['material_id'],name=u['material']['name'],
+                     start_tick=a,end_tick=b,start_seconds=a/rate,end_seconds=b/rate,emotion=u['emotion']) for a,b,u in assembly.ranges(requested_project)] if assembled else [],
+                schema='emoblocks.story-plan.v1',project=requested_project,materials=bank,blocks=rows,anchors=anchors,
                 connection_windows=[dict(start_seconds=w['start']/rate,end_seconds=w['end']/rate,kind=w['kind'],gap=w['gap'],policy='replace-existing-time',
                                          boundary_seconds=w['boundary_seconds'],direction=w['direction'],protection=w['protection']) for w in windows],
                 total_ticks=total,bpm=bpm,warnings=list(dict.fromkeys(warnings)),
@@ -468,7 +499,7 @@ def apply_ending(rows,window,originals):
     left=next((r for r in reversed(rows) if r['end_tick']<=window['start']),None)
     if not group or left is None:return
     source=next(m for m in originals if m['source_id']==left['source_id'])
-    lp=left['notes'][-1]['pitch'] if left['notes'] else source['notes'][0]['pitch']
+    lp=left['notes'][-1]['pitch'] if left['notes'] else (source['notes'][0]['pitch'] if source['notes'] else 60+source['tonic'])
     tonic=min((p for p in range(36,85) if p%12==source['tonic']%12),key=lambda p:abs(p-lp))
     scale=[p for p in range(24,109) if (p-source['tonic'])%12 in ([0,2,4,5,7,9,11] if source['mode']=='major' else [0,2,3,5,7,8,10])]
     length=window['end']-window['start'];split=max(10,round(length/2/10)*10)
@@ -521,7 +552,7 @@ def compile_score(planned):
         if duration<=0:return
         layer=layers.setdefault(name,dict(name=name,preset=preset,volume=volume,pan=0,drum=drum,notes=[]))
         layer['notes'].append(music.Note(max(12,min(119,int(pitch))),start,duration,max(1,min(127,round(velocity)))))
-    sources={s['id']:s for s in project['sources']}
+    sources={s['id']:s for s in planned.get('source_catalog',project['sources'])}
     solo=bool(project.get('melody_only',False))
     melody,joined=continuous_melody(planned)
     for note in melody:
@@ -582,12 +613,15 @@ def compile_score(planned):
             midpoint=(block['start_seconds']+block['end_seconds'])/2
             manual=any(a['time']<=midpoint<a['time']+a.get('hold',2.) for a in project['anchors']) or any(v['start']<=midpoint<v['end'] for v in project['overrides'])
             if block['kind']!='transition_ending' and not manual:block['intensity_points']=points
+    for block,row in zip(blocks,planned['blocks']):
+        for key in ('use_id','assembly_material_id','assembly_order','assembly_sources'):
+            if key in row:block[key]=row[key]
     for l in layers.values():l['notes'].sort(key=lambda n:(n.start,n.pitch))
     return dict(bpm=planned['bpm'],total_ticks=planned['total_ticks'],layers=list(layers.values()),
                 report=dict(engine='story-rules-v1',bars=round(planned['total_ticks']/music.BAR,3),duration_seconds=planned['total_ticks']/rate,
                             render_mode='melody_only' if solo else 'arranged',
                             melody_continuity=dict(joined_fragments=joined,output_notes=len(melody),policy='same-source-note-only; retain-onset-timbre'),
-                            connections_enabled=True,boundaries=boundaries,playback_blocks=blocks,anchors=planned['anchors'],
+                            assembly_blocks=planned.get('assembly_blocks',[]),connections_enabled=True,boundaries=boundaries,playback_blocks=blocks,anchors=planned['anchors'],
                             warnings=planned['warnings']+['离线规则原型；非生成式 AI。锚点误差不超过半个 LMMS 时间格。']))
 
 

@@ -10,7 +10,7 @@ def signatures(path,cls=None):
 
 def check():
     errors=[]
-    contracts={'ui_platform.py':(None,('create_root','font_family','wheel_units','setup_window','prepare_process','configure_scaling','taskbar','work_area')),
+    contracts={'ui_platform.py':(None,('create_root','font_family','wheel_units','setup_window','prepare_process','configure_scaling','taskbar','work_area','edit_shortcut','open_folder')),
                'audio_player.py':('WavePlayer',('play','status','pause','resume','close')),
                'file_drop.py':('FileDrop',('__init__','close'))}
     for filename,(cls,names) in contracts.items():

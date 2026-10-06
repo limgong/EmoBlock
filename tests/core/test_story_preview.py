@@ -15,6 +15,7 @@ import emotion_input
 import story_engine as engine
 from test_auto_preview import FakeScheduler
 from unified_ui import UnifiedApp
+from legacy_story_fixture import restore_legacy
 
 
 class StoryPreviewTests(unittest.TestCase):
@@ -38,7 +39,7 @@ class StoryPreviewTests(unittest.TestCase):
             )
 
         with patch('story_ui.PreviewPlanner', side_effect=planner):
-            self.app = UnifiedApp(self.root)
+            self.app = UnifiedApp(self.root);restore_legacy(self.app)
         self.page = self.app.story_page
         self.root.update_idletasks()
         self.original = copy.deepcopy(self.page.project)
@@ -82,7 +83,7 @@ class StoryPreviewTests(unittest.TestCase):
         self.complete_preview()
         self.assertEqual(self.page.preview_status, '')
         self.assertEqual(self.page.project, self.original)
-        self.assertEqual(self.page.history, [])
+        self.assertEqual(len(self.page.history),0)
         self.assertEqual(len(self.page.planned['blocks']), 13)
         self.assertEqual(
             list(self.page.blocks.get_children()),
@@ -106,7 +107,7 @@ class StoryPreviewTests(unittest.TestCase):
         self.complete_preview()
         self.assertEqual(self.page.project, self.original)
         self.assertEqual(len(self.page.planned['blocks']), original_count)
-        self.assertEqual(self.page.history, [])
+        self.assertEqual(len(self.page.history),0)
 
     def test_preview_does_not_dirty_project_or_change_saved_audio_history(self):
         self.app.dirty = False
@@ -120,6 +121,7 @@ class StoryPreviewTests(unittest.TestCase):
         self.app.result_block.configure(values=('old block 1', 'old block 2'))
         self.app.result_block.current(1)
         self.page.input_blocks.selection_set('2')
+        self.app.saved_signature=self.app.project_signature()
         self.complete_preview()
         self.assertFalse(self.app.dirty)
         self.assertIs(self.app.results, history_object)
@@ -129,7 +131,7 @@ class StoryPreviewTests(unittest.TestCase):
         self.assertEqual(self.app.result_block['values'], ('old block 1', 'old block 2'))
         self.assertEqual(self.page.input_blocks.selection(), ('2',))
         self.assertEqual(self.page.project, self.original)
-        self.assertEqual(self.page.history, [])
+        self.assertEqual(len(self.page.history),0)
         self.assertFalse(self.app.busy)
 
     def test_restoring_during_calculation_never_displays_the_old_engine_result(self):
@@ -160,7 +162,7 @@ class StoryPreviewTests(unittest.TestCase):
         self.poll_app()
         self.assertEqual(self.page.planned['project'], self.page.project)
         self.assertEqual(self.accepted_projects, [self.page.project])
-        self.assertEqual(self.page.history, [])
+        self.assertEqual(len(self.page.history),0)
 
     def test_removing_last_source_invalidates_an_already_computed_result(self):
         self.scheduler.advance(180)
@@ -189,7 +191,7 @@ class StoryPreviewTests(unittest.TestCase):
         self.assertEqual(self.page.preview_status, '暂不可用')
         self.assertIn('test preview unavailable', self.page.message.get())
         self.assertEqual(self.page.project, self.original)
-        self.assertEqual(self.page.history, [])
+        self.assertEqual(len(self.page.history),0)
         self.assertFalse(self.app.dirty)
         self.compute = engine.plan
         self.page.resize_timeline(1)

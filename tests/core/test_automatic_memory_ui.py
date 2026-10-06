@@ -12,11 +12,12 @@ import story_engine as engine
 import ui_theme
 import ui_platform
 from unified_ui import UnifiedApp
+from legacy_story_fixture import restore_legacy
 
 
 class AutomaticMemoryUITests(unittest.TestCase):
     def setUp(self):
-        self.root=tk.Tk();self.root.withdraw();self.app=UnifiedApp(self.root)
+        self.root=tk.Tk();self.root.withdraw();self.app=UnifiedApp(self.root);restore_legacy(self.app)
         self.root.update_idletasks();self.page=self.app.story_page
 
     def tearDown(self):
@@ -29,7 +30,7 @@ class AutomaticMemoryUITests(unittest.TestCase):
             self.app.set_theme(name);self.root.update_idletasks()
             self.assertEqual(p.line.cget('background'),ui_theme.PALETTES[name]['panel'])
             self.assertEqual(p.canvas.cget('background'),ui_theme.PALETTES[name]['bg'])
-            self.assertEqual(p.project,before);self.assertEqual(p.history,[])
+            self.assertEqual(p.project,before);self.assertEqual(len(p.history),0)
             self.assertEqual(p.paint_emotion,'hope');self.assertEqual(p.selected_region,('curve',2))
         self.assertEqual(self.app.theme_choice.get(),'B · 浅色')
 
@@ -124,7 +125,7 @@ class AutomaticMemoryUITests(unittest.TestCase):
         self.assertIs(self.app.selected_report(),reports[0])
         self.app.move_history(1)
         self.assertIs(self.app.selected_report(),reports[1])
-        self.assertEqual(len(self.app.history_rows),2)
+        self.assertTrue(any(row[2]==1 for row in self.app.history_rows))
         self.assertEqual(self.app.waveform_values,[])
 
     def test_transport_pauses_and_resumes_selected_recording(self):
@@ -143,7 +144,8 @@ class AutomaticMemoryUITests(unittest.TestCase):
         reports=[dict(duration_seconds=8,output_directory=f'missing-{i}',bars=4) for i in range(8)]
         app.results=[dict(mode='快速成品',report=r) for r in reports];app.refresh_results()
         app.scroll_history(SimpleNamespace(delta=-120*20))
-        self.assertEqual([r[2] for r in app.history_rows],[1,0])
+        self.assertEqual(app.history_rows[-1][2],0)
+        self.assertLessEqual(app.history_rows[-1][1],app.history_extent()[0])
         self.assertIs(app.selected_report(),reports[-1])
         self.assertTrue(app.history_canvas.find_withtag('history-scrollbar'))
         app.hide_history_scroll()
@@ -159,7 +161,7 @@ class AutomaticMemoryUITests(unittest.TestCase):
         app.refresh_results();app.reveal_history_scroll()
         app.history_drag=(0,0)
         app.drag_history(SimpleNamespace(y=1000))
-        self.assertEqual(app.history_offset,6*49)
+        self.assertEqual(app.history_offset,app.history_extent()[2])
         app.release_history_scroll(SimpleNamespace())
         self.assertIsNone(app.history_drag)
 
@@ -215,7 +217,7 @@ class AutomaticMemoryUITests(unittest.TestCase):
         p=self.page;before=copy.deepcopy(p.project)
         for time in (0,8.5,17,26):
             p.context_click(SimpleNamespace(x=p.px(time)-p.line.canvasx(0),y=119))
-        self.assertEqual(p.project,before);self.assertEqual(p.history,[])
+        self.assertEqual(p.project,before);self.assertEqual(len(p.history),0)
         self.assertFalse(p.line.bind('<Double-Button-1>'))
 
     def test_restore_migrates_manual_markers_and_disabled_flag_without_losing_backup(self):

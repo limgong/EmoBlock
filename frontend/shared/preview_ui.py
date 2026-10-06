@@ -7,7 +7,7 @@ from pathlib import Path
 import wave
 import numpy as np
 from ui_theme import color
-from ui_hints import rounded, Tooltip
+from ui_hints import rounded, Tooltip, BoundedLabel
 from window_ui import IconButton
 import ui_scale
 
@@ -60,8 +60,8 @@ class PreviewAudio:
     def build_preview_audio(self,rail):
         self.history_canvas=tk.Canvas(rail,height=104,bg=color('panel'),highlightthickness=0,takefocus=True)
         self.history_canvas.pack(fill='x',pady=(10,5))
-        self.selected_version_label=ttk.Label(rail,text='尚无成品版本',wraplength=250,style='Muted.TLabel')
-        self.selected_version_label.pack(anchor='w',pady=(0,4))
+        self.selected_version_label=BoundedLabel(rail,text='尚无成品版本',style='Muted.TLabel')
+        self.selected_version_label.pack(fill='x',pady=(0,4))
         self.history_canvas.bind('<Configure>',lambda _:self.draw_history())
         self.history_offset=0.;self.history_scroll_timer=None;self.history_scroll_visible=False;self.history_drag=None
         self.history_canvas.bind('<Button-1>',self.choose_history)
@@ -85,12 +85,17 @@ class PreviewAudio:
             self.play_canvas.bind(event,lambda e,p=phase:self.safe(lambda:self.seek_to_pointer(e.x,p,self.play_canvas.winfo_width())))
         Tooltip(self.play_canvas,lambda _:self.play_label.cget('text')+'\n点击或拖动波形定位；空格播放 / 暂停。')
         row=ttk.Frame(rail);row.pack(fill='x',pady=(2,8))
+        self.result_transport_buttons=[]
         row.columnconfigure(0,weight=1);row.columnconfigure(4,weight=1)
         for column,label,command in ((1,'previous',lambda:self.step_result_block(-1)),(2,'play',self.toggle_result_play),(3,'next',lambda:self.step_result_block(1))):
             button=IconButton(row,label,lambda fn=command:self.safe(fn),size=40,surface='panel',primary=column==2)
             button.grid(row=0,column=column,padx=7)
+            self.result_transport_buttons.append(button)
             if column==2:self.transport_play=button
             Tooltip(button,'播放 / 暂停' if column==2 else '上一块' if column==1 else '下一块')
+        self.stop_button=ttk.Button(row,text='■ 停止',width=6,command=self.stop_playback)
+        self.stop_button.available_while_busy=True
+        self.stop_button.grid(row=0,column=4,sticky='e')
         self.audition_tiles=tk.Canvas(rail,height=104,bg=color('panel'),highlightthickness=0,takefocus=True,cursor='hand2')
         self.audition_tiles.pack(fill='x',pady=(4,6))
         self.audition_page=0;self.audition_boxes=[]
@@ -102,25 +107,34 @@ class PreviewAudio:
         Tooltip(self.audition_tiles,self.result_tile_hint)
         self.play_canvas.bind('<space>',lambda _:self.safe(self.toggle_result_play))
 
+    def history_extent(self):
+        height=self.history_canvas.winfo_height()/ui_scale.factor
+        if height<=1:height=float(self.history_canvas.cget('height'))/ui_scale.factor
+        content=max(0,len(self.results)*49-3)
+        return height,content,max(0,content-height)
+
     def draw_history(self):
         if not hasattr(self,'history_canvas'):return
         c=self.history_canvas;c.delete('all');c.configure(bg=color('panel'));w=max(200,c.winfo_width())
         ids=self.result_list.curselection();selected=ids[0] if ids else None
         self.history_rows=[]
+        viewport,content,maximum=self.history_extent()
+        self.history_offset=max(0,min(self.history_offset,maximum))
+        self.history_thumb=None
         if not self.results:
-            rounded(c,1,1,w-1,98,color('inset'),color('line'),radius=14)
-            c.create_text(w/2,44,text='尚无成品版本',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',10)))
-            c.create_text(w/2,67,text='生成后在此试听',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',9)))
+            rounded(c,1,1,w-1,viewport-1,color('inset'),color('line'),radius=14)
+            c.create_text(w/2,viewport/2-10,text='尚无成品版本',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',10)))
+            c.create_text(w/2,viewport/2+13,text='生成后在此试听',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',9)))
             c.scale('all',0,0,1,ui_scale.factor);return
-        maximum=max(0,(len(self.results)-2)*49)
         self.history_offset=max(0,min(self.history_offset,maximum))
         indexes=list(reversed(range(len(self.results))))
         for slot,index in enumerate(indexes):
             r=self.results[index];y=slot*49-self.history_offset;active=index==selected
-            if y+46<0 or y>=98:continue
+            if y+46<0 or y>=viewport:continue
             rounded(c,1,y+1,w-1,y+46,color('inset'),color('accent') if active else color('line'),radius=12)
             c.create_text(18,y+25,text=f'{index+1:02}',fill=color('muted'),font=scaled_font(('Segoe UI',10)))
-            c.create_text(40,y+17,text=r['mode'],anchor='w',fill=color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
+            available=(Path(r['report']['output_directory'])/'preview.wav').is_file()
+            c.create_text(40,y+17,text=r['mode']+('' if available else ' · 音频不可用'),anchor='w',fill=color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
             seconds=r['report']['duration_seconds']
             stamp=r.get('generated_at','')[:16].replace('T',' ') or '时间未记录'
             c.create_text(40,y+33,text=f'{seconds:g} 秒 · {stamp}',anchor='w',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
@@ -128,14 +142,14 @@ class PreviewAudio:
             self.history_rows.append((y,y+46,index))
         c.scale('all',0,0,1,ui_scale.factor)
         if maximum and self.history_scroll_visible:
-            height=98*ui_scale.factor;thumb=max(18*ui_scale.factor,height*2/len(self.results))
+            height=viewport*ui_scale.factor;thumb=min(height,max(18*ui_scale.factor,height*viewport/content))
             top=(height-thumb)*self.history_offset/maximum
             self.history_thumb=(top,thumb,height)
             c.create_line(w-4,top+3,w-4,top+thumb-3,fill=color('muted'),width=5,capstyle='round',tags='history-scrollbar')
 
     def reveal_history_scroll(self):
         if self.history_scroll_timer:self.history_canvas.after_cancel(self.history_scroll_timer)
-        self.history_scroll_visible=len(self.results)>2
+        self.history_scroll_visible=self.history_extent()[2]>0
         self.history_scroll_timer=self.history_canvas.after(900,self.hide_history_scroll)
         self.draw_history()
 
@@ -151,20 +165,21 @@ class PreviewAudio:
 
     def scroll_history(self,event):
         import ui_platform
-        self.history_offset=max(0,min(max(0,(len(self.results)-2)*49),self.history_offset+ui_platform.wheel_units(event.delta)*49))
+        self.history_offset=max(0,min(self.history_extent()[2],self.history_offset+ui_platform.wheel_units(event.delta)*49))
         self.reveal_history_scroll();return 'break'
 
     def scroll_history_touchpad(self,event):
         from scroll_input import touchpad_deltas
         _,dy=touchpad_deltas(event)
-        self.history_offset=max(0,min(max(0,(len(self.results)-2)*49),self.history_offset-dy))
+        self.history_offset=max(0,min(self.history_extent()[2],self.history_offset-dy/ui_scale.factor))
         self.reveal_history_scroll();return 'break'
 
     def drag_history(self,event):
         if self.history_drag is None:return
         origin,offset=self.history_drag
+        if not self.history_thumb:return
         _,thumb,height=self.history_thumb
-        self.history_offset=max(0,min((len(self.results)-2)*49,offset+(event.y-origin)/max(1,height-thumb)*(len(self.results)-2)*49))
+        self.history_offset=max(0,min(self.history_extent()[2],offset+(event.y-origin)/max(1,height-thumb)*self.history_extent()[2]))
         self.reveal_history_scroll();return 'break'
 
     def release_history_scroll(self,event):
@@ -173,20 +188,21 @@ class PreviewAudio:
 
     def choose_history(self,event):
         self.history_canvas.focus_set()
-        if len(self.results)>2 and getattr(event,'x',0)>=max(200,self.history_canvas.winfo_width())-10:
+        if self.history_extent()[2]>0 and getattr(event,'x',0)>=max(200,self.history_canvas.winfo_width())-10:
             self.reveal_history_scroll()
             top,thumb,height=self.history_thumb
             if not top<=event.y<=top+thumb:
-                self.history_offset=max(0,min((len(self.results)-2)*49,(event.y-thumb/2)/max(1,height-thumb)*(len(self.results)-2)*49))
+                self.history_offset=max(0,min(self.history_extent()[2],(event.y-thumb/2)/max(1,height-thumb)*self.history_extent()[2]))
                 self.draw_history()
             self.history_drag=(event.y,self.history_offset);return
+        if not 0<=event.y<self.history_extent()[0]*ui_scale.factor:return
         for start,end,index in self.history_rows:
             if start<=event.y/ui_scale.factor<=end:self.select_history(index);return
 
     def select_history(self,index):
         top=(len(self.results)-1-index)*49
         if top<self.history_offset:self.history_offset=top
-        elif top+49>self.history_offset+98:self.history_offset=top-49
+        elif top+46>self.history_offset+self.history_extent()[0]:self.history_offset=top+46-self.history_extent()[0]
         self.result_list.selection_clear(0,'end');self.result_list.selection_set(index);self.show_result()
 
     def move_history(self,delta):
@@ -217,15 +233,17 @@ class PreviewAudio:
     def draw_playback(self):
         if not hasattr(self,'play_canvas'):return
         c=self.play_canvas;c.delete('all');c.configure(bg=color('panel'));w=max(100,c.winfo_width())
+        visible=max(40,c.winfo_height()/ui_scale.factor)
+        center=(visible-20)/2
         values=getattr(self,'waveform_values',[]);maximum=max(values,default=0) or 1
         fraction=self.play_position/max(.001,self.play_duration)
         for i,value in enumerate(values or [0]*40):
             count=len(values) if values else 40;x=8+(w-16)*(i+.5)/count
-            height=max(2,36*(value/maximum)**.65)
-            c.create_line(x,23-height/2,x,23+height/2,fill=color('accent') if values and i/count<fraction else color('line'),width=3,capstyle='round')
+            height=max(2,min(36,visible-24)*(value/maximum)**.65)
+            c.create_line(x,center-height/2,x,center+height/2,fill=color('accent') if values and i/count<fraction else color('line'),width=3,capstyle='round')
         def clock(seconds):return f'{int(seconds)//60:02}:{int(seconds)%60:02}'
-        c.create_text(8,56,text=clock(self.play_position),anchor='w',fill=color('muted'),font=scaled_font(('Consolas',9)))
-        c.create_text(w-8,56,text=clock(self.play_duration),anchor='e',fill=color('muted'),font=scaled_font(('Consolas',9)))
+        c.create_text(8,visible-8,text=clock(self.play_position),anchor='w',fill=color('muted'),font=scaled_font(('Consolas',9)))
+        c.create_text(w-8,visible-8,text=clock(self.play_duration),anchor='e',fill=color('muted'),font=scaled_font(('Consolas',9)))
         c.scale('all',0,0,1,ui_scale.factor)
         if hasattr(self,'transport_play'):
             self.transport_play.icon='pause' if getattr(self,'transport_running',False) else 'play'
@@ -249,7 +267,9 @@ class PreviewAudio:
         if not hasattr(self,'audition_tiles'):return
         from story_ui import COLORS
         c=self.audition_tiles;c.delete('all');c.configure(bg=color('panel'));w=max(180,c.winfo_width())
-        blocks=getattr(self,'audition_blocks',[]);columns=max(3,int(w//(42*ui_scale.factor)));capacity=columns*2
+        blocks=getattr(self,'audition_blocks',[]);columns=max(3,int(w//(42*ui_scale.factor)))
+        visible=c.winfo_height()/ui_scale.factor
+        rows=max(1,min(2,int((visible-27+6)//35)));capacity=columns*rows
         from studio_model import active_block
         current=None
         try:
@@ -265,7 +285,7 @@ class PreviewAudio:
         if pages>1:c.create_text(w-4,10,text=f'‹  {self.audition_page+1}/{pages}  ›',anchor='e',fill=color('ink'),font=scaled_font(('Segoe UI',10)))
         self.audition_boxes=[]
         if not blocks:
-            c.create_text(w/2,56,text='生成后点击分块试听',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',9)));c.scale('all',0,0,1,ui_scale.factor);return
+            c.create_text(w/2,min(42,visible-10),text='生成后点击分块试听',fill=color('muted'),font=scaled_font(('Microsoft YaHei UI',9)));c.scale('all',0,0,1,ui_scale.factor);return
         selected=selected_index(self.result_block);tile=(w-2)/columns
         for slot,index in enumerate(range(self.audition_page*capacity,min(len(blocks),(self.audition_page+1)*capacity))):
             b=blocks[index];x=slot%columns*tile+2;y=27+slot//columns*35;active=index==selected

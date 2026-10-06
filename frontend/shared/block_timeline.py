@@ -12,6 +12,7 @@ from block_visuals import brick, BlockMotion
 
 COLORS=dict(calm='#8fcddd',hope='#ebd18c',sad='#a6a6df',suspense='#c8a6df',crisis='#e99c98',resolve='#97d9ba')
 LABELS=engine.music.EMOTIONS
+DRAG_LABELS=dict(move='移动情绪段',boundary='调整段落边界',paint='情绪涂色',intensity='调整强度')
 
 
 class BlockTimeline:
@@ -172,7 +173,7 @@ class BlockTimeline:
             return
         if 116<=event.y<=214:
             hit=next((i for i,a,b in self.intensity_handles if abs(x-a)<=12 and abs(event.y-b)<=12),None)
-            if hit is not None:self.drag=('intensity',x,hit);self.curve_preview=intensity_curve.controls(self.project)
+            if hit is not None:self.drag=('intensity',x,hit);self.curve_preview=intensity_curve.controls(self.project);self.intensity_origin=event.y;self.intensity_moved=False
         elif self.paint_emotion is not None:
             if 30<=event.y<=108:self.drag=('paint',x)
         else:
@@ -199,7 +200,12 @@ class BlockTimeline:
         self.drag_error='';self.drag_preview=None;self.drag_slot=None
         try:
             if kind=='intensity':
-                self.curve_preview[self.drag[2]]['level']=max(0.,min(1.,(206-event.y)/62))
+                # Offset from the pressed level, so returning to the start pixel restores it exactly;
+                # the dead zone keeps a plain click from nudging the dot.
+                self.intensity_moved=self.intensity_moved or abs(event.y-self.intensity_origin)>=3
+                if self.intensity_moved:
+                    base=intensity_curve.controls(self.project)[self.drag[2]]['level']
+                    self.curve_preview[self.drag[2]]['level']=max(0.,min(1.,base+(self.intensity_origin-event.y)/62))
             elif kind=='paint':
                 start,end=emotion_input.snapped_range(self.project,self.seconds_at(left),self.seconds_at(x))
                 v=self.values();self.drag_preview=emotion_input.paint_blocks(self.project,start,end,self.paint_emotion,v['level'],v['end_level']);self.drag_slot=(start,end)
@@ -256,4 +262,5 @@ class BlockTimeline:
         elif preview is not None and preview!=self.project:
             if drop:
                 self.settling=True;self.block_motion.positions[(drop[0],0)]=drop[1]
-            self.host.safe(lambda:self.commit(preview));self.host.tell('积木已更新 · Ctrl+Z 撤销')
+            label=DRAG_LABELS[kind]
+            if self.host.safe(lambda:self.commit(preview,label)):self.host.tell('已'+label+' · '+self.undo_hint())

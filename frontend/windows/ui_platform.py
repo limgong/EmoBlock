@@ -1,11 +1,23 @@
 """Windows-specific UI defaults."""
 import tkinter as tk
+import os
+from pathlib import Path
 NATIVE_CHROME=False
 CONTEXT_EVENTS=('<Button-3>',)
+EDIT_SHORTCUT_EVENTS=('<Control-z>','<Control-y>')
+UNDO_LABEL='Ctrl+Z';REDO_LABEL='Ctrl+Y'
 def create_root():return tk.Tk()
 def font_family(name):return name
 def wheel_units(delta):return -int(delta/120) if abs(delta)>=120 else (-1 if delta>0 else 1 if delta<0 else 0)
-def setup_window(root,app):return None
+def edit_shortcut(event):return 'redo' if str(getattr(event,'keysym','')).lower()=='y' else 'undo'
+def setup_window(root,app):
+    root.bind('<Control-s>',lambda event:app.safe(app.save_project))
+    root.bind('<Control-o>',lambda event:app.safe(app.open_project))
+
+def open_folder(path):
+    folder=Path(path).resolve()
+    if not folder.is_dir():raise ValueError('快照所在文件夹已移动或不可用。')
+    os.startfile(str(folder))
 
 def prepare_process():
     import ctypes

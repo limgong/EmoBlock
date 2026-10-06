@@ -4,6 +4,10 @@ BAR=1920
 
 
 def labels(plan,block):
+    if block.get('use_id'):
+        parts=block.get('assembly_sources',[])
+        origin='＋'.join(p['name'] for p in parts) or '连接'
+        return dict(short=f'积木 {block["assembly_order"]+1} · '+origin,full=f'用户积木 {block["assembly_order"]+1} / '+origin+' / 内部'+block['kind'])
     sources={s['id']:(i+1,s['name']) for i,s in enumerate(plan['project']['sources'])}
     materials={m['id']:m for m in plan['materials']}
     if not block.get('source_spans'):

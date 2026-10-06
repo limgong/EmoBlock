@@ -1,0 +1,889 @@
+{
+  "platform": "macOS, Tk 9, mapped native windows; programmatic GUI, not human visual review",
+  "screen": [
+    1710,
+    1112
+  ],
+  "before": [
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 20,
+      "visible_height": 72,
+      "offset": 882,
+      "last_bottom": 95.0,
+      "last_fully_visible": false,
+      "selected": [
+        19
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 0,
+      "visible_height": 72,
+      "offset": 1000000.0,
+      "last_bottom": null,
+      "last_fully_visible": true,
+      "selected": []
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 1,
+      "visible_height": 72,
+      "offset": 0,
+      "last_bottom": 46.0,
+      "last_fully_visible": true,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 2,
+      "visible_height": 72,
+      "offset": 0,
+      "last_bottom": 95.0,
+      "last_fully_visible": false,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 5,
+      "visible_height": 72,
+      "offset": 147,
+      "last_bottom": 95.0,
+      "last_fully_visible": false,
+      "selected": [
+        4
+      ]
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "normal",
+      "line_height": 228,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "running",
+      "line_height": 205,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "failed",
+      "line_height": 164,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "details",
+      "line_height": 104,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 20,
+      "visible_height": 104,
+      "offset": 882,
+      "last_bottom": 95.0,
+      "last_fully_visible": true,
+      "selected": [
+        19
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 0,
+      "visible_height": 104,
+      "offset": 1000000.0,
+      "last_bottom": null,
+      "last_fully_visible": true,
+      "selected": []
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 1,
+      "visible_height": 104,
+      "offset": 0,
+      "last_bottom": 46.0,
+      "last_fully_visible": true,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 2,
+      "visible_height": 104,
+      "offset": 0,
+      "last_bottom": 95.0,
+      "last_fully_visible": true,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 5,
+      "visible_height": 104,
+      "offset": 147,
+      "last_bottom": 95.0,
+      "last_fully_visible": true,
+      "selected": [
+        4
+      ]
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "normal",
+      "line_height": 328,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "running",
+      "line_height": 282,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "failed",
+      "line_height": 264,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "details",
+      "line_height": 204,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": false,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 20,
+      "visible_height": 108,
+      "offset": 882,
+      "last_bottom": 98.27586206896552,
+      "last_fully_visible": true,
+      "selected": [
+        19
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 0,
+      "visible_height": 108,
+      "offset": 1000000.0,
+      "last_bottom": null,
+      "last_fully_visible": true,
+      "selected": []
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 1,
+      "visible_height": 108,
+      "offset": 0,
+      "last_bottom": 47.58620689655173,
+      "last_fully_visible": true,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 2,
+      "visible_height": 108,
+      "offset": 0,
+      "last_bottom": 98.27586206896552,
+      "last_fully_visible": true,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 5,
+      "visible_height": 108,
+      "offset": 147,
+      "last_bottom": 98.27586206896552,
+      "last_fully_visible": true,
+      "selected": [
+        4
+      ]
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "normal",
+      "line_height": 421,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "running",
+      "line_height": 375,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "failed",
+      "line_height": 357,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "details",
+      "line_height": 297,
+      "selected_height": 184,
+      "visible": {
+        "generate": true,
+        "play": false,
+        "stop": false,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    }
+  ],
+  "after": [
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 20,
+      "visible_height": 72,
+      "offset": 905.0,
+      "last_bottom": 72.0,
+      "last_fully_visible": true,
+      "selected": [
+        19
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 0,
+      "visible_height": 72,
+      "offset": 0,
+      "last_bottom": null,
+      "last_fully_visible": true,
+      "selected": []
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 1,
+      "visible_height": 72,
+      "offset": 0,
+      "last_bottom": 46.0,
+      "last_fully_visible": true,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 2,
+      "visible_height": 72,
+      "offset": 23.0,
+      "last_bottom": 72.0,
+      "last_fully_visible": true,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1020x700",
+      "count": 5,
+      "visible_height": 72,
+      "offset": 170.0,
+      "last_bottom": 72.0,
+      "last_fully_visible": true,
+      "selected": [
+        4
+      ]
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "normal",
+      "line_height": 228,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "running",
+      "line_height": 187,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "failed",
+      "line_height": 164,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1020x700",
+      "state": "details",
+      "line_height": 164,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 20,
+      "visible_height": 104,
+      "offset": 873.0,
+      "last_bottom": 104.0,
+      "last_fully_visible": true,
+      "selected": [
+        19
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 0,
+      "visible_height": 104,
+      "offset": 0,
+      "last_bottom": null,
+      "last_fully_visible": true,
+      "selected": []
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 1,
+      "visible_height": 104,
+      "offset": 0,
+      "last_bottom": 46.0,
+      "last_fully_visible": true,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 2,
+      "visible_height": 104,
+      "offset": 0,
+      "last_bottom": 95.0,
+      "last_fully_visible": true,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1280x800",
+      "count": 5,
+      "visible_height": 104,
+      "offset": 138.0,
+      "last_bottom": 104.0,
+      "last_fully_visible": true,
+      "selected": [
+        4
+      ]
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "normal",
+      "line_height": 328,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "running",
+      "line_height": 264,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "failed",
+      "line_height": 264,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1280x800",
+      "state": "details",
+      "line_height": 264,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 20,
+      "visible_height": 108,
+      "offset": 872.6,
+      "last_bottom": 107.99999999999999,
+      "last_fully_visible": true,
+      "selected": [
+        19
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 0,
+      "visible_height": 108,
+      "offset": 0,
+      "last_bottom": null,
+      "last_fully_visible": true,
+      "selected": []
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 1,
+      "visible_height": 108,
+      "offset": 0,
+      "last_bottom": 47.58620689655173,
+      "last_fully_visible": true,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 2,
+      "visible_height": 108,
+      "offset": 0,
+      "last_bottom": 98.27586206896552,
+      "last_fully_visible": true,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "case": "history_end",
+      "size": "1440x900",
+      "count": 5,
+      "visible_height": 108,
+      "offset": 137.60000000000002,
+      "last_bottom": 107.99999999999999,
+      "last_fully_visible": true,
+      "selected": [
+        4
+      ]
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "normal",
+      "line_height": 421,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "running",
+      "line_height": 357,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": false,
+        "details": false
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "failed",
+      "line_height": 357,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    },
+    {
+      "case": "layout",
+      "size": "1440x900",
+      "state": "details",
+      "line_height": 357,
+      "selected_height": 40,
+      "visible": {
+        "generate": true,
+        "play": true,
+        "stop": true,
+        "wav": true,
+        "retry": true,
+        "details": true
+      },
+      "dirty": false,
+      "history": 0,
+      "playing": null
+    }
+  ],
+  "interactions": [
+    {
+      "size": "1020x700",
+      "selection_hits": [
+        20,
+        11,
+        1
+      ],
+      "timeline_click": "curve 1",
+      "timeline_drag": "one undo entry, undo restores persisted content",
+      "wave_seek": "50 percent gives 8 seconds, device mocked",
+      "titles": [
+        {
+          "text": "很长的中文旋律素材名称用于检查小窗口文字是否遮挡用途和试…",
+          "title_bottom": 29,
+          "metadata_top": 34
+        },
+        {
+          "text": "Very Long English Melody Name With Multiple Words And A Lo…",
+          "title_bottom": 29,
+          "metadata_top": 34
+        }
+      ],
+      "dirty": false
+    },
+    {
+      "size": "1440x900",
+      "selection_hits": [
+        20,
+        11,
+        1
+      ],
+      "timeline_click": "curve 1",
+      "timeline_drag": "one undo entry, undo restores persisted content",
+      "wave_seek": "50 percent gives 8 seconds, device mocked",
+      "titles": [
+        {
+          "text": "很长的中文旋律素材名称用于检查小窗口文字是否遮挡用途和试听按钮以及其他控件",
+          "title_bottom": 30,
+          "metadata_top": 35
+        },
+        {
+          "text": "Very Long English Melody Name With Multiple Words And A Long UnbrokenSuffixABCDEFGHIJKLMNOPQRSTUVWXYZ",
+          "title_bottom": 30,
+          "metadata_top": 35
+        }
+      ],
+      "dirty": false
+    },
+    {
+      "size": "1280x800",
+      "selection_hits": [
+        20,
+        11,
+        1
+      ],
+      "timeline_click": "curve 1",
+      "timeline_drag": "one undo entry, undo restores persisted content",
+      "wave_seek": "50 percent gives 8 seconds, device mocked",
+      "titles": [
+        {
+          "text": "很长的中文旋律素材名称用于检查小窗口文字是否遮挡用途和试听按钮以及其他控件",
+          "title_bottom": 29,
+          "metadata_top": 34
+        },
+        {
+          "text": "Very Long English Melody Name With Multiple Words And A Long UnbrokenSuffixABCDEFGHIJKLMNOPQR…",
+          "title_bottom": 29,
+          "metadata_top": 34
+        }
+      ],
+      "dirty": false
+    },
+    {
+      "size": "1020x700",
+      "selection_hits": [
+        20,
+        11,
+        1
+      ],
+      "timeline_click": "curve 1",
+      "timeline_drag": "one undo entry, undo restores persisted content",
+      "wave_seek": "50 percent gives 8 seconds, device mocked",
+      "titles": [
+        {
+          "text": "很长的中文旋律素材名称用于检查小窗口文字是否遮挡用途和试…",
+          "title_bottom": 29,
+          "metadata_top": 34
+        },
+        {
+          "text": "Very Long English Melody Name With Multiple Words And A Lo…",
+          "title_bottom": 29,
+          "metadata_top": 34
+        }
+      ],
+      "dirty": false
+    }
+  ]
+}

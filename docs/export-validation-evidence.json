@@ -1,0 +1,80 @@
+{
+  "real_generation": true,
+  "exports": [
+    {
+      "version": "V01",
+      "format": "WAV",
+      "bytes": 1587644,
+      "source_sha256": "eaaeefd3c475358bcfae5c4a77d3bf9ed75ca639db730cb3bf168b3044c37fb6",
+      "export_sha256": "eaaeefd3c475358bcfae5c4a77d3bf9ed75ca639db730cb3bf168b3044c37fb6",
+      "source_unchanged": true,
+      "state_unchanged": true
+    },
+    {
+      "version": "V01",
+      "format": "MIDI",
+      "bytes": 1166,
+      "source_sha256": "37d7c9775f811fee0b4c754d91da205b8a71cae7dab769168336670c556472d7",
+      "export_sha256": "37d7c9775f811fee0b4c754d91da205b8a71cae7dab769168336670c556472d7",
+      "source_unchanged": true,
+      "state_unchanged": true
+    },
+    {
+      "version": "V01",
+      "format": "MMP",
+      "bytes": 14385,
+      "source_sha256": "38280636659235c4a90aace3819c5efcbc4d2dd1eda853c82ca3e570cbaf6b45",
+      "export_sha256": "38280636659235c4a90aace3819c5efcbc4d2dd1eda853c82ca3e570cbaf6b45",
+      "source_unchanged": true,
+      "state_unchanged": true
+    },
+    {
+      "version": "V02",
+      "format": "WAV",
+      "bytes": 1587644,
+      "source_sha256": "4640e7dfbf545ea553c86544a67c8a166c8de275f1739b2b4129c3c2e36bfb2a",
+      "export_sha256": "4640e7dfbf545ea553c86544a67c8a166c8de275f1739b2b4129c3c2e36bfb2a",
+      "source_unchanged": true,
+      "state_unchanged": true
+    },
+    {
+      "version": "V02",
+      "format": "MIDI",
+      "bytes": 1402,
+      "source_sha256": "9f620bfa3f90456e6d523308d00342912ed960d8cb3c89a3e2abff3e4cc67dd0",
+      "export_sha256": "9f620bfa3f90456e6d523308d00342912ed960d8cb3c89a3e2abff3e4cc67dd0",
+      "source_unchanged": true,
+      "state_unchanged": true
+    },
+    {
+      "version": "V02",
+      "format": "MMP",
+      "bytes": 16171,
+      "source_sha256": "7a248c4cf3b060d6ff16ef5ee42f97b09c23299a880e57b278369b0a4cc0b1be",
+      "export_sha256": "7a248c4cf3b060d6ff16ef5ee42f97b09c23299a880e57b278369b0a4cc0b1be",
+      "source_unchanged": true,
+      "state_unchanged": true
+    }
+  ],
+  "phases": [
+    "检查当前编辑",
+    "请求已开始，正在准备生成…",
+    "发展关联素材，按情绪线和锚点预留连接窗口…",
+    "连续渲染整首音乐；固定锚点不会因连接而后移…",
+    "检查当前编辑",
+    "请求已开始，正在准备生成…",
+    "发展关联素材，按情绪线和锚点预留连接窗口…",
+    "连续渲染整首音乐；固定锚点不会因连接而后移…"
+  ],
+  "window": [
+    1020,
+    700
+  ],
+  "core_controls_visible": true,
+  "folder_adapter_argument_correct": true,
+  "native_dialog": false,
+  "native_folder_open": false,
+  "third_party_open": false,
+  "human_listening": false,
+  "RUN_ID": "export-b368065d-f3f9-45e2-849b-aa6426ce38f0"
+}

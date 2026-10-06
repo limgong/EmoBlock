@@ -4,21 +4,28 @@ from ui_theme import color as theme_color
 """Single-window simplified workflow; legacy editors remain available."""
 import copy
 import json
+import time
+import traceback
+import wave
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog
 import story_engine as engine
+import assembly
+from assembly_ui import AssemblyUI
 import emotion_input
 import default_melody
 import block_labels
 import block_audition
 import intensity_curve
 import block_editor
-from ui_hints import Tooltip, rounded
+from ui_hints import Tooltip, rounded, elide, BoundedLabel
 from block_timeline import BlockTimeline
 from block_actions import BlockActions
 from auto_preview import PreviewPlanner
 from window_ui import RoundedPanel
+from edit_history import EditHistory
+import ui_platform
 import ui_scale
 
 LABELS=engine.music.EMOTIONS
@@ -26,12 +33,9 @@ ROLE_LABELS={'auto':'自动判断','main':'主基调','secondary':'副旋律','c
 COLORS=dict(calm='#8fcddd',hope='#ebd18c',sad='#a6a6df',suspense='#c8a6df',crisis='#e99c98',resolve='#97d9ba')
 
 
-class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
+class StoryPage(AssemblyUI,BlockActions,BlockTimeline,ttk.Frame):
     def __init__(self,parent,host):
-        super().__init__(parent);self.host=host;self.project=emotion_input.default_story();self.planned=None;self.history=[];self.drag=None;self.source=None;self.path=None
-        self.project['sources']=[default_melody.source()]
-        self.project['continuous_intensity']=True
-        self.project=engine.automatic_memory_project(emotion_input.normalize(self.project))
+        super().__init__(parent);self.host=host;self.project=assembly.new_project(default_melody.source());self.planned=None;self.history=EditHistory();self.drag=None;self.source=None;self.path=None
         self.duration=tk.StringVar(value=str(self.project['duration']));self.bpm=tk.StringVar(value='120')
         self.melody_only=tk.BooleanVar(value=False)
         self.track=tk.StringVar();self.role=tk.StringVar(value='自动判断');self.policy=tk.StringVar(value='同时起音取高音')
@@ -40,6 +44,8 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.paint_emotion=None;self.strength=tk.DoubleVar(value=35);self.trend=tk.StringVar(value='平稳')
         self.brush_text=tk.StringVar();self.selected_region=None
         self.message=tk.StringVar(value='')
+        self.generation_state='idle';self.generation_stage='';self.generation_started=None
+        self.generation_status=tk.StringVar(value='');self.generation_detail=''
         self.drag_preview=None;self.drag_error='';self.scroll_timer=None;self.hover_region=None
         self.columnconfigure(0,weight=1);self.rowconfigure(1,weight=1)
         self.source_panel=RoundedPanel(self,padding=10,height=176)
@@ -54,13 +60,19 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         source_import=self.btn(row,'＋ 导入',self.choose,'选择或拖入 MIDI / MMP。默认同时起音取高音，多音轨选择较高声部。')
         source_import.configure(style='PanelQuiet.TButton',width=6)
         source_header=row
+        self.combine_button=self.btn(row,'组合素材',self.open_combination,'自由加入、重复和排序分块，保存为独立组合素材。')
+        self.combine_button.configure(style='PanelQuiet.TButton')
         self.tracks=ttk.Combobox(row,textvariable=self.track,state='readonly',width=28)
-        self.sources=ttk.Treeview(body,columns=('role','beats'),show='tree headings',height=3)
+        self.source_details=tk.Toplevel(self);self.source_details.withdraw();self.source_details.title('旋律分块试听')
+        self.source_details.geometry('760x460');self.source_details.transient(self.host.root)
+        self.source_details.protocol('WM_DELETE_WINDOW',self.source_details.withdraw)
+        self.sources=ttk.Treeview(self.source_details,columns=('role','beats'),show='tree headings',height=3)
+        self.sources.pack(fill='x',padx=12,pady=4)
         self.sources.heading('#0',text='输入旋律（保存音符快照，不依赖原文件）');self.sources.heading('role',text='用途');self.sources.heading('beats',text='拍数')
         self.sources.column('#0',width=390);self.sources.column('role',width=90);self.sources.column('beats',width=60)
         self.source_cards=ttk.Frame(body);self.source_cards.pack(fill='x',pady=(2,0))
         self.source_cards.bind('<Configure>',self.resize_source_cards)
-        self.source_detail_button=self.btn(source_header,'分块试听 ▸',self.toggle_source_details,'展开四拍分块、旋律音符和输入试听。卡片上的播放按钮也可直接试听。')
+        self.source_detail_button=self.btn(source_header,'原始素材 ▸',self.toggle_source_details,'展开四拍分块、旋律音符和输入试听。卡片上的播放按钮也可直接试听。')
         self.source_detail_button.configure(style='PanelQuiet.TButton')
         source_import.pack_forget();self.source_detail_button.pack_forget()
         self.source_detail_button.pack(side='right');source_import.pack(side='right',padx=6)
@@ -68,21 +80,23 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.source_prev=self.btn(source_header,'‹',lambda:self.page_sources(-1),'上一页素材')
         self.source_next=self.btn(source_header,'›',lambda:self.page_sources(1),'下一页素材')
         ttk.Label(source_header,textvariable=self.source_page_label,style='Muted.TLabel').pack(side='right')
-        self.source_details=tk.Toplevel(self);self.source_details.withdraw();self.source_details.title('旋律分块试听')
-        self.source_details.geometry('760x460');self.source_details.transient(self.host.root)
-        self.source_details.protocol('WM_DELETE_WINDOW',self.source_details.withdraw)
         source_body=ttk.Frame(self.source_details,padding=12);source_body.pack(fill='both',expand=True)
-        self.source_audio=None;self.source_seek=False
+        self.source_audio=None;self.source_seek=False;self.source_error=''
         row=self.row(source_body)
         self.source_play_button=ttk.Button(row,text='▶ 播放 / 暂停',command=lambda:self.host.safe(self.toggle_source_play))
+        self.source_play_button.pack(side='left')
         self.source_time=tk.StringVar(value='选择一张旋律卡片');ttk.Label(row,textvariable=self.source_time).pack(side='left',padx=6)
         self.source_slider=ttk.Scale(source_body,from_=0,to=100,orient='horizontal',cursor='hand2');self.source_slider.pack(fill='x')
         for event,phase in [('<ButtonPress-1>','start'),('<B1-Motion>','move'),('<ButtonRelease-1>','end')]:
             self.source_slider.bind(event,lambda e,p=phase:self.source_seek_event(e,p))
-        self.source_settings=ttk.Frame(body);self.selected_role=tk.StringVar(value='自动判断')
+        self.source_settings=ttk.Frame(source_body);self.selected_role=tk.StringVar(value='自动判断')
         ttk.Label(self.source_settings,text='选中素材用途').pack(side='left')
         ttk.Combobox(self.source_settings,textvariable=self.selected_role,values=list(ROLE_LABELS.values()),state='readonly',width=12).pack(side='left',padx=5)
         self.btn(self.source_settings,'应用用途',self.apply_source_role)
+        self.source_settings.pack(fill='x')
+        ttk.Label(self.source_settings,text='BPM').pack(side='left',padx=(12,4))
+        ttk.Entry(self.source_settings,textvariable=self.bpm,width=6).pack(side='left')
+        self.btn(self.source_settings,'应用速度',self.apply_settings)
         self.sources.bind('<<TreeviewSelect>>',lambda _:self.refresh_source_blocks())
         self.input_blocks=ttk.Treeview(body,columns=('beats','seconds','notes'),show='tree headings',height=3)
         for col,label in [('#0','所选输入旋律 · 四拍分块'),('beats','拍范围'),('seconds','秒范围'),('notes','音符数')]:
@@ -99,6 +113,11 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         row=self.row(body);self.editor_heading=row
         ttk.Label(row,text='情绪积木',font=scaled_font(('Microsoft YaHei UI',11,'bold'))).pack(side='left',padx=(0,16))
         self.grid_info=tk.StringVar();ttk.Label(row,textvariable=self.grid_info,style='Muted.TLabel').pack(side='right')
+        # Undo/redo live in the heading row, which keeps room at the minimum window width.
+        self.undo_button=ttk.Button(row,text='↶ 撤销',style='Compact.TButton',command=lambda:self.host.safe(self.undo))
+        self.redo_button=ttk.Button(row,text='↷ 重做',style='Compact.TButton',command=lambda:self.host.safe(self.redo))
+        for b,kind in ((self.undo_button,'undo'),(self.redo_button,'redo')):
+            b.pack(side='left',padx=(0,4));Tooltip(b,lambda _,k=kind:self.history_hint(k))
         row=self.row(body);self.emotion_buttons={};self.emotion_swatches=[]
         for key,label in LABELS.items():
             swatch=tk.PhotoImage(master=self,width=9,height=9);swatch.put(COLORS[key],to=(0,0,9,9));self.emotion_swatches.append(swatch)
@@ -109,9 +128,14 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             b.pack(side='left',padx=2);self.emotion_buttons[key]=b
             Tooltip(b,label+'：点击后在积木区左键涂色，再点一次此颜色退出涂色。强度圆点始终可直接拖动。')
         tools=ttk.Frame(row);tools.pack(side='right')
-        for text,command,hint in [('−',lambda:self.resize_timeline(-1),'缩短四拍'),('＋',lambda:self.resize_timeline(1),'增加四拍'),('↶',self.undo,'撤销 · Ctrl+Z')]:
+        self.resize_buttons=[]
+        for text,command,hint in [('−',lambda:self.resize_timeline(-1),'缩短四拍'),('＋',lambda:self.resize_timeline(1),'增加四拍')]:
             b=ttk.Button(tools,text=text,width=2,style='Compact.TButton',command=lambda fn=command:self.host.safe(fn));b.pack(side='left',padx=2)
-            Tooltip(b,hint)
+            Tooltip(b,hint);self.resize_buttons.append(b)
+        self.assembly_tools=ttk.Frame(tools)
+        self.delete_use_button=self.btn(self.assembly_tools,'删除',self.delete_uses)
+        self.combine_use_button=self.btn(self.assembly_tools,'组合',self.save_selected_combination)
+        for b in (self.delete_use_button,self.combine_use_button):b.configure(style='Compact.TButton',width=4)
         self.line=tk.Canvas(body,height=310,bg=theme_color('panel'),highlightthickness=0,takefocus=True,xscrollincrement=1);self.line.pack(fill='both',expand=True,pady=(4,0))
         timeline_scroll=ttk.Scrollbar(body,orient='horizontal',command=self.line.xview);timeline_scroll.pack(fill='x',pady=(0,2))
         def scroll_state(first,last):
@@ -122,16 +146,35 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.source_legend=tk.StringVar()
         self.line.bind('<Configure>',lambda e:self.draw());self.line.bind('<Button-1>',lambda e:self.press(self.timeline_event(e)));self.line.bind('<B1-Motion>',lambda e:self.motion(self.timeline_event(e)));self.line.bind('<ButtonRelease-1>',lambda e:self.release(self.timeline_event(e)))
         self.line.bind('<Motion>',lambda e:self.hover(self.timeline_event(e)));self.line.bind('<Leave>',self.leave)
-        import ui_platform
         for event in ui_platform.CONTEXT_EVENTS:self.line.bind(event,lambda e:self.host.safe(lambda:self.context_click(self.timeline_event(e))))
-        self.line.bind('<Escape>',self.cancel_drag);self.line.bind('<Control-z>',lambda e:self.host.safe(self.undo))
+        self.line.bind('<Escape>',self.cancel_drag)
+        self.line.bind('<Delete>',lambda _:self.host.safe(self.delete_uses) if self.is_assembly() else None)
+        self.line.bind('<BackSpace>',lambda _:self.host.safe(self.delete_uses) if self.is_assembly() else None)
+        self.line.bind('<Double-1>',self.add_intensity_point)
         self.line_hint=Tooltip(self.line,lambda e:self.timeline_hint(self.timeline_event(e)))
         self.footer=ttk.Frame(body);self.footer.pack(side='bottom',fill='x',before=self.line,pady=(4,0))
         self.generate_button=ttk.Button(self.footer,text='生成连续成品',style='Accent.TButton',command=lambda:self.host.safe(self.generate))
         self.generate_button.pack(side='right')
-        melody_toggle=ttk.Checkbutton(self.footer,text='仅主旋律',variable=self.melody_only,command=lambda:self.host.safe(lambda:self.commit(self.snapshot())))
+        melody_toggle=ttk.Checkbutton(self.footer,text='仅主旋律',variable=self.melody_only,command=lambda:self.host.safe(lambda:self.commit(self.snapshot(),'切换仅主旋律')))
         melody_toggle.pack(side='left')
         Tooltip(melody_toggle,'统一乐器和力度，关闭伴奏与情绪配器；保留积木排布和连接。')
+        self.generation_panel=ttk.Frame(body)
+        self.generation_panel.pack(fill='x',before=self.footer)
+        self.generation_label=BoundedLabel(self.generation_panel,textvariable=self.generation_status,wraplength=480,justify='left')
+        self.generation_label.pack(fill='x')
+        actions=ttk.Frame(self.generation_panel);actions.pack(fill='x')
+        self.retry_button=ttk.Button(actions,text='重新生成',style='Compact.TButton',command=self.generate)
+        self.details_button=ttk.Button(actions,text='展开详情',style='Compact.TButton',command=self.toggle_generation_details)
+        self.details_button.available_while_busy=True
+        self.generation_window=tk.Toplevel(self);self.generation_window.withdraw()
+        self.generation_window.title('生成失败详情');self.generation_window.geometry('620x320')
+        self.generation_window.protocol('WM_DELETE_WINDOW',self.toggle_generation_details)
+        self.generation_window.bind('<Escape>',lambda _:self.toggle_generation_details())
+        self.generation_details=tk.Text(self.generation_window,height=12,wrap='word',state='disabled')
+        details_bar=ttk.Scrollbar(self.generation_window,command=self.generation_details.yview)
+        details_bar.pack(side='right',fill='y');self.generation_details.configure(yscrollcommand=details_bar.set)
+        ttk.Button(self.generation_window,text='收起详情',command=self.toggle_generation_details).pack(side='bottom',pady=8)
+        self.generation_panel.pack_forget()
         self.blocks=ttk.Treeview(body,columns=('time','type','emotion'),show='tree headings',height=6)
         for key,label in [('#0','生成块'),('time','时间（秒）'),('type','类型'),('emotion','情绪')]:self.blocks.heading(key,text=label);self.blocks.column(key,width=150)
         self.blocks.bind('<<TreeviewSelect>>',self.select_block)
@@ -174,6 +217,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             self.source_card_width=width;self.draw_source_cards()
 
     def draw_source_cards(self):
+        if self.is_assembly():return self.draw_material_cards()
         for child in self.source_cards.winfo_children():child.destroy()
         self.card_play_buttons={};self.card_role_buttons={};self.card_delete_buttons={}
         count=max(1,len(self.project['sources']));self.source_page=min(self.source_page,count-1)
@@ -190,7 +234,10 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         card.create_text(27,40,text='♫',fill=theme_color('accent'),font=scaled_font(('Segoe UI',22)))
         title=s['name'].replace('默认 · ','')
         if s.get('builtin_default'):title='欢乐颂 · 主题旋律'
-        card.create_text(55,20,text=title,anchor='w',width=max(100,width-200),fill=theme_color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
+        original_path=s.get('source',{}).get('path')
+        missing_original=bool(original_path and not Path(original_path).is_file())
+        if missing_original:title+=' · 原文件缺失'
+        card.create_text(55,20,text=elide(card,title,max(100,width-200),scaled_font(('Microsoft YaHei UI',10))),anchor='w',fill=theme_color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
         if selected:card.create_text(width-60,20,text='已选中',anchor='e',fill=theme_color('accent'),font=scaled_font(('Microsoft YaHei UI',8)))
         metadata=card.create_text(55,42,text=f'M{i+1:02}     {s["ticks"]/480:g} 拍',anchor='w',fill=theme_color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
         role_button=ttk.Menubutton(card,text=ROLE_LABELS[s['role']]+' ▾',width=8,style='Card.TMenubutton')
@@ -216,10 +263,13 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         card.scale('all',0,0,1,ui_scale.factor)
         # Set embedded-widget dimensions after Canvas scaling to avoid scaling twice.
         card.itemconfigure(role_item,width=round(98*ui_scale.factor),height=round(26*ui_scale.factor))
-        Tooltip(card,s['name']+'\n点击卡片只选中；按 ▶ 试听。用途菜单可更改用途或删除素材。')
+        source_hint='\n原文件缺失，当前使用工程中的音符快照；仍可编辑和生成。' if missing_original else ''
+        Tooltip(card,s['name']+source_hint+'\n点击卡片只选中；按 ▶ 试听。用途菜单可更改用途或删除素材。')
         card.bind('<Button-1>',lambda event,sid=s['id']:self.host.safe(lambda:self.select_source_card(sid)))
         card.bind('<Return>',lambda event,sid=s['id']:self.host.safe(lambda:self.select_source_card(sid)))
         card.bind('<Delete>',lambda event:self.host.safe(lambda:self.card_action(s['id'],'delete')))
+        if self.host.busy:
+            role_button.state(['disabled']);play_button.state(['disabled'])
 
     def card_action(self,sid,action):
         self.select_source_card(sid)
@@ -229,7 +279,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
     def set_card_role(self,sid,role):
         if role not in ROLE_LABELS:raise ValueError('无效素材用途。')
         project=self.snapshot();source=next(s for s in project['sources'] if s['id']==sid)
-        source['role']=role;self.sources.selection_set(sid);self.commit(project)
+        source['role']=role;self.sources.selection_set(sid);self.commit(project,'更改素材用途')
 
     def select_source_card(self,sid):
         self.sources.selection_set(sid);self.refresh_source_blocks();self.draw_source_cards()
@@ -237,6 +287,8 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.sync_source_player()
 
     def start_source_audio(self,fraction=0.):
+        self.material_audio=None
+        self.source_error=''
         self.source_block_playing=None
         source=copy.deepcopy(self.selected_source());bpm=self.project['bpm']
         self.host.stop_playback();self.source_time.set('准备试听…')
@@ -249,7 +301,13 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             self.host.segment_end=rows[-1]['end_seconds'];self.host.segment_label='输入旋律试听'
             self.host.load_waveform_path(path)
             self.host.playing_path='source:'+str(path);self.host.update_playback();self.sync_source_player()
-        self.host.job('准备旋律试听…',lambda:block_audition.render_source(source,bpm,self.host.progress_message),done)
+        self.host.job('准备旋律试听…',lambda:block_audition.render_source(source,bpm,self.host.progress_message),done,on_error=self.source_audio_failed)
+
+    def source_audio_failed(self,stage,detail):
+        self.source_error=detail;self.source_seek=False
+        self.source_time.set('试听准备未完成，请再次点击播放重试；原因见底部状态栏。')
+        reason=detail.strip().splitlines()[-1] if detail.strip() else '未知错误'
+        self.host.tell('试听准备未完成：'+reason+'；可再次点击播放重试。',True)
 
     def source_is_playing(self):
         ids=self.sources.selection();audio=self.source_audio
@@ -275,6 +333,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             active=selected and getattr(self,'source_block_playing',None)==(selected[0],index) and audio and audio['id']==selected[0]
             button.configure(text=('▶' if mode=='paused' else 'Ⅱ') if active and mode in ('playing','paused') else '▶')
         if self.source_seek:return
+        if self.source_error and not self.source_is_playing():return
         if self.source_is_playing():
             pos,mode=self.host.player.status();duration=self.source_audio['rows'][-1]['end_seconds']
             self.source_slider['value']=min(100,pos/duration*100)
@@ -312,7 +371,8 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         sid=self.selected_source()['id'];project=self.snapshot()
         source=next(s for s in project['sources'] if s['id']==sid)
         source['role']=next(k for k,v in ROLE_LABELS.items() if v==self.selected_role.get())
-        self.commit(project);self.source_settings.pack_forget()
+        if self.is_assembly():project=assembly.set_source_role(project,sid,source['role'])
+        self.commit(project,'更改素材用途');self.source_settings.pack_forget()
 
     def drop_sources(self,paths):
         if self.host.modes.select()!=str(self):raise ValueError('请切换到快速成品后拖入旋律。')
@@ -324,19 +384,24 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             candidates=[(i,t) for i,t in enumerate(source.tracks) if t.notes]
             if not candidates:raise ValueError(Path(path).name+' 没有可用音符。')
             index,track=max(candidates,key=lambda item:sum(n.pitch*n.duration for n in item[1].notes)/sum(n.duration for n in item[1].notes))
-            material=engine.import_source(path,index,'auto','upper')
+            material=engine.import_source(path,index,'auto','upper',assembly_mode=self.is_assembly())
             if len(candidates)>1:material['warnings'].append('默认选取平均音高较高的音轨：'+track.name+'；此为规则选择，不保证是主旋律。')
             materials.append(material)
-        project=self.snapshot();default=emotion_input.is_default_story(project)
+        project=self.snapshot()
+        if self.is_assembly():
+            for material in materials:project=assembly.add_source(project,material)
+            self.commit(project,'导入并分块');return
+        default=emotion_input.is_default_story(project)
         if len(project['sources'])==1 and project['sources'][0].get('builtin_default'):project['sources']=[]
         empty=not project['sources'];project['sources'].extend(materials)
         if empty:
             project['bpm']=materials[0]['bpm']
             if default:project=emotion_input.default_story(project)
-        self.commit(project);self.message.set(f'已自动加入 {len(materials)} 段旋律，默认取高声部。'+ '\n'.join(w for m in materials for w in m['warnings']))
+        self.commit(project,'导入旋律');self.message.set(f'已自动加入 {len(materials)} 段旋律，默认取高声部。'+ '\n'.join(w for m in materials for w in m['warnings']))
 
     def btn(self,parent,text,command,hint=None):
-        button=ttk.Button(parent,text=text,command=lambda:self.host.safe(command))
+        button=ttk.Button(parent,text=text,command=command if text=='■ 停止' else lambda:self.host.safe(command))
+        if text=='■ 停止':button.available_while_busy=True
         if text in ('−','＋','‹','›'):button.configure(width=3)
         button.pack(side='left',padx=(0,5))
         if hint:Tooltip(button,hint)
@@ -344,11 +409,15 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
 
     def toggle_source_details(self):
         if self.source_details.state()=='withdrawn':
+            self.source_settings.pack(fill='x',before=self.block_cards)
+            self.selected_role.set(ROLE_LABELS[self.selected_source()['role']])
             self.source_details.deiconify();self.source_details.lift()
         else:self.source_details.withdraw()
 
     def page_sources(self,delta):
-        count=max(1,(len(self.project['sources'])+getattr(self,'source_card_columns',3)-1)//getattr(self,'source_card_columns',3))
+        bank=self.project['library'] if self.is_assembly() else self.project['sources']
+        columns=getattr(self,'material_card_columns',3) if self.is_assembly() else getattr(self,'source_card_columns',3)
+        count=max(1,(len(bank)+columns-1)//columns)
         self.source_page=(self.source_page+delta)%count;self.draw_source_cards()
 
     def select_palette(self,key):
@@ -361,6 +430,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
     def refresh_source_blocks(self):
         ids=self.sources.selection()
         source=next((s for s in self.project['sources'] if ids and s['id']==ids[0]),None)
+        if source:self.selected_role.set(ROLE_LABELS[source['role']])
         old=self.input_blocks.selection();self.input_blocks.delete(*self.input_blocks.get_children())
         self.source_block_rows=block_audition.source_blocks(source,self.project['bpm']) if source else []
         for i,r in enumerate(self.source_block_rows):
@@ -399,6 +469,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             card.create_text(9,61,text=f'{row["start_seconds"]:.1f}–{row["end_seconds"]:.1f}s',anchor='w',fill=theme_color('#a3b8c7'),font=scaled_font(('Segoe UI',7)))
             button=ttk.Button(card,text='▶',width=2,style='Compact.TButton',command=lambda index=i:self.host.safe(lambda:self.toggle_block_card(index)))
             card.create_window(90,61,window=button,width=25,height=22);self.block_play_buttons[i]=button
+            if self.host.busy:button.state(['disabled'])
             card.bind('<Button-1>',lambda event,index=i:self.host.safe(lambda:self.select_block_card(index)))
             card.bind('<Return>',lambda event,index=i:self.host.safe(lambda:self.select_block_card(index)))
             card.bind('<Enter>',lambda event,c=card,item=shape:c.itemconfigure(item,outline=theme_color('#a7edd1')))
@@ -426,6 +497,8 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             c.create_rectangle(a,y,b,y+6,fill=theme_color('#eab970') if n['continuation'] else theme_color('#80d9b4'),outline='')
 
     def play_source_block(self):
+        self.material_audio=None
+        self.source_error=''
         ids=self.sources.selection();blocks=self.input_blocks.selection()
         if not ids or not blocks:raise ValueError('请先选择输入旋律和它的一个块。')
         source=copy.deepcopy(next(s for s in self.project['sources'] if s['id']==ids[0]));index=int(blocks[0]);bpm=self.project['bpm']
@@ -436,7 +509,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             self.source_block_playing=(source['id'],index)
             self.host.play_segment(path,rows,index,'source:'+str(path),'输入旋律分块试听')
             self.sync_source_player()
-        self.host.job('准备输入旋律试听…',lambda:block_audition.render_source(source,bpm,self.host.progress_message),done)
+        self.host.job('准备输入旋律试听…',lambda:block_audition.render_source(source,bpm,self.host.progress_message),done,on_error=self.source_audio_failed)
 
     def next_source_block(self):
         selected=self.input_blocks.selection();index=int(selected[0])+1 if selected else 0
@@ -464,6 +537,10 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
 
     def snapshot(self):
         # Include uncommitted duration edits in save, rejecting invalid input rather than losing it.
+        if self.is_assembly():
+            bpm=engine.number(float(self.bpm.get()),40,220,'速度')
+            result=assembly.change_bpm(self.project,bpm)
+            result['melody_only']=self.melody_only.get();return result
         result=copy.deepcopy(self.project);result['duration']=float(self.duration.get());result['bpm']=float(self.bpm.get())
         result=engine.automatic_memory_project(result)
         result['continuous_intensity']=True
@@ -480,30 +557,54 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         if getattr(self.host,'story_page',None) is self:self.host.update_edit_status()
 
     def restore(self,project):
+        self.generation_state='idle';self.generation_panel.pack_forget();self.source_error=''
+        self.generation_status.set('');self.generation_detail='';self.generation_stage='';self.generation_started=None
+        self.set_generation_details(False);self.retry_button.pack_forget();self.details_button.pack_forget()
         self.paint_emotion=None
         project=engine.automatic_memory_project(project)
         project['continuous_intensity']=True
-        if not project['sources'] and not project['curve'] and not project['anchors'] and not project['overrides']:
+        if not assembly.is_project(project) and not project['sources'] and not project['curve'] and not project['anchors'] and not project['overrides']:
             project=emotion_input.default_story(project);project['sources']=[default_melody.source()]
-        engine.validate(project,require_source=False);self.project=engine.automatic_memory_project(emotion_input.normalize(project));self.history=[];self.planned=None
+        engine.validate(project,require_source=False);self.project=copy.deepcopy(project) if assembly.is_project(project) else engine.automatic_memory_project(emotion_input.normalize(project));self.history.clear();self.planned=None
+        self.assembly_selection=set();self.selected_material_id=None
         self.melody_only.set(bool(project.get('melody_only',False)))
         self.selected_region=None
         self.duration.set(str(project['duration']));self.bpm.set(str(project['bpm']));self.refresh()
         self.brush_changed()
 
-    def commit(self,project):
-        project=engine.automatic_memory_project(emotion_input.normalize(project));self.history.append(copy.deepcopy(self.project));self.history=self.history[-30:]
-        self.selected_region=None
-        self.project=project;self.planned=None;self.host.dirty=True;self.refresh()
-        self.duration.set(str(project['duration']));self.bpm.set(str(project['bpm']))
+    def commit(self,project,label='编辑'):
+        """Apply one completed edit as a single history step; returns False when nothing changed."""
+        if self.host.busy:return False
+        project=assembly.normalize(project) if assembly.is_project(project) else engine.automatic_memory_project(emotion_input.normalize(project))
+        if self.comparable(project)==self.comparable(self.project) or not self.history.record(self.project,project,label):
+            self.update_history_controls();return False
+        self.show_project(project);return True
 
-    def apply_settings(self):self.commit(self.snapshot())
+    @staticmethod
+    def comparable(project):
+        # Absent defaults and explicit defaults mean the same edit; stored data is left untouched.
+        result=copy.deepcopy(project);result['melody_only']=bool(result.get('melody_only',False))
+        for key in ('curve','anchors','overrides'):
+            for value in result.get(key,[]):
+                if 'source_id' in value and value['source_id'] is None:del value['source_id']
+        return result
+
+    def show_project(self,project):
+        self.selected_region=None
+        self.project=project;self.planned=None;self.host.dirty=True;self.assembly_selection=set()
+        self.duration.set(str(project['duration']));self.bpm.set(str(project['bpm']))
+        self.melody_only.set(bool(project.get('melody_only',False)))
+        self.refresh()
+
+    def apply_settings(self):self.commit(self.snapshot(),'更新设置')
 
     def resize_timeline(self,delta):
-        self.commit(emotion_input.resize_blocks(self.snapshot(),delta))
-        self.message.set('情绪线已%s：%.2f 秒，每块 4 拍；已有成品不变，请重新生成。'%('加长' if delta>0 else '缩短',self.project['duration']))
+        if self.is_assembly():return
+        verb='加长' if delta>0 else '缩短'
+        if self.commit(emotion_input.resize_blocks(self.snapshot(),delta),verb+'时间线'):
+            self.message.set('情绪线已%s：%.2f 秒，每块 4 拍；已有成品不变，请重新生成。'%(verb,self.project['duration']))
 
-    def apply_default(self):self.commit(emotion_input.default_story(self.snapshot()))
+    def apply_default(self):self.commit(emotion_input.default_story(self.snapshot()),'恢复默认情绪线')
 
     def choose(self):
         paths=filedialog.askopenfilenames(parent=self.host.root,filetypes=[('旋律 MIDI / LMMS','*.mid *.midi *.mmp')])
@@ -513,14 +614,15 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         if self.source is None:raise ValueError('请先选择文件。')
         role=next(k for k,v in ROLE_LABELS.items() if v==self.role.get())
         policy={'单旋律（冲突时报错）':'reject','同时起音取高音':'upper','同时起音取低音':'lower'}[self.policy.get()]
-        material=engine.import_source(self.path,selected_index(self.tracks),role,policy)
+        material=engine.import_source(self.path,selected_index(self.tracks),role,policy,assembly_mode=self.is_assembly())
+        if self.is_assembly():self.commit(assembly.add_source(self.snapshot(),material),'导入并分块');return
         project=self.snapshot();default=emotion_input.is_default_story(project)
         if len(project['sources'])==1 and project['sources'][0].get('builtin_default'):project['sources']=[]
         project['sources'].append(material)
         if len(project['sources'])==1:
             project['bpm']=material['bpm'];self.bpm.set(str(material['bpm']))
             if default:project=emotion_input.default_story(project)
-        self.commit(project);self.message.set('已加入音符快照。'+ ' '.join(material['warnings']))
+        self.commit(project,'导入旋律');self.message.set('已加入音符快照。'+ ' '.join(material['warnings']))
 
     def remove_source(self):
         ids=self.sources.selection()
@@ -533,20 +635,49 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             if self.host.playing_path=='source:'+str(self.source_audio['path']):self.host.stop_playback()
             self.source_audio=None
         self.source_seek=False;self.source_slider['value']=0;self.source_time.set('已移除素材')
-        self.commit(project)
+        self.commit(project,'删除素材')
 
     def values(self):
         emotion=next(k for k,v in LABELS.items() if v==self.emotion.get())
         return dict(emotion=emotion,level=float(self.level.get())/100,end_level=float(self.end_level.get())/100,source_id=None)
 
     def undo(self):
-        if self.drag:self.cancel_drag();return
-        if not self.history:raise ValueError('没有可撤销的操作。')
-        self.selected_region=None;self.project=self.history.pop();self.duration.set(str(self.project['duration']));self.bpm.set(str(self.project['bpm']));self.planned=None;self.host.dirty=True;self.refresh()
-        self.melody_only.set(bool(self.project.get('melody_only',False)))
+        if self.drag or getattr(self,'library_drag',None):self.cancel_drag();return
+        self.step_history('undo')
+
+    def redo(self):
+        if self.drag or getattr(self,'library_drag',None):self.cancel_drag();return
+        self.step_history('redo')
+
+    def step_history(self,kind):
+        project,label=(self.history.undo if kind=='undo' else self.history.redo)(self.project)
+        self.show_project(project);self.forget_missing_source_audio()
+        self.host.tell(('已撤销：' if kind=='undo' else '已重做：')+label)
+
+    def forget_missing_source_audio(self):
+        audio=self.source_audio
+        if audio and all(s['id']!=audio['id'] for s in self.project['sources']):
+            if self.host.playing_path=='source:'+str(audio['path']):self.host.stop_playback()
+            self.source_audio=None;self.source_block_playing=None
+            self.source_seek=False;self.source_slider['value']=0;self.source_time.set('选择一张旋律卡片')
+            self.sync_source_player()
+
+    def history_hint(self,kind):
+        if kind=='undo':
+            label,key=self.history.undo_label,ui_platform.UNDO_LABEL
+            return f'撤销：{label} · {key}' if label else f'没有可撤销的操作 · {key}'
+        label,key=self.history.redo_label,ui_platform.REDO_LABEL
+        return f'重做：{label} · {key}' if label else f'没有可重做的操作 · {key}'
+
+    def update_history_controls(self):
+        if not hasattr(self,'redo_button'):return
+        for button,ready in ((self.undo_button,self.history.can_undo),(self.redo_button,self.history.can_redo)):
+            button.state(['!disabled'] if ready and not self.host.busy else ['disabled'])
+
+    def undo_hint(self):return ui_platform.UNDO_LABEL+' 撤销'
 
     def preview(self):
-        if not self.project['sources']:
+        if not self.project['sources'] or (self.is_assembly() and not self.project['uses']):
             self.preview_planner.invalidate();self.preview_status='导入旋律后显示来源';return
         self.preview_status='更新中';self.preview_planner.request(self.project)
 
@@ -558,11 +689,96 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.message.set('排布未更新：'+str(error));self.draw()
 
     def generate(self):
-        project=self.snapshot();engine.validate(project)
+        if self.host.busy:return
+        self.generation_started=time.monotonic();self.generation_state='running'
+        self.generation_detail='';self.set_generation_details(False)
+        self.retry_button.pack_forget();self.details_button.pack_forget()
+        self.generation_panel.pack(fill='x',before=self.footer)
+        self.generation_progress('检查当前编辑')
+        try:project=copy.deepcopy(self.snapshot());engine.validate(project)
+        except Exception:
+            self.generation_failed('检查当前编辑',traceback.format_exc());self.update_generation_controls();return
         self.preview_planner.invalidate()
         def done(result):
-            self.project=project;self.planned,report=result;self.preview_status='';self.host.dirty=True;self.refresh();self.host.add_result(report,'快速成品',story_project=project)
-        self.host.job('生成情绪故事…',lambda:engine.generate(project,self.host.progress_message),done)
+            planned,report=result
+            self.validate_generated_result(planned,report,project)
+            # Keep the editor and its history intact; the version belongs to the clicked snapshot.
+            previous=list(self.host.results);selection=self.host.result_list.curselection()
+            try:
+                self.host.add_result(report,'快速成品',story_project=project)
+                message=f'生成完成 · 成品 V{len(self.host.results):02} · 请在右侧选择播放或导出。'
+                self.generation_status.set(message);self.host.tell(message)
+            except Exception:
+                self.host.results[:]=previous
+                try:
+                    self.host.refresh_results()
+                    if selection:self.host.select_history(selection[0])
+                finally:self.host.update_edit_status()
+                raise
+            self.generation_state='success'
+        self.generation_progress('请求已开始，正在准备生成…')
+        self.host.job('请求已开始，正在准备生成…',lambda:engine.generate(project,self.host.progress_message),done,
+                      on_progress=self.generation_progress,on_error=self.generation_failed)
+
+    @staticmethod
+    def validate_generated_result(planned,report,project):
+        if not isinstance(planned,dict) or not planned.get('blocks') or report.get('status')!='complete':
+            raise ValueError('生成结果不完整，未加入成品历史。')
+        folder=Path(report['output_directory'])
+        for name in ('preview.wav','composition.mid','composition.mmp','story.json','story-plan.json','report.json'):
+            if not (folder/name).is_file() or not (folder/name).stat().st_size:
+                raise ValueError('生成文件缺失或为空：'+str(folder/name))
+        saved=json.loads((folder/'story.json').read_text(encoding='utf-8'))
+        if saved!=project:raise ValueError('生成快照与本次请求不一致：'+str(folder/'story.json'))
+        if report['bars']<=0 or report['duration_seconds']<=0:raise ValueError('生成时长无效。')
+        with wave.open(str(folder/'preview.wav'),'rb') as audio:
+            frames=audio.getnframes();frame_bytes=audio.getnchannels()*audio.getsampwidth()
+            if frames<=0:raise ValueError('生成音频为空：'+str(folder/'preview.wav'))
+            # Read bounded chunks: a valid header alone does not prove PCM data exists.
+            while frames:
+                count=min(frames,65536)
+                if len(audio.readframes(count))!=count*frame_bytes:
+                    raise ValueError('生成音频数据不完整：'+str(folder/'preview.wav'))
+                frames-=count
+
+    def generation_progress(self,stage):
+        self.generation_stage=str(stage);self.update_generation_elapsed()
+
+    def update_generation_elapsed(self):
+        if self.generation_state=='running':
+            elapsed=max(0,int(time.monotonic()-self.generation_started))
+            self.generation_status.set(f'生成中 · {self.generation_stage} · 已用 {elapsed} 秒')
+
+    def generation_failed(self,stage,detail):
+        self.set_generation_details(False)
+        self.generation_state='failed';self.generation_stage=stage;self.generation_detail=detail
+        self.generation_status.set(f'未完成 · {stage}\n编辑和旧成品已保留。请检查旋律与参数后重新生成；渲染失败时请检查 LMMS 和保存位置。')
+        self.generation_details.configure(state='normal');self.generation_details.delete('1.0','end')
+        self.generation_details.insert('1.0',detail);self.generation_details.configure(state='disabled')
+        self.details_button.configure(text='展开详情');self.details_button.pack(side='left',padx=(0,6))
+        self.retry_button.pack(side='left')
+
+    def toggle_generation_details(self):
+        self.set_generation_details(not bool(self.generation_details.winfo_manager()))
+
+    def set_generation_details(self,visible):
+        if not visible:
+            self.generation_details.pack_forget();self.generation_window.withdraw();self.details_button.configure(text='展开详情')
+        else:
+            self.generation_details.pack(fill='both',expand=True);self.generation_window.deiconify();self.details_button.configure(text='收起详情')
+
+    def update_generation_controls(self):
+        self.update_history_controls()
+        ready=not self.host.busy
+        can_generate=ready and bool(self.project['uses'] if self.is_assembly() else self.project['sources'])
+        self.generate_button.state(['!disabled'] if can_generate else ['disabled'])
+        self.retry_button.state(['!disabled'] if can_generate and self.generation_state=='failed' else ['disabled'])
+        if hasattr(self,'delete_use_button'):
+            selected=getattr(self,'assembly_selection',set())
+            self.delete_use_button.state(['!disabled'] if ready and selected else ['disabled'])
+            self.combine_use_button.state(['!disabled'] if ready and len(selected)>1 else ['disabled'])
+        for button in list(self.card_role_buttons.values())+list(self.card_play_buttons.values())+list(self.block_play_buttons.values()):
+            button.state(['!disabled'] if ready else ['disabled'])
 
     def select_block(self,event=None):
         ids=self.blocks.selection()
@@ -570,6 +786,14 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.draw()
 
     def refresh(self):
+        if self.is_assembly():
+            self.line.bind('<Double-1>',self.add_intensity_point)
+            for b in self.resize_buttons:b.pack_forget()
+            self.assembly_tools.pack(side='left');self.combine_button.pack(side='left')
+        else:
+            self.line.unbind('<Double-1>')
+            self.assembly_tools.pack_forget();self.combine_button.pack_forget()
+            for b in self.resize_buttons:b.pack(side='left',padx=2)
         old_source=self.sources.selection()
         self.sources.delete(*self.sources.get_children())
         for s in self.project['sources']:self.sources.insert('','end',iid=s['id'],text=s['name'],values=(ROLE_LABELS[s['role']],round(s['ticks']/480,2)))
@@ -587,7 +811,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             self.host.summary.configure(text='快速成品\n%d 段输入 · %d 个短块\n%.1f 秒 · %d 个自动记忆点'%(len(self.project['sources']),len(self.planned['blocks']),self.project['duration'],len(self.planned['anchors'])))
         else:
             self.plan_warning_text=''
-            self.host.summary.configure(text='%d 段旋律 · %d 块 · %.1f 秒'%(len(self.project['sources']),len(emotion_input.grid_seconds(self.project))-1,self.project['duration']))
+            self.host.summary.configure(text='%d 段旋律 · %d 块 · %.1f 秒'%(len(self.project['sources']),len(self.project['uses']) if self.is_assembly() else len(emotion_input.grid_seconds(self.project))-1,self.project['duration']))
             self.preview()
-        self.draw()
+        self.draw();self.update_generation_controls()
         if getattr(self.host,'story_page',None) is self:self.host.update_edit_status()

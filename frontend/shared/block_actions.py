@@ -10,16 +10,16 @@ import story_engine as engine
 
 class BlockActions:
     def remove_emotion_region(self,index):
-        self.commit(emotion_input.remove_region(self.snapshot(),index))
-        self.host.tell('情绪段已移除，邻段填补原时间 · Ctrl+Z 撤销')
+        if self.commit(emotion_input.remove_region(self.snapshot(),index),'移除情绪段'):
+            self.host.tell('情绪段已移除，邻段填补原时间 · '+self.undo_hint())
 
     def clear_local_changes(self,start,end):
-        self.commit(block_editor.clear_overrides(self.snapshot(),start,end))
-        self.host.tell('已恢复此处的自动编排 · Ctrl+Z 撤销')
+        if self.commit(block_editor.clear_overrides(self.snapshot(),start,end),'清除局部修改'):
+            self.host.tell('已恢复此处的自动编排 · '+self.undo_hint())
 
     def set_region_source(self,index,source_id):
         project=self.snapshot();project['curve'][index]['source_id']=source_id
-        self.commit(project);self.host.tell('此情绪段旋律来源已更新 · Ctrl+Z 撤销')
+        if self.commit(project,'设置旋律来源'):self.host.tell('此情绪段旋律来源已更新 · '+self.undo_hint())
 
     def context_click(self,event):
         if self.host.busy or self.drag:return

@@ -4,6 +4,7 @@ import math
 
 
 def controls(project):
+    if project.get('schema')=='emoblocks.assembly.v1' or project.get('assembly_mode'):return [dict(p) for p in project.get('intensity_points',[])]
     bar=240/project['bpm'];duration=project['duration'];stored=project.get('intensity_points',[])
     points=[];start=0.
     while start<duration-1e-8:
