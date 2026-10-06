@@ -1,7 +1,7 @@
 # 强度画布工作流 v2：r3 产品规格
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p7
+CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1
 
 当前阶段：P6实施ROUND2独立PASS及前后199文件指纹已现场核对；用户启动P7。第13节p7独立契约ROUND2已PASS并FROZEN，已授权实施。本轮结束停止，不进入P8；下面旧阶段启动/停止语句仅为保留的历史。
 
@@ -330,3 +330,6 @@ P5契约独立ROUND2 PASS：受检HEAD=9901766，前后指纹186d265ad323c9b7152
 P5实施ROUND2实际独立PASS已核对：HEAD=8706f96fa9c8aecdbb613f115547f64255da9b3c，192文件前后指纹c733742fd431bfd27e751ca51bda3ad1bb2fa3414d1ce36d7b928490af8ccbd3；集成与两个worker源码一致且干净。用户明确授权P6，历史规范和验收保留。第12节p6为DRAFT，算法/前端只读评审与verifier独立PASS后才冻结实现；只处理真实就绪桥保护外连接，不进入P7，不开放最终方案应用/试听/导出。四角色及本轮记录在仓库外运行目录，使用已有Python和独立数据，文件所有权/验收见12.6。
 
 P6-CONTRACT独立ROUND1 PASS：HEAD=5c70a8c6d0e0b724831a0f82a4139fe66b5f1138，193文件前后指纹1dd4d9914e45d51853de7b89dd24936502c273f0deba2b29b173e90098df90e2。lead核对实际pane与review一致，仅更新状态FROZEN，正文规则不改；worker安全同步后按12.6范围实现P6，停止于P7之前。
+
+
+运行时补充13.18状态DRAFT：p7音乐数据对象保持原冻结版本，服务捕获增加source_facts以及纯历史Snapshot闭包。算法与前端只读评审对文档825b9ac3125770504aa7f1fff290e72ffb8f974d417f4e8f82f64921f3b5969c均PASS；仍需独立P7-CONTRACT ROUND3/5，新增捕获字段尚未实施。

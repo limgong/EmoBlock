@@ -1,7 +1,7 @@
 # P7 最终处理、完整推荐试听与一次应用验收
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p7
+CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1
 RUN_ID=curve-v2-p7-20261007-345861bc
 BASE_SHA=66adc83ece0673e9fa2e879a2a10e37a41381da9
 
@@ -23,3 +23,6 @@ P6实际ROUND2 PASS、HEAD与199文件前后指纹逐项现场核对。集成目
 ## 契约独立ROUND2 PASS与冻结
 
 受检HEAD=ecb36c53a74663db078032cb82ce72c92f17c769，前后200文件指纹f57174074312a29ece7637e9c68e322342dfdddafbe0313371882fdedc938231，实际pane/review/lead逐项核对一致；R1两项问题关闭，两个source向量和请求多候选身份独立检查一致。只修改状态为FROZEN，不改通过的规范规则。本结论仅契约，现在开始P7实现，实际功能/渲染/人工仍需各自验证。
+
+
+运行时补充13.18状态DRAFT：p7音乐数据对象保持原冻结版本，服务捕获增加source_facts以及纯历史Snapshot闭包。算法与前端只读评审对文档825b9ac3125770504aa7f1fff290e72ffb8f974d417f4e8f82f64921f3b5969c均PASS；仍需独立P7-CONTRACT ROUND3/5，新增捕获字段尚未实施。

@@ -1,7 +1,7 @@
 # 强度画布 v2 r3 团队与阶段协议
 
 SPEC_REV=curve-workflow-v2-r3
-CONTRACT_REV=curve-workflow-v2-r3-p7
+CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1
 
 当前阶段：P6实施ROUND2独立PASS及前后199文件指纹已现场核对；用户启动P7。第13节p7独立契约ROUND2已PASS并FROZEN，已授权实施。本轮结束停止，不进入P8；下面旧阶段启动/停止语句仅为保留的历史。
 
@@ -112,3 +112,6 @@ P6实施ROUND2的实际独立PASS、HEAD及完整199文件前后指纹已经现�
 lead独占公共curve_final/curve_recommendations/curve_final_render/curve_application服务、curve_project/session/store/workflow、story_engine主流程；旧completion/bridge/connection的p7来源读取适配仅lead改，旧音乐规则/输入校验不放宽。算法只新增curve_boundary_music及专项；前端shared RecommendationUI、唯一Canvas/共用player和既有stage互斥接线及对应tests；具体ALLOW_FILES在任务中，不并发写同模块。
 
 契约和实现各最多5轮，冻结时整目录不得写；修复重新冻结，明确RUN/TASK/ROUND/HEAD/前后同完整指纹PASS。候选mode只编配/渲染，不重作曲；单gap局部可听/确认不可正式整曲导出；确认同谱/一次undo/幂等、接受绑定不自失效。实际LMMS及设备串行，完整试听与应用本轮必须真接通，人工听感/Windows和截图仍分别待验，不以P8为理由交假音频。完成P7停止，不派P8。
+
+
+运行时补充13.18状态DRAFT：p7音乐数据对象保持原冻结版本，服务捕获增加source_facts以及纯历史Snapshot闭包。算法与前端只读评审对文档825b9ac3125770504aa7f1fff290e72ffb8f974d417f4e8f82f64921f3b5969c均PASS；仍需独立P7-CONTRACT ROUND3/5，新增捕获字段尚未实施。
