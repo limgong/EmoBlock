@@ -4,7 +4,10 @@ Request fixtures implement the frozen public data shape, independently of the
 lead's in-progress service. They do not claim post-emotion completion readiness.
 """
 import copy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import curve_completion as completion
@@ -353,6 +356,90 @@ class CompletionTests(unittest.TestCase):
             result = completion.propose(request())
         self.assertEqual(result['search']['termination'], 'RAW_POOL_LIMIT')
         self.assertLessEqual(sum(len(s['material']['notes']) for p in result['proposals'] for s in p['placements']), 2)
+
+
+class RealCompletionIntegrationTests(unittest.TestCase):
+    """Real lead dependency 7014f51, not the proposal substitutes in gate tests."""
+    def test_real_post_gate_all_input_versions_exact_tail_and_shortage(self):
+        import curve_candidates as candidates
+        for rev in ('curve-workflow-v2-r3-p0', 'curve-workflow-v2-r3-p23', completion.CONTRACT_REV):
+            for length in (1, 239, 240, 4080):
+                with self.subTest(version=rev, length=length):
+                    p = project(length); p['contract_rev'] = rev; before = copy.deepcopy(p)
+                    req = candidates.make_request(p, candidates.gap_items(p)[0]['id'])
+                    result = candidates.prepare_completion(req)
+                    candidates.validate_outcome(req, result)
+                    self.assertEqual(result['status'], 'SUCCEEDED', result)
+                    self.assertEqual(len(result['candidates']), 2)
+                    self.assertEqual(p, before)
+                    self.assertEqual(req['input_contract_rev'], rev)
+                    for candidate in result['candidates']:
+                        self.assertEqual(candidate['project']['placements'][:2], p['placements'])
+                        self.assertFalse(candidate['capabilities']['can_audition'])
+                        self.assertFalse(candidate['capabilities']['can_apply'])
+        req = candidates.make_request(project(), budget=dict(max_candidates=1))
+        result = candidates.prepare_completion(req)
+        self.assertEqual(result['status'], 'INSUFFICIENT')
+        self.assertTrue(result['shortage_reasons'])
+
+    def test_real_old_custom_variant_preserved_peak_new_base_protected(self):
+        import curve_candidates as candidates
+        import curve_emotion
+        p = project()
+        p['intensity_points'] = [dict(tick=0, level=.2), dict(tick=1320, level=.95),
+                                 dict(tick=7680, level=.1)]
+        old = p['placements'][0]
+        old['emotion'] = 'hope'
+        old['emotion_variant'] = curve_emotion.emotion_variant(old['base_snapshot'], 'hope',
+            p['intensity_points'], 0, [], protected_ranges=[], seed=99, parameters=dict(max_changes=1))
+        before = copy.deepcopy(p)
+        req = candidates.make_request(p, candidates.gap_items(p)[0]['id'])
+        result = candidates.prepare_completion(req)
+        self.assertEqual(result['status'], 'SUCCEEDED', result)
+        self.assertEqual(p, before)
+        for candidate in result['candidates']:
+            self.assertEqual(candidate['project']['placements'][0], old)
+            self.assertEqual(candidate['memory_info']['state'], 'BOUND')
+            self.assertEqual(candidate['memory_info']['range'], dict(start_tick=1200, end_tick=1440))
+            memory = next(lock for lock in candidate['project']['protections'] if lock['kind'] == 'memory')
+            new = next(v for v in candidate['project']['placements'] if v['id'] == memory['placement_id'])
+            actual = model.placed_notes(new)
+            self.assertEqual(model.structural_notes(actual), model.structural_notes(memory['notes']))
+
+    def test_real_controller_stage_save_reload_cancel_and_late_result(self):
+        import curve_candidates as candidates
+        import curve_workflow
+        controller = curve_workflow.Controller(project())
+        with tempfile.TemporaryDirectory() as tmp:
+            controller.save_snapshot(Path(tmp) / 'input.json')
+            before = controller.project; before_state = controller.state()
+            job = controller.capture_completion(controller.gap_items()[0]['id'])
+            outcome = candidates.prepare_completion(job['request'])
+            self.assertTrue(controller.finish_completion(job['token'], outcome))
+            self.assertFalse(controller.finish_completion(job['token'], outcome))
+            self.assertEqual(controller.project, before)
+            self.assertTrue(controller.state()['is_saved']); self.assertTrue(controller.state()['staging_dirty'])
+            self.assertEqual(controller.state()['can_undo'], before_state['can_undo'])
+            ready = controller.save_snapshot(Path(tmp) / 'ready.json')
+            loaded = curve_workflow.Controller(); loaded.load(ready)
+            self.assertEqual(loaded.completion_state()['status'], 'READY')
+            self.assertEqual(loaded.project, before)
+            serialized = json.loads(ready.read_text())
+            self.assertEqual(serialized['project']['materials'], before['materials'])
+            self.assertEqual(serialized['attempts'][0]['completion']['outcome'], outcome)
+            late = loaded.capture_completion(loaded.gap_items()[0]['id'])
+            self.assertTrue(loaded.cancel_completion(late['token']))
+            newer = loaded.capture_completion(loaded.gap_items()[0]['id'])
+            cancelled = candidates.prepare_completion(late['request'],
+                should_cancel=lambda: not loaded.accepts(late['token']))
+            self.assertEqual(cancelled['status'], 'CANCELLED')
+            self.assertFalse(loaded.finish_completion(late['token'], outcome))
+            self.assertTrue(loaded.accepts(newer['token']))
+            self.assertEqual(loaded.project, before)
+            running = loaded.save_snapshot(Path(tmp) / 'running.json')
+            reopened = curve_workflow.Controller(); reopened.load(running)
+            self.assertEqual(reopened.completion_state()['status'], 'INTERRUPTED')
+            self.assertFalse(reopened.accepts(newer['token']))
 
 
 if __name__ == '__main__':
