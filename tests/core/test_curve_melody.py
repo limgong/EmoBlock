@@ -228,6 +228,64 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(counter['generation']['operations'][0]['voices'], 1)
         self.assertNotEqual([n['pitch'] for n in counter['notes']], [n['pitch'] for n in original['notes']])
 
+    def test_counter_shortenings_remain_expressible_and_are_recorded(self):
+        src = source(events=[(60, 0, 960), (64, 960, 120), (67, 1080, 240), (65, 1320, 300)], length=1620)
+        original = base(src); before = copy.deepcopy(original)
+        counter = melody.derive(original, 'counter')
+        self.assertEqual([n['duration_tick'] for n in counter['notes']], [770, 100, 200, 240])
+        self.assertEqual([n['start_tick'] for n in counter['notes']], [0, 960, 1080, 1320])
+        self.assertEqual(counter['length_ticks'], 1620)
+        self.assertTrue(all(n['duration_tick'] % 10 == 0 for n in counter['notes']))
+        self.assertEqual(counter['generation']['algorithm_version'], melody.COUNTER_ALGORITHM_VERSION)
+        op = counter['generation']['operations'][0]
+        self.assertEqual(op['rule_unit_ticks'], 10)
+        self.assertEqual([a['shortened_by_tick'] for a in op['articulation']], [190, 20, 40, 60])
+        for note, prior, record in zip(counter['notes'], original['notes'], op['articulation']):
+            self.assertEqual(record['input_note_id'], prior['id'])
+            self.assertEqual(record['original_duration_tick'], prior['duration_tick'])
+            self.assertEqual(record['output_duration_tick'], note['duration_tick'])
+            self.assertEqual(record['original_duration_tick'] - record['shortened_by_tick'], note['duration_tick'])
+            self.assertFalse(record['preserved_exact_tick'])
+        self.assertEqual(counter, melody.derive(original, 'counter'))
+        self.assertEqual(original, before)
+        model.material_check(counter, {src['id']: src})
+
+    def test_counter_preserves_nonmultiple_durations_and_exact_onsets(self):
+        src = source(events=[(60, 1, 239), (64, 241, 37), (67, 281, 300)], length=581)
+        original = base(src); counter = melody.derive(original, 'counter')
+        self.assertEqual([n['duration_tick'] for n in counter['notes']], [239, 37, 240])
+        self.assertEqual([n['start_tick'] for n in counter['notes']], [1, 241, 281])
+        self.assertEqual(counter['length_ticks'], 581)
+        self.assertEqual([a['shortened_by_tick'] for a in counter['generation']['operations'][0]['articulation']], [0, 0, 60])
+        self.assertEqual([a['preserved_exact_tick'] for a in counter['generation']['operations'][0]['articulation']], [True, True, False])
+        self.assertNotEqual([n['pitch'] for n in original['notes']], [n['pitch'] for n in counter['notes']])
+        # Only exercise the renderer's preflight: no LMMS lookup or device use.
+        import curve_audition
+        with patch.object(curve_audition, 'find_lmms', side_effect=AssertionError('must reject before renderer lookup')):
+            with self.assertRaises(model.ProjectError) as caught:
+                curve_audition.render_audition(counter)
+        self.assertEqual(caught.exception.code, 'OUTPUT_TIME_UNREPRESENTABLE')
+
+    def test_counter_small_units_stay_positive_without_creating_fractional_units(self):
+        for duration in (1, 10, 20, 30, 40, 50):
+            src = source(events=[(60, 0, duration)], length=duration)
+            counter = melody.derive(base(src), 'counter')
+            self.assertEqual(counter['notes'][0]['duration_tick'], 40 if duration == 50 else duration)
+            self.assertGreater(counter['notes'][0]['duration_tick'], 0)
+
+    def test_actual_theme_c_first_block_counter_retains_tick_expressibility(self):
+        import curve_workflow
+        from runtime_config import ASSETS
+        batch = curve_workflow.prepare_import(ASSETS / 'theme-c.mid')
+        original = next(m for m in batch['materials'] if m['kind'] == 'block' and m['phrase_id'] is None and m['generation'] is None)
+        self.assertEqual(original['length_ticks'], 1920)
+        self.assertEqual([n['duration_tick'] for n in original['notes']], [960, 120, 120])
+        counter = melody.derive(original, 'counter')
+        self.assertEqual([n['duration_tick'] for n in counter['notes']], [770, 100, 100])
+        self.assertEqual([n['start_tick'] for n in counter['notes']], [n['start_tick'] for n in original['notes']])
+        self.assertTrue(all(n['start_tick'] % 10 == 0 and n['duration_tick'] % 10 == 0 for n in counter['notes']))
+        self.assertEqual(counter['length_ticks'], original['length_ticks'])
+
     def test_nested_repeated_multisource_combo_derives_new_phrase(self):
         s1 = source('one', [(60, 0, 240), (64, 240, 240)], 480)
         s2 = source('two', [(67, 0, 240), (69, 240, 240)], 480)
