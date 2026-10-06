@@ -4,7 +4,9 @@ The plan helper models published data, not Controller transaction authorization.
 Actual phase/late-token/restore/authentication acceptance belongs to lead tests.
 """
 import copy
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import curve_bridge_music as bridge
@@ -119,7 +121,8 @@ class BridgeMusicTests(unittest.TestCase):
                 req = request(fixture(count)); original = copy.deepcopy(req)
                 proposal = bridge.decide(req)
                 self.assertEqual('selected',proposal['decision'])
-                self.assertEqual((0,count*1920), (proposal['windows'][0]['start_tick'],proposal['windows'][0]['end_tick']))
+                chosen=proposal['windows'][0]
+                self.assertEqual(count,(chosen['end_tick']-chosen['start_tick']+1919)//1920)
                 self.assertTrue(any(a.get('benefit',0) and a['benefit'] > 0 for a in proposal['assessments']))
                 self.assertEqual(req,original)
                 self.assertLessEqual(proposal['search']['tested_windows'],128)
@@ -384,6 +387,111 @@ class BridgeMusicTests(unittest.TestCase):
         raw=bridge.generate(req,plan,lambda:bool(stream),on_result=stream.append)
         self.assertEqual(['READY','CANCELLED'],[r['status'] for r in raw['results']])
         self.assertTrue(raw['results'][0]['notes']);self.assertEqual(stream,raw['results'])
+
+    def test_actual_public_gate_adjacent_blank_and_decision_roundtrip(self):
+        import curve_bridges as gate
+        for mode in ('decision','adjacent','blank'):
+            with self.subTest(mode=mode):
+                req=gate.make_request(fixture(4,emotions=['hope','sad','crisis','resolve'],tail=240 if mode=='blank' else 0))
+                proposal=bridge.decide(req)
+                if mode=='adjacent':
+                    regions=[dict(start_tick=0,end_tick=3840),dict(start_tick=3840,end_tick=7680)]
+                    proposal['windows']=[window(req,r['start_tick'],r['end_tick'],str(i),[regions[1-i]]) for i,r in enumerate(regions)]
+                    proposal['joint_boundary_conditions']=bridge._joint_conditions(proposal['windows'])
+                plan=gate.make_plan(req,proposal);raw=bridge.generate(req,plan)
+                self.assertEqual('SUCCEEDED',raw['status']);gate.validate_raw(req,plan,raw)
+                for row in raw['results']:
+                    self.assertEqual(next(r['protection_id'] for r in plan['protection_refs'] if r['bridge_id']==row['bridge_id']),row['protection_id'])
+
+    def test_actual_gate_rejects_rehashed_pitch_timing_extra_origin_and_lineage(self):
+        import curve_bridges as gate
+        req=gate.make_request(fixture(2));plan=gate.make_plan(req,bridge.decide(req));raw=bridge.generate(req,plan)
+        row=raw['results'][0];gate.validate_result(req,plan,row)
+        mutations=[lambda r:r['base_material']['notes'][0].update(pitch=61),
+            lambda r:r['base_material']['notes'][0].update(start_tick=1),
+            lambda r:r['base_material']['notes'][0].update(duration_tick=241),
+            lambda r:r['base_material']['notes'].append(dict(r['base_material']['notes'][0],id='extra')),
+            lambda r:r['base_material']['notes'][0]['origin'].update(source_note_id='source:1:0'),
+            lambda r:r['base_material']['notes'][0]['lineage'].append('fake'),
+            lambda r:r['operations'][0]['parent_ref'].update(note_id='note:1:0')]
+        for mutate in mutations:
+            bad=copy.deepcopy(row);mutate(bad)
+            bad['content_fingerprint']=gate.content_fingerprint(bad['range'],plan['windows'][0]['blank_mask'],bad['notes'])
+            with self.assertRaises(m.ProjectError):gate.validate_result(req,plan,bad)
+
+    def test_actual_stream_partial_failure_pure_saved_restore_no_late_acceptance(self):
+        import curve_workflow as workflow
+        import curve_store
+        import curve_memory
+        controller=workflow.Controller(fixture(4));cap=controller.capture_bridge();req=cap['request'];token=cap['token']
+        regions=[dict(start_tick=0,end_tick=3840),dict(start_tick=3840,end_tick=7680)]
+        proposal=bridge.decide(req)
+        proposal['windows']=[window(req,r['start_tick'],r['end_tick'],str(i),[regions[1-i]]) for i,r in enumerate(regions)]
+        proposal['joint_boundary_conditions']=bridge._joint_conditions(proposal['windows'])
+        plan=controller.lock_bridge(token,proposal);self.assertTrue(controller.begin_bridge_generation(token,plan))
+        original=melody.compose_bridge_phrase
+        def failing(request,window,*args,**kw):
+            if window['id']=='1':raise m.ProjectError('BRIDGE_GENERATION_FAILED','explicit second failure')
+            return original(request,window,*args,**kw)
+        accepted=[]
+        with patch.object(melody,'compose_bridge_phrase',side_effect=failing):
+            raw=bridge.generate(req,plan,on_result=lambda row:accepted.append(controller.record_bridge_result(token,row)))
+        # Failure records may consume the token immediately. finish is idempotent
+        # and may then be rejected; saved facts must still be complete.
+        controller.finish_bridge(token,raw)
+        state=controller.bridge_state();self.assertEqual('FAILED',state['status']);self.assertTrue(accepted[0])
+        self.assertEqual(['READY','FAILED'],[r['status'] for r in state['results']])
+        self.assertEqual(['CONTENT_READY','RANGE_LOCKED'],[p['status'] for p in state['protections'] if p['kind']=='bridge'])
+        self.assertFalse(controller.record_bridge_result(token,raw['results'][0]));self.assertFalse(controller.finish_bridge(token,raw))
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'partial.json'
+            with patch.object(bridge,'decide',side_effect=AssertionError('pure restore')),patch.object(bridge,'generate',side_effect=AssertionError('pure restore')),patch.object(melody,'compose_bridge_phrase',side_effect=AssertionError('pure restore')),patch.object(emotion,'emotion_variant',side_effect=AssertionError('pure restore')),patch.object(curve_memory,'recompute',side_effect=AssertionError('pure restore')):
+                controller.save_snapshot(path)
+                restored=curve_store.load(path)
+                attempt=restored['bundle']['attempts'][-1]
+                self.assertEqual('FAILED',attempt['state']);self.assertEqual(state['results'],attempt['bridge']['results'])
+
+    def test_unprotected_interior_of_independent_phrase_can_be_selected(self):
+        import curve_memory
+        p=fixture(4);whole=copy.deepcopy(p['materials'][0]);whole.update(id='whole',length_ticks=7680)
+        whole['notes']=[dict(n,id='whole:'+str(i)) for i,n in enumerate([n for place in p['placements'] for n in m.placed_notes(place)])]
+        p['materials'].append(whole);p['placements']=[dict(id='whole-use',material_id='whole',base_snapshot=whole,start_tick=0,length_ticks=7680,emotion='calm',emotion_variant=None)]
+        p['protections']=[curve_memory.expected_protection(p)];m.validate(p)
+        req=request(p);proposal=bridge.decide(req)
+        self.assertEqual('selected',proposal['decision'])
+        self.assertTrue(all(w['start_tick'] >= 1920 for w in proposal['windows']))
+
+    def test_precise_original_ticks_and_pitch_edges_not_silently_quantized(self):
+        p=fixture(3)
+        notes=p['placements'][2]['base_snapshot']['notes']
+        notes[0]['duration_tick']=1
+        req=request(p);w=window(req,0,3841)
+        row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+        self.assertEqual(3841,row['material']['length_ticks'])
+        self.assertEqual(1,row['base_material']['generation']['parameters']['rule_unit_ticks'])
+        self.assertTrue(any(n['duration_tick']%10 for n in row['notes']))
+        self.assertEqual(1,p['placements'][2]['base_snapshot']['notes'][0]['duration_tick'])
+        for pitch in (0,127):
+            p=fixture(2)
+            for place in p['placements']:
+                for n in place['base_snapshot']['notes']:n['pitch']=pitch
+            req=request(p);w=window(req,0,3840)
+            row=bridge.generate(req,locked_plan(req,[w]))['results'][0]
+            self.assertTrue(all(0 <= n['pitch'] <= 127 for n in row['notes']))
+
+    def test_none_preserves_failed_historical_automatic_lock_as_required_failure(self):
+        import curve_bridges as gate
+        p=fixture(2)
+        p['protections']=[dict(id='old-lock',kind='bridge',owner_id='old-bridge',placement_id=None,component_path=[],
+            start_tick=0,end_tick=1920,status='RANGE_LOCKED',origin='automatic',plan_id='old-plan',plan_version=1,
+            input_fingerprint='old-input',notes=[],structure_fingerprint=None,blank_mask=[])]
+        p['records']=[dict(id='old-plan',kind='bridge_plan',version=1,status='FAILED',input_fingerprint='old-input',dependencies=[],
+            payload=dict(candidate_id='old-candidate',candidate_fingerprint='old-input',automatic_decision='selected',
+                bridge_ids=['old-bridge'],manual_bridge_ids=[],ranges=[dict(start_tick=0,end_tick=1920)],reasons=[],joint_boundary_conditions=[]))]
+        m.validate(p);req=gate.make_request(p,values=dict(policy='none'));plan=gate.make_plan(req,bridge.decide(req))
+        before=copy.deepcopy((req,plan));raw=bridge.generate(req,plan);gate.validate_raw(req,plan,raw)
+        self.assertEqual('FAILED',raw['status']);self.assertEqual('BRIDGE_NOT_READY',raw['results'][0]['error']['code'])
+        self.assertEqual('old-lock',raw['results'][0]['protection_id']);self.assertEqual(before,(req,plan))
 
 
 if __name__ == '__main__':

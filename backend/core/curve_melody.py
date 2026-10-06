@@ -170,6 +170,7 @@ def compose_bridge_phrase(request, window, joint_boundary_conditions, should_can
     blocked = masks + [dict(start_tick=s['start_tick']-start,
                             end_tick=s['start_tick']-start+s['duration_tick']) for s in reserved]
     entry, exit_ = endpoints
+    has_following_music = bool(window['context']['right']) or any(p['note']['start_tick'] >= end for p in parents.values())
     low = entry['start_tick'] - start if entry else 0
     high = exit_['start_tick'] - start + exit_['duration_tick'] if exit_ else length
     if low > 0: blocked.append(dict(start_tick=0, end_tick=low))
@@ -211,7 +212,7 @@ def compose_bridge_phrase(request, window, joint_boundary_conditions, should_can
         # explicit rests. No changes are made at every fourbeat child edge.
         if rule in ('answer', 'rhythm') and cell >= 4*unit:
             duration -= unit * min(12, max(1, cell//(8*unit)))
-        if exit_ is None and cursor+cell == length and window['context']['right'] and cell >= 4*unit:
+        if exit_ is None and cursor+cell == length and has_following_music and cell >= 4*unit:
             duration = min(duration, cell-unit*min(12, max(1, cell//(4*unit))))
         emit(motif_index, pitch, cursor, duration, rule, cycle)
         cursor += cell; step += 1

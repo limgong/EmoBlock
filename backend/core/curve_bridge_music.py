@@ -79,6 +79,23 @@ def _resolved(project):
     return result
 
 
+def _writable_regions(request):
+    regions = copy.deepcopy(request['resolved_ranges'])
+    for a, b in _forbidden(request['base_project']):
+        kept = []
+        for r in regions:
+            x, y = _pair(r)
+            if b <= x or y <= a:
+                kept.append(r)
+            else:
+                if x < a:
+                    kept.append(_range(x, a))
+                if b < y:
+                    kept.append(_range(b, y))
+        regions = kept
+    return sorted(regions, key=_pair)
+
+
 def _validate_request(request):
     m.canonical(request); m.shape(request, REQUEST_FIELDS)
     if (request['schema'], request['spec_rev'], request['contract_rev'], request['algorithm_version']) != (
@@ -252,9 +269,13 @@ def decide(request, should_cancel=None, on_progress=None):
     if params['policy'] == 'none':
         termination = 'POLICY_NONE'
     else:
-        points = {r[k] for r in request['resolved_ranges'] for k in ('start_tick', 'end_tick')}
+        writable = _writable_regions(request)
+        points = {r[k] for r in writable for k in ('start_tick', 'end_tick')}
         points.update(v for p in base['placements'] for v in (p['start_tick'], p['start_tick']+p['length_ticks']))
         points.update(b[k] for b in base['blank_regions'] for k in ('start_tick', 'end_tick'))
+        # An independent whole phrase can span many blocks. Its placement
+        # edges alone must not prevent selecting its unprotected interior.
+        points.update(v for n in request['base_notes'] for v in (n['start_tick'], n['start_tick']+n['duration_tick']))
         points = sorted(points)
         # Enumerate starts in time order. The upper block bound also limits
         # scanning in very long projects; no unbounded retry loop.
@@ -265,6 +286,8 @@ def decide(request, should_cancel=None, on_progress=None):
                 if blocks > params['max_window_blocks']:
                     break
                 if blocks < 2:
+                    continue
+                if not any(r['start_tick'] <= a < b <= r['end_tick'] for r in writable):
                     continue
                 if tested >= params['max_window_tests']:
                     termination = 'WINDOW_BUDGET'; break
@@ -381,6 +404,8 @@ def _validate_plan(request, plan):
         _fail('PLAN_VERSION_MISMATCH', '冻结计划指纹不匹配。')
     if plan['decision'] not in ('selected', 'none') or bool(plan['windows']) != (plan['decision'] == 'selected'):
         _fail('INVALID_CANDIDATE', '计划none与真实窗口矛盾。')
+    if request['parameters']['policy'] == 'none' and plan['windows']:
+        _fail('INVALID_CANDIDATE', '冻结计划违背用户明确none选择。')
     if len(plan['windows']) > request['parameters']['max_windows']:
         _fail('INVALID_CANDIDATE', '冻结窗口超过请求预算。')
     if any(w['end_tick']-w['start_tick'] > request['parameters']['max_window_blocks']*melody.BAR for w in plan['windows']):
