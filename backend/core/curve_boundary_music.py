@@ -438,9 +438,13 @@ def plan_boundaries(request, should_cancel=None, on_progress=None):
         if method != 'none' and attempted >= params['max_operations']: exhausted = True; break
         ident = m.digest('emoblocks.boundary.v1', dict(request_id=request['id'], tick=tick,
             left=None if left is None else left['performance_id'],right=None if right is None else right['performance_id']))
-        span = params['max_boundary_ticks']; local = _range(max(0,tick-span),min(layout['total_ticks'],tick+span))
+        span = params['max_boundary_ticks']; wanted = []
+        if left is not None:
+            wanted.append(_range(max(left['start_tick'],left['end_tick']-span),left['end_tick']))
+        if right is not None:
+            wanted.append(_range(right['start_tick'],min(right['end_tick'],right['start_tick']+span)))
         permitted = [_range(max(local['start_tick'],r['start_tick']),min(local['end_tick'],r['end_tick']))
-                     for r in layout['coverage_ranges'] if m.intersects(local,r)]
+                     for local in wanted for r in layout['coverage_ranges'] if m.intersects(local,r)]
         ranges = _subtract(_union(permitted),_union(forbidden))
         boundary = dict(id=ident,tick=tick,left_performance_id=None if left is None else left['performance_id'],
             right_performance_id=None if right is None else right['performance_id'],method=method,

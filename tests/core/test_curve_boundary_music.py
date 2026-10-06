@@ -30,6 +30,24 @@ def cells(project, block, values):
     return project
 
 
+def short_project(lengths):
+    p=fixture(1,rough=False);template=copy.deepcopy(p['materials'][0]);offset=0
+    p['materials']=[];p['placements']=[];p['sources'][0]['notes']=[]
+    for index,length in enumerate(lengths):
+        sid='short-source:'+str(index)
+        note=dict(copy.deepcopy(template['notes'][0]),id='short-note:'+str(index),pitch=60+index*4,
+            start_tick=0,duration_tick=min(120,length),origin=dict(source_id='S',track_id='track',source_note_id=sid))
+        material=dict(copy.deepcopy(template),id='short-material:'+str(index),length_ticks=length,notes=[note])
+        material['provenance']['source_start_tick']=offset
+        p['materials'].append(material)
+        p['placements'].append(dict(id='short-use:'+str(index),material_id=material['id'],base_snapshot=copy.deepcopy(material),
+            start_tick=offset,length_ticks=length,emotion='calm',emotion_variant=None))
+        p['sources'][0]['notes'].append(dict(copy.deepcopy(note),id=sid,start_tick=offset))
+        offset+=length
+    p['blank_regions']=[] if offset==p['total_ticks'] else [dict(id='short-rest',start_tick=offset,end_tick=p['total_ticks'],reason='主动留白')]
+    m.validate(p);return p
+
+
 def ref(ident,fingerprint):return dict(id=ident,version=1,fingerprint=fingerprint)
 
 
@@ -138,6 +156,71 @@ def shape_check(req,proposal):
 
 
 class BoundaryMusicTests(unittest.TestCase):
+    def public_roundtrip(self,frame):
+        import curve_final as final
+        req=final.make_request(frame['connection_ref'],token=frame['token'],seed=frame['seed'],
+            values=frame['parameters'],plan_id='owner-scope-gate')
+        original=copy.deepcopy(req);final.validate_request(req)
+        plan=final.make_plan(req,music.plan_boundaries(req));result=final.apply_boundaries(req,plan)
+        final.validate_result(req,plan,result);self.assertEqual(original,req)
+        return req,plan,result
+
+    def test_short_owners_one_tick_and_short_tail_fit_public_gate(self):
+        for lengths in ((120,120),(120,1,120),(60,60,60),(1800,120)):
+            with self.subTest(lengths=lengths):
+                req,plan,result=self.public_roundtrip(request(short_project(lengths)))
+                first=next(b for b in plan['boundaries'] if b['tick']==0)
+                self.assertEqual([dict(start_tick=0,end_tick=min(240,lengths[0]))],first['editable_ranges'])
+                self.assertEqual(req['actual_layout']['remaining_gaps'],result['remaining_gaps'])
+                if lengths==(120,120):
+                    end=next(b for b in plan['boundaries'] if b['tick']==240)
+                    self.assertEqual([dict(start_tick=120,end_tick=240)],end['editable_ranges'])
+                    self.assertTrue(plan['joints']);ids={n['id'] for n in result['notes']}
+                    for joint in plan['joints']:
+                        for row in joint['final_endpoints']:
+                            for endpoint in (row['left'],row['right']):
+                                if endpoint:self.assertIn(endpoint['note_id'],ids)
+
+    def test_nested_short_component_owners_fit_public_gate(self):
+        p=short_project((120,1,120));first,second,third=p['materials']
+        inner=combination('short-inner',[first,second]);outer=combination('short-outer',[inner,third])
+        p['materials'] += [inner,outer];place=copy.deepcopy(p['placements'][0])
+        place.update(material_id=outer['id'],length_ticks=outer['length_ticks'],base_snapshot=outer)
+        p['placements']=[place]
+        req,plan,result=self.public_roundtrip(request(p))
+        self.assertEqual(3,len({e['performance_id'] for e in req['actual_layout']['emission_ledger']}))
+        edge=next(b for b in plan['boundaries'] if b['tick']==120)
+        self.assertEqual([dict(start_tick=0,end_tick=121)],edge['editable_ranges'])
+        self.assertEqual(1920,req['actual_layout']['total_ticks'])
+
+    def test_selected_completion_beside_real_remaining_gap_fits_public_gate(self):
+        import curve_candidates as completion
+        import curve_final as final
+        import curve_bridge_music as bridge_music
+        from test_curve_candidates import fixture as gap_fixture
+        controller=gap_fixture()
+        controller.edit('set_intensity',points=[dict(tick=0,level=.1),dict(tick=3840,level=.9)])
+        captured=controller.capture_completion(controller.gap_items()[0]['id'],seed=31,budget=dict(max_candidates=1))
+        completed=completion.prepare_completion(captured['request'])
+        self.assertTrue(completed['candidates']);self.assertTrue(controller.finish_completion(captured['token'],completed))
+        bridge=controller.capture_bridge(completed['candidates'][0]['id'],captured['attempt_id'],parameters=dict(policy='none'))
+        bp=controller.lock_bridge(bridge['token'],bridge_music.decide(bridge['request']))
+        controller.begin_bridge_generation(bridge['token'],bp)
+        self.assertTrue(controller.finish_bridge(bridge['token'],bridge_music.generate(bridge['request'],bp)))
+        con=controller.capture_connection(parameters=dict(policy='none'))
+        cp=controller.plan_connection(con['token'],connection_music.plan(con['request']))
+        controller.begin_connection_generation(con['token'],cp)
+        raw=connection_music.generate(con['request'],cp,con['request']['actual_layout'])
+        self.assertTrue(controller.finish_connection(con['token'],raw))
+        attempt=controller._connection_attempt(con['attempt_id'])
+        reference=dict(attempt_id=attempt['id'],**{k:copy.deepcopy(attempt['connection'][k]) for k in ('request','plan','results','outcome')})
+        req=final.make_request(reference,plan_id='selected-gap-owner-scope');original=copy.deepcopy(req)
+        plan=final.make_plan(req,music.plan_boundaries(req));result=final.apply_boundaries(req,plan);final.validate_result(req,plan,result)
+        self.assertEqual([(3360,3840)],[(r['start_tick'],r['end_tick']) for r in result['remaining_gaps']])
+        self.assertEqual(req['actual_layout']['remaining_gaps'],result['remaining_gaps'])
+        self.assertFalse(any(m.intersects(music._support(n),result['remaining_gaps'][0]) for n in result['notes']))
+        self.assertEqual(original,req)
+
     def short_pair(self):
         p=fixture(1,rough=False);cells(p,0,[(0,120,60)])
         first=p['materials'][0];first['length_ticks']=120
