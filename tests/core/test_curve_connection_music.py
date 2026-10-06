@@ -76,6 +76,32 @@ def notes_music(row):
 
 
 class ConnectionMusicTests(unittest.TestCase):
+    def test_long_actual_breath_can_make_connection_unnecessary(self):
+        p=fixture(2,rough=False)
+        for material in (p['materials'][1],p['placements'][1]['base_snapshot']):
+            material['provenance']['key_context']['tonic']=8
+            for note in material['notes']:note['pitch']+=20
+        for note in p['sources'][0]['notes']:
+            if note['start_tick']>=1920:note['pitch']+=20
+        connected=request(p)
+        self.assertEqual('selected',music.plan(connected)['decision'])
+        p['placements'][0]['base_snapshot']['notes']=p['placements'][0]['base_snapshot']['notes'][:1]
+        breathing=request(p);analysis=music._analyze(breathing,1920)
+        self.assertEqual(1680,analysis['breath_ticks'])
+        self.assertLess(analysis['baseline_cost'],music._analyze(connected,1920)['baseline_cost'])
+        proposal=music.plan(breathing)
+        self.assertEqual('none',proposal['decision']);self.assertEqual('NOT_NEEDED',proposal['none_reason'])
+        locked=service.make_plan(breathing,proposal)
+        service.validate_raw(breathing,locked,music.generate(breathing,locked,breathing['actual_layout']))
+
+    def test_guide_arrives_from_actual_left_before_approaching_right(self):
+        req=request();w=music._window(req,dict(start_tick=1920,end_tick=3840),'diatonic_guide')
+        locked=plan(req,[w]);raw=music.generate(req,locked,req['actual_layout'])
+        service.validate_raw(req,locked,raw);self.assertEqual('SUCCEEDED',raw['status'])
+        notes=raw['results'][0]['notes']
+        self.assertEqual(w['context']['left']['pitch'],notes[0]['pitch'])
+        self.assertLessEqual(abs(notes[-1]['pitch']-w['context']['right']['pitch']),abs(notes[0]['pitch']-w['context']['right']['pitch']))
+
     def test_seed_changes_actual_music_and_replay_preserves_full_result(self):
         rows=[]
         for seed in (41,42,41):

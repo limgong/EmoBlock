@@ -229,7 +229,9 @@ def _compose(request,window,joints,cancel=None,locked_plan=None):
                 if not notes:
                     last_pitch=exit_['pitch'] if exit_ else min(scale,key=lambda p:(abs(p-right),p))
                     eligible=[p for p in scale if abs(p-right)>=abs(last_pitch-right)]
-                    pitch=min(eligible,key=lambda p:(abs(p-parent['pitch']),p))
+                    left=window['context']['left']
+                    arrival=left['pitch'] if left else parent['pitch']
+                    pitch=min(eligible,key=lambda p:(abs(p-arrival),p))
             duration=width*unit
             if technique in ('motif_reply','density_shift') and width>=4:
                 duration-=unit*min(6,max(1,width//8))
@@ -306,6 +308,7 @@ def _analyze(request,tick):
     a=left[-1] if left else None;b=right[0] if right else None
     leap=abs(a['pitch']-b['pitch']) if a and b else 0
     rhythm=abs(math.log2(a['duration_tick']/b['duration_tick'])) if a and b else 0.
+    breath=max(0,b['start_tick']-_support(a)['end_tick']) if a and b else 0
     lcount=sum(tick-960<=n['start_tick']<tick for n in notes);rcount=sum(tick<=n['start_tick']<tick+960 for n in notes)
     density=abs(lcount-rcount)/max(1,lcount,rcount)
     base=request['actual_layout']['base_project'];places=base['placements']
@@ -317,10 +320,10 @@ def _analyze(request,tick):
     keys=[_captured_key(request,[n]) for n in (a,b) if n]
     key_change=len(keys)==2 and (keys[0]['tonic'],keys[0]['mode'])!=(keys[1]['tonic'],keys[1]['mode'])
     motion=max(0,leap-7)/12 + .2*rhythm + .15*key_change
-    cost=.7*max(0,leap-7)/12+.14*rhythm+.08*density+.1*key_change+.06*emo*min(1,motion)+.04*trend*min(1,motion)
+    cost=(.7*max(0,leap-7)/12+.14*rhythm+.08*density+.1*key_change+.06*emo*min(1,motion)+.04*trend*min(1,motion))/(1+breath/480)
     return dict(tick=tick,left_note_id=a['id'] if a else None,right_note_id=b['id'] if b else None,
         baseline_cost=round(cost,8),pitch_leap=leap,rhythm_contrast=rhythm,density_contrast=density,
-        emotion_change=emo,intensity_trend=trend,key_change=key_change)
+        breath_ticks=breath,emotion_change=emo,intensity_trend=trend,key_change=key_change)
 
 
 def plan_connection_blocks(request,should_cancel=None,on_progress=None):
