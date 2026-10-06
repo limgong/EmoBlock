@@ -463,6 +463,25 @@ class CurveApplication:
         self.safe(lambda:self._start_job('DERIVE',dict(kind='material',id=ident),
                   lambda snap:_provider().prepare_generation(snap['project'],ident,method),self.apply_batch))
 
+    def _discard_asset_path(self, path):
+        for key,asset in list(self.ready_assets.items()):
+            if Path(asset['wav_path'])==path:
+                self.ready_assets.pop(key,None)
+
+    def _ready_asset(self, key):
+        asset = self.ready_assets.get(key)
+        if asset and not Path(asset['wav_path']).is_file():
+            self._discard_asset_path(Path(asset['wav_path']))
+            return None
+        return asset
+
+    def _cache_asset(self, key, asset):
+        path = Path(asset['wav_path'])
+        if not path.is_file():
+            self._discard_asset_path(path)
+            raise ValueError('试听准备失败：音频文件缺失，请重新准备。')
+        self.ready_assets[key] = copy.deepcopy(asset)
+
     def prepare_target(self, kind, ident):
         target = self.resolve(kind,ident)
         if not target:
@@ -472,11 +491,11 @@ class CurveApplication:
             self.tell('历史音频无需准备；请明确点击播放。')
             return
         key = snapshot_key(kind,target)
-        if key in self.ready_assets:
+        if self._ready_asset(key):
             self.tell('试听已就绪 · 请明确点击播放。')
             return
         def done(asset,token):
-            self.ready_assets[key] = copy.deepcopy(asset)
+            self._cache_asset(key,asset)
             self.tell('试听已就绪 · 当前播放器未改变，请点击播放。')
         return self._start_job('AUDITION',dict(kind=kind,id=ident),
                               lambda snap:_provider().render_audition(snap['target']),done)
@@ -499,7 +518,7 @@ class CurveApplication:
                 return False
             asset = dict(wav_path=target['paths']['wav'],audio_seconds=target['audio_seconds'],body_seconds=target['body_seconds'])
         else:
-            asset = self.ready_assets.get(snapshot_key(kind,target))
+            asset = self._ready_asset(snapshot_key(kind,target))
             if not asset:
                 self.tell('该对象尚未就绪，请先准备试听。')
                 return False
@@ -508,6 +527,7 @@ class CurveApplication:
     def start_playback(self, asset, target, label):
         path = Path(asset['wav_path'])
         if not path.is_file():
+            self._discard_asset_path(path)
             self.tell('试听文件已移动或缺失，请重新准备。',True)
             return False
         duration = self.player.play(path)
@@ -523,7 +543,7 @@ class CurveApplication:
         kind,ident = self.selected_target
         if kind=='draft':
             key = snapshot_key('draft',self.combo_inputs)
-            asset = self.ready_assets.get(key)
+            asset = self._ready_asset(key)
             if asset:
                 return self.start_playback(asset,('draft',key),'组合草稿')
             self.tell('组合草稿尚未就绪，请先准备试听。')
@@ -692,13 +712,16 @@ class CurveApplication:
         inputs = copy.deepcopy(self.combo_inputs)
         label = self.page.combo_name.get().strip()
         key = snapshot_key('draft',inputs)
+        if audition and self._ready_asset(key):
+            self.tell('组合试听已就绪 · 请明确点击底部播放。')
+            return
         def work(snapshot):
             material = _provider().combine(snapshot['project'],inputs,label)
             if audition:return _provider().render_audition(material)
             return dict(sources=[],materials=[material],warnings=[])
         def done(payload,token):
             if audition:
-                self.ready_assets[key] = copy.deepcopy(payload)
+                self._cache_asset(key,payload)
                 self.tell('组合试听已就绪 · 请明确点击底部播放。')
             else:
                 self.apply_batch(payload,token)

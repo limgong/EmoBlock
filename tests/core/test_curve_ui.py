@@ -221,6 +221,79 @@ class MappedUIFixture(unittest.TestCase):
 
 
 class CurveApplicationTests(MappedUIFixture):
+    def audition_state(self):
+        return copy.deepcopy((self.controller.state(),self.controller.history_items(),
+                              self.app.playing_target,self.app.player.calls,self.app.player.status()))
+
+    def test_deleted_ready_wav_prepares_again_without_editing_or_autoplay(self):
+        self.app.select_target('material','block')
+        self.app.prepare_selected();self.finish_jobs();self.app.play_selected()
+        before=self.audition_state()
+        wav_bytes=self.wav.read_bytes()
+        original=self.provider.render_audition
+        def prepare(snapshot,bpm=120):
+            self.wav.write_bytes(wav_bytes)
+            return original(snapshot,bpm)
+        self.wav.unlink()
+        with patch.object(self.provider,'render_audition',side_effect=prepare) as render:
+            self.assertTrue(self.app.prepare_selected())
+            self.finish_jobs()
+            self.assertEqual(render.call_count,1)
+            self.assertTrue(self.wav.is_file())
+            self.app.prepare_selected()
+            self.assertFalse(self.app.jobs)
+            self.assertEqual(render.call_count,1)
+        self.assertEqual(self.audition_state(),before)
+
+    def test_deleted_play_asset_evicts_aliases_without_preparing_automatically(self):
+        self.app.select_target('material','block')
+        self.app.prepare_selected();self.finish_jobs();self.app.play_selected()
+        before=self.audition_state()
+        asset=copy.deepcopy(next(iter(self.app.ready_assets.values())))
+        self.app.ready_assets['same-file-alias']=copy.deepcopy(asset)
+        self.wav.unlink()
+        self.assertFalse(self.app.play_selected())
+        self.assertFalse(self.app.ready_assets)
+        self.assertFalse(self.app.jobs)
+        self.assertEqual(self.audition_state(),before)
+        # Also cover deletion between the cache lookup and playback's file check.
+        self.app.ready_assets['late-deletion']=asset
+        self.assertFalse(self.app.start_playback(asset,('material','block'),'分块'))
+        self.assertFalse(self.app.ready_assets)
+        self.assertEqual(self.audition_state(),before)
+
+    def test_deleted_combo_wav_reprepares_without_applying_or_autoplay(self):
+        self.app.prepare_target('material','block');self.finish_jobs();self.app.play_target('material','block')
+        self.app.add_combo(self.app.resolve('material','block'),'phrase','right')
+        before=self.audition_state()
+        wav_bytes=self.wav.read_bytes()
+        original=self.provider.render_audition
+        def prepare(snapshot,bpm=120):
+            self.wav.write_bytes(wav_bytes)
+            return original(snapshot,bpm)
+        with patch.object(self.provider,'render_audition',side_effect=prepare) as render:
+            self.app.prepare_combo();self.finish_jobs()
+            self.app.prepare_combo()
+            self.assertFalse(self.app.jobs)
+            self.assertEqual(render.call_count,1)
+            self.wav.unlink()
+            self.app.prepare_combo();self.finish_jobs()
+            self.assertEqual(render.call_count,2)
+            self.wav.unlink()
+            self.assertFalse(self.app.play_selected())
+            self.assertFalse(self.app.ready_assets)
+            self.app.prepare_selected();self.finish_jobs()
+            self.assertEqual(render.call_count,3)
+        self.assertEqual(self.audition_state(),before)
+
+    def test_missing_completed_asset_is_not_marked_ready(self):
+        before=self.audition_state()
+        self.wav.unlink()
+        self.app.prepare_target('material','block');self.finish_jobs()
+        self.assertFalse(self.app.ready_assets)
+        self.assertIn('失败',self.app.status_text.get())
+        self.assertEqual(self.audition_state(),before)
+
     def test_import_source_and_all_children_are_one_atomic_batch(self):
         self.app.new_project()
         before=self.controller.state()['project']
