@@ -24,6 +24,7 @@ from curve_canvas import CurveCanvas, snap_tick
 from curve_completion_ui import CompletionUI
 from curve_bridge_ui import BridgeUI
 from curve_connection_ui import ConnectionUI
+from curve_recommendation_ui import RecommendationUI, playback_asset, MODES
 
 METHODS = [('variant','局部变化'),('answer','回答句'),('counter','副旋律规则'),
            ('rhythm','节奏重组'),('develop','动机发展'),('density','疏密变化')]
@@ -185,6 +186,7 @@ class CurveApplication:
         self.history_expanded = False
         self.last_export = None
         self.state_data = self.controller.state()
+        self.accepted_music = None
         root.title('EmoBlocks · 旋律与强度')
         root.minsize(1020,700)
         root.geometry('1280x800')
@@ -218,7 +220,8 @@ class CurveApplication:
         self.history_button.pack(side='left',padx=2)
         self.page.final_button = ttk.Button(actions,text='整曲生成尚未接通',style='Curve.TButton',state='disabled')
         self.page.final_button.pack(side='left',padx=2)
-        hint(self.page.final_button,'当前支持素材创作与试听；整曲生成尚未接通。',self.show_detail)
+        hint(self.page.final_button,lambda:'完整管线建议：后台只准备，明确播放/确认；不改变当前播放对象。'
+             if self.recommendation.available() else '当前支持素材创作与试听；整曲生成尚未接通。',self.show_detail)
         self.page.grid(row=1,column=0,sticky='nsew')
         footer = ttk.Frame(self.shell,style='Curve.Panel.TFrame',padding=10)
         footer.grid(row=2,column=0,sticky='ew',pady=(10,0))
@@ -270,6 +273,12 @@ class CurveApplication:
         self.completion = CompletionUI(self)
         self.bridge = BridgeUI(self)
         self.connection = ConnectionUI(self)
+        self.recommendation = RecommendationUI(self)
+        self.page.history_mode = ttk.Combobox(self.page.history_panel,textvariable=self.recommendation.mode,
+            values=list(MODES.values()),state='readonly',style='Curve.TCombobox')
+        self.page.history_mode.bind('<<ComboboxSelected>>',self.recommendation.mode_changed)
+        hint(self.page.history_mode,'历史试听/导出明确使用此模式；缺失不回退到另一模式。',self.show_detail)
+        self.page.final_button.configure(command=lambda:self.show_curve_stage('完整建议'))
         ui_platform.setup_window(root,self)
         for event in ui_platform.EDIT_SHORTCUT_EVENTS:
             root.bind(event,self.edit_shortcut,add='+')
@@ -289,12 +298,14 @@ class CurveApplication:
                 and not (getattr(self,'completion',None) and self.completion.preview_candidate)
                 and not (getattr(self,'bridge',None) and self.bridge.preview is not None)
                 and not (getattr(self,'connection',None) and self.connection.preview is not None)
+                and not (getattr(self,'recommendation',None) and self.recommendation.preview is not None)
                 and self.state_data['capabilities'].get('edit',True))
 
     def can_edit(self, capability):
         return self.editable and self.state_data['capabilities'].get(capability,False)
 
     def selected_placement(self):
+        if self.covered_by_accepted_bridge(self.page.timeline.selected_id):return None
         project = self.state_data['project']
         if not project or not self.selected_target or self.selected_target[0]!='placement':return None
         return next((p for p in project['placements'] if p['id']==self.selected_target[1]),None)
@@ -371,18 +382,26 @@ class CurveApplication:
     def refresh(self):
         self.state_data = self.controller.state()
         project = self.state_data['project']
+        self.accepted_music = (self.controller.effective_music() if project is not None
+            and self.state_data['capabilities'].get('recommendation',False) else None)
         if self.state_data['access_mode']!='editable':
             saved_text = '旧工程 · 只读'
         elif self.state_data['is_saved']:
             saved_text = '工程已保存'
         else:
             saved_text = '工程未保存' if self.state_data['saved_path'] else '新工程 · 尚未保存'
-        if self.state_data['capabilities'].get('completion',False):
+        if self.state_data['capabilities'].get('completion',False) or self.state_data['capabilities'].get('recommendation',False):
             saved_text += ' · 候选暂存'+('未保存' if self.state_data['staging_dirty'] else '已保存')
+        if self.state_data['capabilities'].get('recommendation',False):
+            accepted = self.controller.accepted_state()
+            if accepted['status']!='NONE':saved_text += ' · '+('接受版本有效' if accepted['status']=='ACTIVE' else '接受层已失效')
         self.save_label.configure(text=saved_text)
         self.completion.refresh()
         self.bridge.refresh()
         self.connection.refresh()
+        self.recommendation.refresh()
+        self.page.final_button.configure(text='完整建议' if self.recommendation.available() else '整曲生成尚未接通')
+        self.page.final_button.state(['!disabled'] if self.recommendation.available() else ['disabled'])
         sources = project['sources'] if project else []
         materials = project['materials'] if project else []
         if self.selected_source_id not in {v['id'] for v in sources}:
@@ -406,6 +425,10 @@ class CurveApplication:
         connection_preview = self.connection.preview
         bridge_preview = connection_preview if connection_preview is not None else self.bridge.preview
         private = self.private_preview()
+        recommendation_preview = self.recommendation.preview
+        if recommendation_preview is not None:
+            bridge_preview = dict(overlays=recommendation_preview['bridge_overlays'],protections=recommendation_preview['protections'])
+            connection_preview = recommendation_preview
         if not private and self.selected_target and self.selected_target[0]=='placement':
             if not project or self.selected_target[1] not in {v['id'] for v in project['placements']}:
                 self.selected_target = None
@@ -415,16 +438,21 @@ class CurveApplication:
                                          wraplength=max(220,self.page.right.winfo_width()-20))
         self.page.timeline.set_project(private['project'] if private else project,
                                        readonly=bool(private),memory_info=private['memory_info'] if private else None,
-                                       bridge_preview=bridge_preview,connection_preview=connection_preview)
+                                       bridge_preview=bridge_preview,connection_preview=connection_preview,
+                                       recommendation_preview=recommendation_preview,accepted_music=self.accepted_music if not private else None)
         if project:
             self.page.grid_count.set(str(project['grid_count']))
-        self.history = self.controller.history_items()
+        self.history = self.controller.history() if self.recommendation.available() else self.controller.history_items()
         self.page.history_list.delete(0,'end')
         for i,item in enumerate(self.history):
             availability = '可试听' if item['availability']['wav'] else '音频不可用'
-            self.page.history_list.insert('end',f'{item["label"]} · {availability}')
+            version = f' · v{item["version"]} · {item["application_status"]} · {item["scope"]}' if 'score_ref' in item else ''
+            self.page.history_list.insert('end',f'{item["label"]}{version} · {availability}')
             if item['id']==self.selected_history_id:
                 self.page.history_list.selection_set(i)
+        if any(item.get('scope') in ('FULL','LOCAL') for item in self.history):
+            self.page.history_mode.pack(fill='x',before=self.page.history_list,pady=3)
+        else:self.page.history_mode.pack_forget()
         if self.history and (self.history_expanded or self.state_data['access_mode']!='editable'):
             self.page.history_panel.pack(fill='x',before=self.page.timeline,pady=(8,0))
         else:
@@ -433,7 +461,7 @@ class CurveApplication:
         for text,button in self.edit_buttons:
             enabled = self.editable
             if text=='保存快照':
-                enabled = self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION') for j in self.jobs.values())
+                enabled = self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION','RECOMMENDATION','RECOMMENDATION_MODE') for j in self.jobs.values())
             if text=='撤销':enabled = enabled and self.state_data['can_undo']
             if text=='重做':enabled = enabled and self.state_data['can_redo']
             button.state(['!disabled'] if enabled else ['disabled'])
@@ -459,6 +487,8 @@ class CurveApplication:
         return self.preview_memory_description() if self.private_preview() is not None else self.memory_description()
 
     def private_preview(self):
+        recommendation = getattr(self,'recommendation',None)
+        if recommendation and recommendation.preview is not None:return recommendation.preview
         connection = getattr(self,'connection',None)
         if connection and connection.preview is not None:return connection.preview
         bridge = getattr(self,'bridge',None)
@@ -467,11 +497,17 @@ class CurveApplication:
         return completion.preview_candidate if completion else None
 
     def exit_private_preview(self):
-        if self.connection.preview is not None:self.connection.exit_preview()
+        if self.recommendation.preview is not None:self.recommendation.exit_preview()
+        elif self.connection.preview is not None:self.connection.exit_preview()
         elif self.bridge.preview is not None:self.bridge.exit_preview()
         elif self.completion.preview_candidate:self.completion.exit_preview()
 
     def show_curve_stage(self, stage):
+        if stage=='完整建议':
+            self.recommendation.show()
+            return
+        self.recommendation.restore_view()
+        self.recommendation.visible = False
         if stage=='连接':self.connection.show()
         elif stage=='Bridge':self.bridge.show()
         else:
@@ -484,9 +520,22 @@ class CurveApplication:
             self.refresh()
 
     def describe_bridge_overlay(self, overlay):
+        if self.recommendation.preview is not None:return self.recommendation.describe_overlay(overlay,'Bridge')
         if self.connection.preview is not None:
             return self.bridge.describe_overlay(overlay,self.connection.state['request']['bridge_ref'])
         return self.bridge.describe_overlay(overlay)
+
+    def describe_connection_overlay(self, overlay):
+        if self.recommendation.preview is not None:return self.recommendation.describe_overlay(overlay,'连接')
+        return self.connection.describe_overlay(overlay)
+
+    def covered_by_accepted_bridge(self, placement_id):
+        if not self.accepted_music or not placement_id:return False
+        project = self.state_data['project']
+        placement = next((p for p in project['placements'] if p['id']==placement_id),None)
+        return bool(placement and any(p['kind']=='bridge' and p['origin']=='automatic'
+            and p['start_tick']<placement['start_tick']+placement['length_ticks'] and p['end_tick']>placement['start_tick']
+            for p in self.accepted_music['protections']))
 
     def edit(self, action, **args):
         if not self.editable:
@@ -574,6 +623,7 @@ class CurveApplication:
         self.completion.drain()
         self.bridge.drain()
         self.connection.drain()
+        self.recommendation.drain()
         while True:
             try:
                 token,success,payload = self.messages.get_nowait()
@@ -603,11 +653,14 @@ class CurveApplication:
         self.completion.cancel()
         self.bridge.cancel()
         self.connection.cancel()
+        self.recommendation.cancel()
         for job in list(self.jobs.values()):
+            if job['kind'] in ('RECOMMENDATION','RECOMMENDATION_MODE'):continue
             self.controller.cancel_job(job['token'])
-        self.jobs.clear()
+            self.jobs.pop(job['token']['request_id'],None)
         self.refresh()
-        self.tell('准备已取消 · 工程和当前播放保持原状。')
+        self.tell('取消已请求 · 正在收拢阶段事实；工程和当前播放保持原状。' if self.recommendation.active_job()
+                  else '准备已取消 · 工程和当前播放保持原状。')
 
     def apply_batch(self, batch, token, snapshot=None):
         self.controller.apply_batch(batch,token)
@@ -691,7 +744,10 @@ class CurveApplication:
             if not target['availability']['wav']:
                 self.tell('历史音频不可用；其他格式仍可单独导出。',True)
                 return False
-            asset = dict(wav_path=target['paths']['wav'],audio_seconds=target['audio_seconds'],body_seconds=target['body_seconds'])
+            if target.get('scope') in ('FULL','LOCAL'):
+                asset = playback_asset(self.controller.history_asset(ident,mode=self.recommendation.mode_key()))
+            else:
+                asset = dict(wav_path=target['paths']['wav'],audio_seconds=target['audio_seconds'],body_seconds=target['body_seconds'])
         else:
             asset = self._ready_asset(audition_key(kind,target,self.state_data['project']['bpm']))
             if not asset:
@@ -746,6 +802,14 @@ class CurveApplication:
                 self.stop()
             else:
                 was_paused = self.player.status()[1]=='paused'
+                target = self.playing_target['target']
+                old_asset = self.playing_target['asset']
+                if 'files' in old_asset:
+                    if target[0]=='recommendation':
+                        asset = self.controller.recommendation_asset(target[1],kind=target[3],mode=target[2])
+                    else:asset = self.controller.history_asset(target[1],mode=old_asset['mode'])
+                    if any(asset[k]!=old_asset[k] for k in ('id','version','score_ref','mode')):
+                        raise ValueError('播放资产版本已更新，请明确选择后播放。')
                 self.player.play(self.playing_target['asset']['wav_path'],start=max(0.,position))
                 if was_paused:self.player.pause()
 
@@ -928,24 +992,27 @@ class CurveApplication:
     def update_exports(self):
         item = self.resolve('history',self.selected_history_id)
         for format_,button in self.page.export_buttons.items():
-            button.state(['!disabled'] if item and item['availability'][format_] else ['disabled'])
+            button.state(['!disabled'] if item and item.get('scope')!='LOCAL' and item['availability'][format_] else ['disabled'])
 
     def export_history(self, format_):
         item = self.resolve('history',self.selected_history_id)
-        if not item or not item['availability'][format_]:
+        if not item or item.get('scope')=='LOCAL' or not item['availability'][format_]:
             return
         ident = item['id']
+        mode = self.recommendation.mode_key() if item.get('scope') in ('FULL','LOCAL') else None
         destination = filedialog.asksaveasfilename(parent=self.root,defaultextension='.'+format_,
                                                   initialfile='EmoBlocks.'+format_,filetypes=[(format_.upper(),'*.'+format_)])
         if destination:
             label = item['label']
             def export():
-                path = Path(self.controller.export_history(ident,format_,destination)).resolve()
+                path = Path(self.controller.export_history(ident,format_,destination,mode=mode) if mode is not None
+                            else self.controller.export_history(ident,format_,destination)).resolve()
                 self.last_export = dict(id=ident,label=label,format=format_,path=path)
                 self.export_receipt.configure(state='normal')
                 self.export_receipt.delete('1.0','end')
                 display_format = {'wav':'WAV','mid':'MIDI','mmp':'MMP'}[format_]
-                self.export_receipt.insert('1.0',f'已导出版本：{label} [{ident}] · {display_format}\n{path}')
+                version = f' · v{item["version"]} · {mode}' if mode is not None else ''
+                self.export_receipt.insert('1.0',f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.export_receipt.configure(state='disabled')
                 self.export_row.pack(side='left',fill='both',expand=True,padx=8)
                 self.tell('导出成功 · 版本、格式和完整目标位置见页眉。')
@@ -957,13 +1024,18 @@ class CurveApplication:
             return self.safe(lambda:ui_platform.open_folder(self.last_export['path'].parent))
 
     def save_project(self):
-        if self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION') for j in self.jobs.values()):
+        if self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION','RECOMMENDATION','RECOMMENDATION_MODE') for j in self.jobs.values()):
             path = self.controller.save_snapshot()
             self.refresh()
             self.tell('工程快照已保存：'+str(path))
             return path
 
     def _switched(self):
+        self.recommendation.shutdown()
+        self.recommendation.runtimes.clear()
+        self.recommendation.restore_view()
+        self.recommendation.visible = False
+        self.recommendation.selected_id = None
         self.jobs.clear()
         self.connection.restore_view()
         self.connection.visible = False
@@ -1064,6 +1136,7 @@ class CurveApplication:
         self.drain_jobs()
         self.bridge.update_elapsed()
         self.connection.update_elapsed()
+        self.recommendation.update_elapsed()
         self.safe(self.update_transport)
         self.timer = self.root.after(80,self.tick)
 
@@ -1087,6 +1160,7 @@ class CurveApplication:
 
     def destroyed(self, event):
         if event.widget==self.root and not self.closed:
+            self.recommendation.shutdown()
             for job in self.jobs.values():
                 if job['kind'] in ('COMPLETION','BRIDGE','CONNECTION'):job['cancel'].set()
             self.closed = True

@@ -27,6 +27,10 @@ class CurveCanvas(ttk.Frame):
         self.view_memory_info = None
         self.bridge_preview = None
         self.connection_preview = None
+        self.recommendation_preview = None
+        self.accepted_music = None
+        self.boundary_boxes = {}
+        self.accepted_bridge_boxes = {}
         self.bridge_boxes = {}
         self.connection_boxes = {}
         self.selected_bridge_id = None
@@ -57,9 +61,9 @@ class CurveCanvas(ttk.Frame):
         self.all_gaps_button.pack(side='left')
         self.stage_choice = tk.StringVar(value='补全')
         self.stage_selector = ttk.Combobox(tools,textvariable=self.stage_choice,
-            values=('补全','Bridge','连接'),state='readonly',width=7,style='Curve.TCombobox')
+            values=('补全','Bridge','连接','完整建议'),state='readonly',width=7,style='Curve.TCombobox')
         self.stage_selector.bind('<<ComboboxSelected>>',lambda _:app.show_curve_stage(self.stage_choice.get()))
-        hint(self.stage_selector,'分阶段折叠：补全、Bridge、连接共用唯一画布；切换不会修改工程或播放对象。',app.show_detail)
+        hint(self.stage_selector,'分阶段折叠：补全、Bridge、连接和完整建议共用唯一画布；切换不会修改工程或播放对象。',app.show_detail)
         self.canvas = tk.Canvas(self, height=380, highlightthickness=0, takefocus=True, xscrollincrement=1)
         self.canvas.pack(fill='both', expand=True)
         self.scrollbar = ttk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
@@ -74,7 +78,8 @@ class CurveCanvas(ttk.Frame):
             self.canvas.bind(event, self.delete_selected)
         self.bind('<Destroy>', self.destroyed, add='+')
 
-    def set_project(self, project, readonly=False, memory_info=None, bridge_preview=None, connection_preview=None):
+    def set_project(self, project, readonly=False, memory_info=None, bridge_preview=None, connection_preview=None,
+                    recommendation_preview=None, accepted_music=None):
         if self.intensity_draft and project!=self.project:
             self.cancel()
         self.project = project
@@ -82,6 +87,8 @@ class CurveCanvas(ttk.Frame):
         self.view_memory_info = memory_info
         self.bridge_preview = bridge_preview
         self.connection_preview = connection_preview
+        self.recommendation_preview = recommendation_preview
+        self.accepted_music = accepted_music
         if not connection_preview or self.selected_connection_id not in {o['id'] for o in connection_preview['connection_overlays']}:
             self.selected_connection_id = None
         if not bridge_preview or self.selected_bridge_id not in {o['id'] for o in bridge_preview['overlays']}:
@@ -94,8 +101,10 @@ class CurveCanvas(ttk.Frame):
             enabled = not readonly and self.app.can_edit('completion' if mode=='gaps' else 'intensity_edit')
             button.state(['!disabled'] if enabled else ['disabled'])
         self.all_gaps_button.state(['!disabled'] if not readonly and self.app.can_edit('completion') else ['disabled'])
-        if self.app.state_data['capabilities'].get('connection',False):
-            self.stage_choice.set('连接' if self.app.connection.visible else 'Bridge' if self.app.bridge.visible else '补全')
+        if self.app.state_data['capabilities'].get('connection',False) or self.app.state_data['capabilities'].get('recommendation',False):
+            self.stage_selector.configure(values=('补全','Bridge','连接')+(
+                ('完整建议',) if self.app.state_data['capabilities'].get('recommendation',False) else ()))
+            self.stage_choice.set('完整建议' if self.app.recommendation.visible else '连接' if self.app.connection.visible else 'Bridge' if self.app.bridge.visible else '补全')
             self.stage_selector.pack(side='right')
         else:self.stage_selector.pack_forget()
 
@@ -140,6 +149,8 @@ class CurveCanvas(ttk.Frame):
         self.gap_boxes = {}
         self.bridge_boxes = {}
         self.connection_boxes = {}
+        self.boundary_boxes = {}
+        self.accepted_bridge_boxes = {}
         if self.project is None:
             c.configure(scrollregion=(0,0,max(1,c.winfo_width()),max(1,c.winfo_height())))
             c.create_text(24,80,anchor='nw',text='旧工程只读 · 请选择已有成品试听或导出',fill=p['muted'],font=font())
@@ -207,6 +218,7 @@ class CurveCanvas(ttk.Frame):
         self.draw_connections()
         self.draw_memory()
         self.draw_bridges()
+        self.draw_final_music()
         for index,point in enumerate(self.points()):
             x,y = self.x(point['tick']),self.y(point['level'])
             self.point_boxes.append((index,x,y))
@@ -217,8 +229,67 @@ class CurveCanvas(ttk.Frame):
         if self.readonly:text = '基础候选只读 · 尚未处理bridge与连接'
         if self.bridge_preview is not None:text = 'Bridge阶段只读 · 尚未处理连接与最终边界'
         if self.connection_preview is not None:text = '连接阶段只读 · 尚未最终块间处理'
+        if self.recommendation_preview is not None:text = '完整建议只读 · 点击仅选择，明确播放/确认'
+        elif self.accepted_music and self.accepted_music['derived_layers_status']=='STALE':text = '已接受派生层失效 · 固定Bridge保留'
         c.create_text(self.margin,height-16,anchor='w',text=text+' · 移动不搬动强度线',fill=p['muted'],font=font(8))
         c.xview_moveto(view)
+
+    def draw_final_music(self):
+        p = self.app.theme.colors
+        preview = self.recommendation_preview
+        music = preview if preview is not None else self.accepted_music
+        if music is None:return
+        if preview is None:
+            for protection in music['protections']:
+                if protection['kind']!='bridge' or protection['origin']!='automatic':continue
+                start,end = protection['start_tick'],protection['end_tick']
+                center = self.y(self.level((start+end)/2))
+                box = (self.x(start),center-28,self.x(end),center+28)
+                self.accepted_bridge_boxes[protection['id']] = box
+                self.canvas.create_rectangle(*box,fill=p['selected'],outline=p['ink'],width=1,
+                    dash=() if protection['status']=='CONTENT_READY' else (3,3),tags='accepted-bridge')
+                if box[2]-box[0]>70:
+                    self.canvas.create_text(box[0]+4,center-14,anchor='w',text='Bridge · 保护/只读',
+                        fill=p['ink'],font=font(10),tags='accepted-bridge')
+        # The displayed note marks come exclusively from this authenticated layout.
+        notes = music['notes']
+        if notes:
+            low,high = min(n['pitch'] for n in notes),max(n['pitch'] for n in notes)
+            for note in notes:
+                center = self.y(self.level(note['start_tick']))
+                y = center+14-(note['pitch']-low)/max(1,high-low)*20
+                self.canvas.create_line(self.x(note['start_tick']),y,
+                    self.x(note['start_tick']+note['duration_tick']),y,fill=p['ink'],width=1,tags='final-note')
+        if preview is not None:
+            for overlay in preview['boundary_overlays']:
+                x = self.x(overlay['tick'])
+                self.boundary_boxes[overlay['id']] = (x-4,43,x+4,self.canvas.winfo_height()-38)
+                self.canvas.create_line(x,43,x,self.canvas.winfo_height()-38,fill=p['accent'],dash=(2,4),tags='final-boundary')
+                self.canvas.create_text(x+4,50,anchor='nw',text='边界',fill=p['ink'],font=font(9),tags='final-boundary')
+
+    def hit_boundary(self, x, y):
+        return next((ident for ident,(a,t,b,d) in reversed(list(self.boundary_boxes.items()))
+                     if a<=x<=b and t<=y<=d),None)
+
+    def hit_accepted_bridge(self, x, y):
+        return next((ident for ident,(a,t,b,d) in reversed(list(self.accepted_bridge_boxes.items()))
+                     if a-(.5 if b-a<1 else 0)<=x<=b+(.5 if b-a<1 else 0) and t<=y<=d),None)
+
+    def final_detail(self, x, y):
+        ident = self.hit_boundary(x,y)
+        if ident:
+            overlay = next(o for o in self.recommendation_preview['boundary_overlays'] if o['id']==ident)
+            self.app.show_detail(self.app.recommendation.describe_overlay(overlay,'boundary'))
+            return True
+        ident = self.hit_accepted_bridge(x,y)
+        if ident:
+            protection = next(p for p in self.accepted_music['protections'] if p['id']==ident)
+            state = '内容已就绪' if protection['status']=='CONTENT_READY' else '范围已保护，内容尚未就绪'
+            self.app.show_detail(f'已接受Bridge · {state}\n范围 {protection["start_tick"]}–{protection["end_tick"]} tick\n'
+                f'原保护计划 {protection["plan_id"]} v{protection["plan_version"]}\n'
+                '后续算法不得覆盖；当前Bridge只读，不映射到底下的旧素材编辑。')
+            return True
+        return False
 
     def memory_overlay(self):
         info = self.view_memory_info if self.readonly else self.app.state_data['memory_info']
@@ -323,6 +394,10 @@ class CurveCanvas(ttk.Frame):
         if not self.project or self.drag or self.intensity_draft:return
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
+        if any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
+            self.app.show_detail('强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
+            return
+        if self.final_detail(x,y):return
         bridge_id = self.hit_bridge(x,y)
         connection_id = self.hit_connection(x,y)
         if bridge_id:
@@ -330,7 +405,7 @@ class CurveCanvas(ttk.Frame):
             self.app.show_detail(self.app.describe_bridge_overlay(overlay))
         elif connection_id:
             overlay = next(o for o in self.connection_preview['connection_overlays'] if o['id']==connection_id)
-            self.app.show_detail(self.app.connection.describe_overlay(overlay))
+            self.app.show_detail(self.app.describe_connection_overlay(overlay))
         elif any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
             self.app.show_detail('强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
         else:
@@ -370,6 +445,7 @@ class CurveCanvas(ttk.Frame):
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
         if self.readonly:
+            if self.final_detail(x,y):return
             bridge_id = self.hit_bridge(x,y)
             connection_id = self.hit_connection(x,y)
             if bridge_id:
@@ -381,7 +457,7 @@ class CurveCanvas(ttk.Frame):
                 self.selected_bridge_id = None
                 self.selected_connection_id = connection_id
                 overlay = next(o for o in self.connection_preview['connection_overlays'] if o['id']==connection_id)
-                self.app.show_detail(self.app.connection.describe_overlay(overlay))
+                self.app.show_detail(self.app.describe_connection_overlay(overlay))
             else:
                 self.selected_bridge_id = None
                 self.selected_connection_id = None
@@ -396,6 +472,7 @@ class CurveCanvas(ttk.Frame):
         if self.app.can_edit('intensity_edit') and (self.mode=='trace' or point_index is not None):
             self.begin_intensity(event,point_index if self.mode=='points' else None)
             return
+        if self.final_detail(x,y):return
         ident = self.hit(x,y)
         if ident:self.selected_id = ident
         self.app.update_emotions()
@@ -542,7 +619,7 @@ class CurveCanvas(ttk.Frame):
         return 'break' if event else None
 
     def delete_selected(self, event=None):
-        if not self.readonly and self.selected_id and self.app.editable:
+        if not self.readonly and self.selected_id and self.app.editable and not self.app.covered_by_accepted_bridge(self.selected_id):
             self.app.edit('delete',placement_id=self.selected_id)
         return 'break'
 

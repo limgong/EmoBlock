@@ -53,6 +53,10 @@ class ConnectionUI:
         self.label.bind('<Return>',lambda _:app.show_detail(self.description()))
 
     def show(self):
+        recommendation = getattr(self.app,'recommendation',None)
+        if recommendation:
+            recommendation.restore_view()
+            recommendation.visible = False
         self.app.cancel_interaction()
         self.app.completion.restore_view()
         self.app.bridge.restore_view()

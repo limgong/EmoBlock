@@ -57,6 +57,10 @@ class BridgeUI:
         self.label.bind('<Return>', lambda _: app.show_detail(self.description()))
 
     def show(self):
+        recommendation = getattr(self.app,'recommendation',None)
+        if recommendation:
+            recommendation.restore_view()
+            recommendation.visible = False
         connection = getattr(self.app,'connection',None)
         if connection:
             connection.restore_view()

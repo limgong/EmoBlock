@@ -68,7 +68,8 @@ class CompletionUI:
         self.panel.pack(fill='x', before=app.page.memory_label, pady=(4,0))
         bridge = getattr(app,'bridge',None)
         connection = getattr(app,'connection',None)
-        if (bridge and bridge.visible) or (connection and connection.visible):self.panel.pack_forget()
+        recommendation = getattr(app,'recommendation',None)
+        if (bridge and bridge.visible) or (connection and connection.visible) or (recommendation and recommendation.visible):self.panel.pack_forget()
         if app.state_data['capabilities'].get('bridge',False):self.bridge_button.pack(side='left',padx=4)
         else:self.bridge_button.pack_forget()
         self.gaps = app.controller.gap_items()
@@ -206,6 +207,8 @@ class CompletionUI:
         if self.state['status']!='READY': return
         index = self.selector.current()
         if not 0<=index<len(self.candidates): return
+        self.app.recommendation.restore_view()
+        self.app.recommendation.visible = False
         canvas = self.app.page.timeline
         self.app.cancel_interaction()
         self.app.bridge.restore_view()
