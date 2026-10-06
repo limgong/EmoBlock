@@ -4,7 +4,6 @@ from pathlib import Path
 import sys
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT))
-from unified_ui import UnifiedApp
 import tkinter as tk
 
 
@@ -13,9 +12,20 @@ def main():
     parser.add_argument('--structure',help='Open a structure or studio project in the same window')
     args=parser.parse_args()
     import ui_platform
+    from curve_workflow import Controller
+    from curve_ui import CurveApplication
+    ui_platform.prepare_process()
+    controller=Controller()
+    error=None
+    if args.structure:
+        try:controller.load(args.structure)
+        except Exception as exc:error=str(exc)
     root=ui_platform.create_root()
-    app=UnifiedApp(root)
-    if args.structure:app.safe(lambda:app.load_project(args.structure))
+    ui_platform.configure_scaling(root)
+    app=CurveApplication(root,controller=controller)
+    if error:
+        from tkinter import messagebox
+        root.after(0,lambda:messagebox.showerror('无法打开工程',error,parent=root))
     root.mainloop()
 
 

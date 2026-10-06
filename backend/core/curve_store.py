@@ -13,20 +13,20 @@ MAX_BYTES = 20 * 1024 * 1024
 
 def new_bundle(project):
     model.validate(project)
-    return dict(schema=SCHEMA, spec_rev=model.SPEC_REV, contract_rev=model.CONTRACT_REV,
+    return dict(schema=SCHEMA, spec_rev=model.SPEC_REV, contract_rev=project['contract_rev'],
         project=copy.deepcopy(project), snapshots=[], attempts=[], results=[])
 
 
 def _validate_bundle(bundle):
     model.canonical(bundle)
     model.shape(bundle, 'schema spec_rev contract_rev project snapshots attempts results')
-    if (bundle['schema'], bundle['spec_rev'], bundle['contract_rev']) != (SCHEMA, model.SPEC_REV, model.CONTRACT_REV):
+    if (bundle['schema'], bundle['spec_rev']) != (SCHEMA, model.SPEC_REV) or bundle['contract_rev'] not in model.SUPPORTED_CONTRACT_REVS or bundle['contract_rev'] != bundle['project']['contract_rev']:
         model.reject('保存包版本不受支持。', 'UNSUPPORTED_VERSION')
     model.validate(bundle['project'])
     snapshots = model.indexed(bundle['snapshots'])
     for snap in snapshots.values():
         model.shape(snap, 'id spec_rev contract_rev content_fingerprint project')
-        if (snap['spec_rev'], snap['contract_rev']) != (model.SPEC_REV, model.CONTRACT_REV):
+        if snap['spec_rev'] != model.SPEC_REV or snap['contract_rev'] not in model.SUPPORTED_CONTRACT_REVS or snap['contract_rev'] != snap['project']['contract_rev']:
             model.reject('输入快照版本不匹配。', 'UNSUPPORTED_VERSION')
         if snap['project']['project_id'] != bundle['project']['project_id'] or model.fingerprint(snap['project']) != snap['content_fingerprint']:
             model.reject('输入快照身份或指纹不匹配。', 'STALE_SNAPSHOT')
@@ -42,7 +42,7 @@ def _validate_bundle(bundle):
         if attempt['state'] not in ('RUNNING', 'FAILED', 'CANCELLED', 'INTERRUPTED', 'READY', 'APPLIED') or (attempt['error'] is not None and not isinstance(attempt['error'], dict)):
             model.reject('候选状态或错误详情无效。')
         record_scopes.append(attempt['records'])
-        sources = model.indexed(snap['project']['sources'])
+        sources = model.source_index(snap['project']['sources'])
         materials = model.indexed(snap['project']['materials'])
         for material in model.indexed(attempt['staged_materials']).values():
             model.material_check(material, sources)

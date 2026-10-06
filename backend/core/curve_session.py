@@ -89,3 +89,35 @@ class ProjectSession:
             return False
         del self._requests[token['request_id']]
         return True
+
+
+    def commit(self, project, token=None):
+        """Append a prepared material batch; never an arbitrary editor replacement."""
+        if token is not None and not self.accepts(token):
+            return False
+        model.validate(project)
+        before = self._project
+        allowed = {'sources', 'materials', 'label_counters', 'records', 'contract_rev'}
+        if any(before[k] != project[k] for k in before if k not in allowed):
+            raise model.ProjectError('PROTECTION_CONFLICT', '批次只能添加素材，不能改变作品或保护。')
+        for key in ('sources', 'materials'):
+            if project[key][:len(before[key])] != before[key]:
+                raise model.ProjectError('PROTECTION_CONFLICT', '不能覆盖或删除已有来源和素材。')
+        if project['contract_rev'] not in (before['contract_rev'], model.CONTRACT_REV):
+            raise model.ProjectError('UNSUPPORTED_VERSION', '批次契约版本不受支持。')
+        changed = any(project[k] != before[k] for k in ('sources', 'materials', 'label_counters'))
+        expected = copy.deepcopy(before)
+        if changed:
+            model.invalidate_records(expected, before)
+        if project['records'] != expected['records']:
+            raise model.ProjectError('PLAN_VERSION_MISMATCH', '批次不能伪造或改变计划结果。')
+        if not changed:
+            if token is not None:
+                self.finish(token)
+            return False
+        self._undo.append(before)
+        self._undo = self._undo[-30:]
+        self._redo.clear()
+        self._project = copy.deepcopy(project)
+        self._changed()
+        return True

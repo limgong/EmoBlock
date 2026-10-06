@@ -9,7 +9,8 @@ import intensity_curve
 
 SCHEMA = 'emoblocks.assembly.v2'
 SPEC_REV = 'curve-workflow-v2-r3'
-CONTRACT_REV = 'curve-workflow-v2-r3-p0'
+CONTRACT_REV = 'curve-workflow-v2-r3-p23'
+SUPPORTED_CONTRACT_REVS = ('curve-workflow-v2-r3-p0', CONTRACT_REV)
 PPQ = 480
 BAR = PPQ * 4
 EMOTIONS = ('calm', 'hope', 'sad', 'suspense', 'crisis', 'resolve')
@@ -87,6 +88,16 @@ def indexed(value):
     return result
 
 
+class SourceIndex(dict):
+    def __init__(self, items):
+        super().__init__(indexed(items))
+        self.note_ids = {key: set(indexed(source.get('notes'))) for key, source in self.items()}
+
+
+def source_index(items):
+    return SourceIndex(items)
+
+
 def range_check(value, total):
     shape(value, 'start_tick end_tick')
     integer(value['start_tick'], 0, total)
@@ -111,7 +122,8 @@ def note_check(note, length, sources, absolute_start=0):
         for v in note['origin'].values():
             ident(v)
         source = sources.get(note['origin']['source_id'])
-        if source is None or note['origin']['source_note_id'] not in {n.get('id') for n in source.get('notes', [])}:
+        note_ids = sources.note_ids.get(note['origin']['source_id'], set()) if isinstance(sources, SourceIndex) else {n.get('id') for n in (source or {}).get('notes', [])}
+        if source is None or note['origin']['source_note_id'] not in note_ids:
             reject('音符来源或原音符身份不存在。')
     for value in objects(note['lineage']):
         ident(value)
@@ -431,14 +443,14 @@ def records_check(records, protections, placements, total, materials, sources):
 def _validate(project):
     canonical(project)
     shape(project, 'schema spec_rev contract_rev project_id ppq bpm grid_count total_ticks sources materials label_counters placements intensity_points blank_regions protections records accepted_candidate_id settings')
-    if (project['schema'], project['spec_rev'], project['contract_rev']) != (SCHEMA, SPEC_REV, CONTRACT_REV):
+    if (project['schema'], project['spec_rev']) != (SCHEMA, SPEC_REV) or project['contract_rev'] not in SUPPORTED_CONTRACT_REVS:
         reject('工程格式或契约版本不受支持。', 'UNSUPPORTED_VERSION')
     ident(project['project_id']); integer(project['ppq'], PPQ, PPQ); integer(project['bpm'], 120, 120)
     integer(project['grid_count'], 1); integer(project['total_ticks'], 1)
     total = project['total_ticks']
     if total != project['grid_count'] * BAR:
         reject('固定时间轴长度与四拍格数不一致。')
-    sources = indexed(project['sources']); materials = indexed(project['materials']); placements = indexed(project['placements'])
+    sources = source_index(project['sources']); materials = indexed(project['materials']); placements = indexed(project['placements'])
     for source in sources.values():
         shape(source, 'id label length_ticks notes provenance'); text(source['label']); integer(source['length_ticks'], 1)
         if not isinstance(source['provenance'], dict):
@@ -640,6 +652,7 @@ def _edit(project, action, **args):
             for p in result['placements']:
                 if p['id'] in affected and p['base_snapshot']['kind'] == 'bridge':
                     register_manual_bridge(result, p, max((q['plan_version'] or 0 for q in removed if q['placement_id'] == p['id']), default=0))
+    result['contract_rev'] = CONTRACT_REV
     validate(result)
     return result
 
