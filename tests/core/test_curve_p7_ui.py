@@ -45,6 +45,7 @@ class RecommendationController(ConnectionController):
         self.assets_called = []
         self.prepared_modes = []
         self.receipts = {}
+        self.source_facts = []
 
     def state(self):
         self.main()
@@ -98,7 +99,7 @@ class RecommendationController(ConnectionController):
         self.rec['capabilities']['can_cancel'] = True
         self.staging_dirty = True
         self.calls.append(('recommendation-capture',selected_gap_id))
-        return dict(token=token,request=request,attempt_id=ident)
+        return dict(token=token,request=request,attempt_id=ident,source_facts=copy.deepcopy(self.source_facts))
 
     def record_recommendation_progress(self, token, event):
         self.main()
@@ -278,6 +279,7 @@ class RecommendationMappedTests(MappedUIFixture):
         self.after_ack = threading.Event()
         self.mode_gate = None
         self.last_request = None
+        self.last_source_facts = None
         for name, function in [('prepare_recommendations',self.prepare),('prepare_candidate_mode',self.prepare_mode)]:
             patcher = patch.object(ui,name,side_effect=function)
             patcher.start();self.addCleanup(patcher.stop)
@@ -292,6 +294,7 @@ class RecommendationMappedTests(MappedUIFixture):
         self.threads.append(threading.get_ident())
         self.last_request = copy.deepcopy(request)
         if self.progress_gate:self.progress_gate.wait(3)
+        self.last_source_facts = copy.deepcopy(source_facts)
         for phase in self.progress_phases:
             reply = on_progress(dict(seq=0,phase=phase,message=phase,candidate_id='candidate-A',stage_bundle=dict(facts=[phase])))
             self.responses.append(reply)
@@ -330,6 +333,75 @@ class RecommendationMappedTests(MappedUIFixture):
     def music_state(self):
         return copy.deepcopy((self.controller._project,self.controller._undo,self.controller._redo,self.controller._saved,
                               self.app.selected_target,self.app.playing_target,self.app.player.calls))
+
+    def test_runtime_capture_closure_is_isolated_from_caller_and_controller_mutations(self):
+        # Transport-only leaf fixture, not a claim of FinalScore/music authentication.
+        original = [dict(id='accepted-score',kind='final_score',version=1,fingerprint='fixture-only',
+            data=dict(notes=[dict(id='old-note',pitch=60,start_tick=1,duration_tick=240,velocity=80,
+                origin=None,lineage=['parent'],slice=None)]),dependencies=[])]
+        self.controller.source_facts = copy.deepcopy(original)
+        captured_outputs = []
+        capture = self.controller.capture_recommendations
+        def record_capture(**kwargs):
+            value = capture(**kwargs)
+            captured_outputs.append(value)
+            return value
+        self.progress_gate = threading.Event()
+        with patch.object(self.controller,'capture_recommendations',side_effect=record_capture):
+            self.start()
+        # Both returned DTO and subsequently mutable Controller data change before
+        # the provider observes its own frozen copy. Neither may leak into the job.
+        captured_outputs[0]['source_facts'][0]['data']['notes'][0]['pitch'] = 72
+        captured_outputs[0]['source_facts'].append(dict(id='caller-added'))
+        self.controller.source_facts[0]['data']['notes'][0]['lineage'].append('later-parent')
+        self.controller.source_facts.clear()
+        self.progress_gate.set();self.finish_jobs()
+        self.assertEqual(self.last_source_facts,original)
+        self.assertNotIn('source_facts',self.last_request)
+        self.assertTrue(all(ident!=threading.get_ident() for ident in self.threads))
+
+    def test_runtime_p7_input_forwards_captured_closure_and_keeps_music_header(self):
+        self.controller.source_facts = [dict(id='old-score-ref',kind='final_score',version=1,
+            fingerprint='fixture-only',data=dict(notes=[]),dependencies=[])]
+        before=self.music_state()
+        capture = self.controller.capture_recommendations
+        def p7_capture(**kwargs):
+            value = capture(**kwargs)
+            # Public DTO fixture only: the local pre-p7 model is not changed or
+            # bypassed. Real accepted-project/registry authentication is separate.
+            value['request']['input_project']['contract_rev'] = P7
+            value['request']['input_contract_rev'] = P7
+            return value
+        with patch.object(self.controller,'capture_recommendations',side_effect=p7_capture):
+            self.start();self.finish_jobs()
+        self.assertEqual(self.last_source_facts,self.controller.source_facts)
+        self.assertEqual(self.last_request['input_project']['contract_rev'],P7)
+        self.assertEqual(self.last_request['input_contract_rev'],P7)
+        self.assertEqual(self.last_request['token']['contract_rev'],P7)
+        self.assertEqual(before,self.music_state())
+
+    def test_runtime_legacy_three_field_capture_passes_explicit_empty_closure(self):
+        capture = self.controller.capture_recommendations
+        def legacy_capture(**kwargs):
+            value = capture(**kwargs)
+            value.pop('source_facts')
+            return value
+        with patch.object(self.controller,'capture_recommendations',side_effect=legacy_capture):
+            self.start();self.finish_jobs()
+        self.assertEqual(self.last_source_facts,[])
+        self.assertNotIn('source_facts',self.last_request)
+
+    def test_runtime_closure_thread_start_failure_preserves_active_playback_and_music(self):
+        self.controller.source_facts = [dict(id='prior-fact',data=dict(notes=[]))]
+        self.app.start_playback(dict(wav_path=str(self.wav),body_seconds=4,audio_seconds=4.5),('material','old'),'原素材')
+        before=self.music_state();status=self.app.player.status()
+        with patch.object(ui.threading.Thread,'start',side_effect=RuntimeError('runtime thread start failed')):
+            self.assertFalse(self.start())
+        self.assertEqual(before,self.music_state())
+        self.assertEqual(self.app.player.status(),status)
+        self.assertFalse(self.app.jobs);self.assertEqual(self.controller.rec['status'],'FAILED')
+        self.assertIn('runtime thread start failed',self.app.status_text.get())
+        self.assertIsNone(self.last_source_facts)
 
     def deliver(self, job, seq, kind, payload, ack=None):
         envelope = dict(token=copy.deepcopy(job['token']),seq=seq,kind=kind,payload=copy.deepcopy(payload))

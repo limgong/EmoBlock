@@ -274,7 +274,8 @@ class RecommendationUI:
                 return ack['response']
             try:
                 if kind=='RECOMMENDATION':
-                    outcome = prepare_recommendations(captured['request'], should_cancel=cancel.is_set,
+                    outcome = prepare_recommendations(captured['request'], source_facts=captured.get('source_facts',[]),
+                        should_cancel=cancel.is_set,
                         on_progress=progress)
                 else:
                     outcome = prepare_candidate_mode(captured['request'], captured['candidate_id'], captured['mode'],
