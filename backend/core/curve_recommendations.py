@@ -334,11 +334,16 @@ def validate_outcome(request,value):
         seen.add(score['music_fingerprint'])
         if candidate['music_fingerprint']!=score['music_fingerprint'] or candidate['remaining_gaps']!=score['remaining_gaps']:m.reject('推荐范围或音乐指纹不符。')
         for kind in ('final','comparison'):audio.validate_asset(candidate['assets'][kind],score if kind=='final' else comparison,dict(id=identity,version=1,fingerprint=identity),files=False)
-        if candidate['assets']['final']['version']!=candidate['assets']['comparison']['version']:m.reject('对比资产版本不能混用。')
+        if (candidate['assets']['final']['version']!=candidate['assets']['comparison']['version']
+                or candidate['assets']['final']['renderer_version']!=candidate['assets']['comparison']['renderer_version']):
+            m.reject('对比资产版本或输出profile不能混用。','OUTPUT_BINDING_MISMATCH')
         if candidate['capabilities']!=capabilities(candidate):m.reject('候选资格与实际剩余空缺不符。')
         for mode,member in candidate['modes'].items():
             m.shape(member,'status final_score_ref comparison_score_ref assets error capabilities')
             if mode not in ('melody_only','arranged') or member['status']!='AUDITION_READY' or member['capabilities']!=capabilities(candidate):m.reject('候选模式资格不符。')
+            if (member['assets']['final']['version']!=member['assets']['comparison']['version']
+                    or member['assets']['final']['renderer_version']!=member['assets']['comparison']['renderer_version']):
+                m.reject('所选模式的对比资产版本或profile不一致。','OUTPUT_BINDING_MISMATCH')
             for kind in ('final','comparison'):
                 s=resolve(rows,member[kind+'_score_ref'],'final_score')
                 if s['kind']!=kind or s['mode']!=mode or s['boundary_request_ref']!=final.ref(req) or s['boundary_plan_ref']!=final.ref(plan):m.reject('候选模式绑定另一份乐谱。')
@@ -426,7 +431,7 @@ class RecommendationFacade:
             bundle['attempts'].append(dict(id=token['request_id'],snapshot_id=token['snapshot_id'],input_fingerprint=token['input_fingerprint'],state='RUNNING',records=[],protections=[],staged_materials=[],error=None,recommendation=value))
             validate_p7_bundle(bundle)
         except Exception:self.session.finish(token);raise
-        self._bundle=bundle;self._jobs[token['request_id']]=dict(kind='RECOMMENDATION',request=copy.deepcopy(request));self._recommendation_id=token['request_id'];self._staging_dirty=True
+        self._bundle=bundle;self._jobs[token['request_id']]=dict(kind='RECOMMENDATION',request=copy.deepcopy(request),renderer_profile=audio.RENDERER);self._recommendation_id=token['request_id'];self._staging_dirty=True
         return dict(token=copy.deepcopy(token),request=copy.deepcopy(request),attempt_id=token['request_id'],source_facts=copy.deepcopy(bundle['final_facts']))
 
     def record_recommendation_progress(self,token,event):
@@ -477,7 +482,10 @@ class RecommendationFacade:
         if value['cancel_requested'] and outcome['status']!='CANCELLED':return False
         for candidate in outcome['candidates']:
             for mode,member in candidate['modes'].items():
-                for kind,asset in member['assets'].items():audio.validate_asset(asset,resolve(outcome['facts'],member[kind+'_score_ref']),dict(id=candidate['id'],version=1,fingerprint=candidate['id']))
+                for kind,asset in member['assets'].items():
+                    if asset['renderer_version']!=self._jobs[token['request_id']]['renderer_profile']:
+                        m.reject('准备结果使用了另一输出profile，请重新计算。','OUTPUT_BINDING_MISMATCH')
+                    audio.validate_asset(asset,resolve(outcome['facts'],member[kind+'_score_ref']),dict(id=candidate['id'],version=1,fingerprint=candidate['id']))
         bundle=self._current_bundle();target=next(a for a in bundle['attempts'] if a['id']==attempt['id']);v=target['recommendation']
         target['state']='READY' if outcome['status'] in ('SUCCEEDED','INSUFFICIENT') else outcome['status'];target['error']=copy.deepcopy(outcome['error'])
         v['outcome']=copy.deepcopy(outcome);v['partial_stage_bundle']=copy.deepcopy(outcome['stage_bundle']);v['phase']='AUDITION_READY' if target['state']=='READY' else v['phase']
@@ -610,7 +618,7 @@ class RecommendationFacade:
         token=self.session.capture(contract_rev=REV)['token']
         job=dict(token=copy.deepcopy(token),candidate_id=candidate_id,mode=mode,asset_version=1+max([a['version'] for member in candidate['modes'].values() for a in member['assets'].values() if a] or [0]),status='RUNNING',error=None)
         attempt['recommendation']['mode_jobs'].append(job)
-        self._jobs[token['request_id']]=dict(kind='RECOMMENDATION_MODE',candidate_id=candidate_id,mode=mode,attempt_id=attempt['id'])
+        self._jobs[token['request_id']]=dict(kind='RECOMMENDATION_MODE',candidate_id=candidate_id,mode=mode,attempt_id=attempt['id'],renderer_profile=audio.RENDERER)
         self._staging_dirty=True
         return dict(token=token,request=copy.deepcopy(attempt['recommendation']['request']),candidate_id=candidate_id,mode=mode,source_facts=copy.deepcopy(self._bundle['final_facts']))
 
@@ -627,6 +635,8 @@ class RecommendationFacade:
             score=outcome[kind+'_score'];final.validate_final_score(request,plan,score)
             if score['mode']!=context['mode'] or score['kind']!=kind:m.reject('模式乐谱类型不一致。')
             asset=outcome['assets'][kind];audio.validate_asset(asset,score,candidate_ref)
+            if asset['renderer_version']!=context['renderer_profile']:
+                m.reject('模式结果使用了另一输出profile，请重新准备。','OUTPUT_BINDING_MISMATCH')
             if asset['version']!=job['asset_version']:m.reject('模式音频版本不一致。')
             dependencies=[score['boundary_request_ref'],score['boundary_plan_ref']]
             if kind=='final':dependencies.append(final.ref(final.apply_boundaries(request,plan)))

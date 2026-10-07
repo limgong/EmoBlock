@@ -8,7 +8,9 @@ import curve_connections as c
 import curve_memory as memory
 
 REV = 'curve-workflow-v2-r3-p7'
-ALGORITHM = 'curve-boundary-v1'
+LEGACY_ALGORITHM = 'curve-boundary-v1'
+ALGORITHM = 'curve-boundary-v2-deterministic-layout'
+LEGACY_PROOF_BUDGET = dict(max_nodes=8192, max_cells=16384, max_edges=1000000)
 REQUEST_FIELDS = ('schema spec_rev contract_rev id token input_contract_rev input_fingerprint candidate_ref '
                   'connection_ref actual_layout layout_fingerprint protection_summary plan_id plan_version '
                   'seed algorithm_version parameters')
@@ -142,7 +144,7 @@ def placement_segments(place):
     return rows
 
 
-def _layout(value):
+def _layout(value, retained_order=None, rows_capture=None):
     req = value['request']; bridge = req['bridge_ref']; base = bridge['request']['base_project']
     sources = m.source_index(base['sources']); place_by_id = m.indexed(base['placements'])
     bridge_by_note = {n['id']: r for r in bridge['results'] for n in r['notes']}
@@ -190,7 +192,12 @@ def _layout(value):
                 by_performance[pid]=dict(owner=overlay['id'],stage=stage,**region,emotion=_emotion(base,region['start_tick']),
                     path=[],performance_id=pid,priority=1,material=dict(notes=overlay['notes'],provenance={},generation=dict(key_context=key_context)))
     retained={r['performance_id'] for r in ledger if r['parent_ref']['stage']=='final_score'}
-    for pid in retained:
+    if retained_order is None:
+        retained_order = sorted(retained, key=lambda pid: (
+            0 if by_performance.get(pid, {}).get('stage') in ('bridge', 'connection') else 1, pid))
+    elif len(retained_order) != len(retained) or set(retained_order) != retained:
+        m.reject('历史演奏顺序证明无效。', 'SOURCE_CLOSURE_INVALID')
+    for pid in retained_order:
         row=by_performance.get(pid)
         if row is None:m.reject('接受谱演奏缺少真实素材或覆盖层范围。','SOURCE_CLOSURE_INVALID')
         values=[n for n in notes if next(r for r in ledger if r['note_id']==n['id'])['performance_id']==pid]
@@ -206,6 +213,8 @@ def _layout(value):
     for blank in base['blank_regions']:
         raw_segments.append(dict(owner=blank['id'], stage='blank', start_tick=blank['start_tick'],path=[],priority=4,performance_id=None,
             end_tick=blank['end_tick'], emotion='calm', material=dict(notes=[], provenance={}, generation=None)))
+    if rows_capture is not None:
+        rows_capture.extend(copy.deepcopy(raw_segments))
     breaks = sorted({x for r in raw_segments for x in (r['start_tick'], r['end_tick'])})
     spans = []
     for a, z in zip(breaks, breaks[1:]):
@@ -230,13 +239,63 @@ def _layout(value):
         blank_regions=copy.deepcopy(base['blank_regions']), emission_ledger=sorted(ledger, key=lambda r: r['note_id']))
 
 
+def _legacy_layout(value, stored):
+    """Prove one global ordering of authentic v1 retained rows, then replay it."""
+    import heapq
+    rows = []
+    _layout(value, rows_capture=rows)
+    nodes = {r['performance_id'] for r in rows if r['priority'] == 1}
+    breaks = sorted({t for r in rows for t in (r['start_tick'], r['end_tick'])})
+    budget = LEGACY_PROOF_BUDGET
+    if len(nodes) > budget['max_nodes'] or max(0, len(breaks)-1) > budget['max_cells']:
+        m.reject('历史布局顺序证明超过来源预算，原工程已保留。', 'SOURCE_CLOSURE_INVALID')
+    edges = {pid:set() for pid in nodes}; indegree = {pid:0 for pid in nodes}; edge_count = 0
+    for a, z in zip(breaks, breaks[1:]):
+        eligible = [r for r in rows if r['start_tick'] <= a and z <= r['end_tick']]
+        if not eligible:
+            continue
+        maximum = max(r['priority'] for r in eligible)
+        best = [r for r in eligible if r['priority'] == maximum]
+        spans = [s for s in stored['segments'] if s['start_tick'] <= a and z <= s['end_tick']]
+        if len(spans) != 1:
+            m.reject('历史布局缺少一致的原始演奏范围。', 'STALE_SNAPSHOT')
+        selected = spans[0]
+        matching = [r for r in best if (r['owner'], r['stage'], r['performance_id']) == (
+            selected['owner_ref']['id'], selected['kind'], selected['performance_id'])]
+        if len(matching) != 1:
+            m.reject('历史布局选择不属于真实最高优先级演奏。', 'STALE_SNAPSHOT')
+        if maximum != 1:
+            if matching[0] is not best[0]:
+                m.reject('历史布局改变了固定演奏顺序。', 'STALE_SNAPSHOT')
+            continue
+        winner = matching[0]['performance_id']
+        for competitor in best:
+            other = competitor['performance_id']
+            if other != winner and other not in edges[winner]:
+                edges[winner].add(other); indegree[other] += 1; edge_count += 1
+                if edge_count > budget['max_edges']:
+                    m.reject('历史布局顺序证明超过来源预算，原工程已保留。', 'SOURCE_CLOSURE_INVALID')
+    ready = [pid for pid in nodes if not indegree[pid]]; heapq.heapify(ready); order = []
+    while ready:
+        pid = heapq.heappop(ready); order.append(pid)
+        for other in sorted(edges[pid]):
+            indegree[other] -= 1
+            if not indegree[other]:heapq.heappush(ready, other)
+    if len(order) != len(nodes):
+        m.reject('历史布局不存在一致的全局演奏顺序。', 'STALE_SNAPSHOT')
+    actual = _layout(value, retained_order=order)
+    if actual != stored:
+        m.reject('历史布局与完整原始演奏事实不一致。', 'STALE_SNAPSHOT')
+    return actual
+
+
 def _emotion(project, tick):
     p = next((p for p in project['placements'] if p['start_tick'] <= tick < p['start_tick'] + p['length_ticks']), None)
     return p['emotion'] if p else 'calm'
 
 
 @guard
-def make_request(connection_ref, token=None, candidate_ref=None, seed=31, values=None, plan_id=None, plan_version=1):
+def make_request(connection_ref, token=None, candidate_ref=None, seed=31, values=None, plan_id=None, plan_version=1, algorithm_version=None):
     validate_connection_ref(connection_ref)
     parent = connection_ref['request']; m.integer(seed, 0, 2**32 - 1); m.integer(plan_version, 1)
     if token is None:
@@ -254,19 +313,27 @@ def make_request(connection_ref, token=None, candidate_ref=None, seed=31, values
     layout = _layout(connection_ref); locks = layout['protections']; plan_id = m.uid() if plan_id is None else plan_id
     identity = dict(recommendation_request_id=token['request_id'], candidate_ref=candidate_ref,
                     connection_attempt_id=connection_ref['attempt_id'], plan_id=plan_id, plan_version=plan_version)
+    algorithm_version = ALGORITHM if algorithm_version is None else algorithm_version
+    if algorithm_version not in (LEGACY_ALGORITHM, ALGORITHM):
+        m.reject('最终布局算法版本不受支持。', 'UNSUPPORTED_VERSION')
     return dict(header('emoblocks.boundary-request.v1'), id=m.digest('emoblocks.boundary-request-id.v1', identity),
         token=copy.deepcopy(token), input_contract_rev=parent['input_contract_rev'], input_fingerprint=parent['input_fingerprint'],
         candidate_ref=copy.deepcopy(candidate_ref), connection_ref=copy.deepcopy(connection_ref), actual_layout=layout,
         layout_fingerprint=m.digest('emoblocks.final-layout.v1', layout),
         protection_summary=dict(fingerprint=m.protection_summary(locks), ranges=c.protection_ranges(locks)),
-        plan_id=plan_id, plan_version=plan_version, seed=seed, algorithm_version=ALGORITHM, parameters=parameters(values))
+        plan_id=plan_id, plan_version=plan_version, seed=seed, algorithm_version=algorithm_version, parameters=parameters(values))
 
 
 @guard
 def validate_request(request):
     m.canonical(request); m.shape(request, REQUEST_FIELDS); version(request, 'emoblocks.boundary-request.v1')
+    if request['algorithm_version'] not in (LEGACY_ALGORITHM, ALGORITHM):
+        m.reject('最终布局算法版本不受支持。', 'UNSUPPORTED_VERSION')
     expected = make_request(request['connection_ref'], request['token'], request['candidate_ref'], request['seed'],
-                            request['parameters'], request['plan_id'], request['plan_version'])
+                            request['parameters'], request['plan_id'], request['plan_version'], request['algorithm_version'])
+    if request['algorithm_version'] == LEGACY_ALGORITHM:
+        expected['actual_layout'] = _legacy_layout(request['connection_ref'], request['actual_layout'])
+        expected['layout_fingerprint'] = m.digest('emoblocks.final-layout.v1', expected['actual_layout'])
     if request != expected:
         m.reject('最终处理布局、演奏账本或保护与实际输入不匹配。', 'STALE_SNAPSHOT')
 

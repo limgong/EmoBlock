@@ -730,6 +730,42 @@ class Controller(RecommendationFacade):
         self._initial_fingerprint = model.fingerprint(project)
         return self.state()
 
+    def audition_renderer_profile(self):
+        from curve_audition import RENDERER_VERSION
+        return RENDERER_VERSION
+
+    def history_output_state(self, result_id, mode=None):
+        """Read the exact selected mode and authenticate each purpose separately."""
+        if mode not in (None,'arranged','melody_only'):
+            model.reject('请选择有效的输出模式。','INVALID_PARAMETERS')
+        row=next((r for r in self.history_items() if r['id']==result_id),None)
+        if row is None:model.reject('所选历史版本不存在。','SOURCE_UNAVAILABLE')
+        if not row.get('score_ref'):
+            if mode is not None:model.reject('旧工程历史不支持切换编配模式。','INVALID_PARAMETERS')
+            errors={key:None if value else dict(code='SOURCE_UNAVAILABLE',message='对应格式文件不可用，请找回文件或选择其他版本。',details={})
+                    for key,value in row['availability'].items()}
+            return dict(result_id=result_id,mode=None,score_ref=None,asset_ref=None,renderer_profile=None,
+                        availability=copy.deepcopy(row['availability']),errors=errors)
+        from curve_recommendations import resolve
+        import curve_final as final
+        import curve_final_render as audio
+        result=next(r for r in self._bundle['results'] if r.get('id')==result_id)
+        _,candidate=self._candidate(result['candidate_id']);mode=result['mode'] if mode is None else mode
+        member=candidate['modes'].get(mode)
+        if member is None:
+            return dict(result_id=result_id,mode=mode,score_ref=None,asset_ref=None,renderer_profile=None,
+                availability={k:False for k in FORMATS},errors={k:dict(code='MODE_NOT_READY',message='此版本的所选模式尚未准备，请先准备该模式。',details={}) for k in FORMATS})
+        asset=member['assets']['final'];score=resolve(self._bundle['final_facts'],member['final_score_ref'])
+        available={};errors={}
+        for key in FORMATS:
+            try:
+                audio.validate_asset(asset,score,dict(id=candidate['id'],version=1,fingerprint=candidate['id']),required_formats=(key,))
+                available[key]=True;errors[key]=None
+            except Exception as exc:
+                available[key]=False;errors[key]=dict(code=getattr(exc,'code','OUTPUT_FILE_UNAVAILABLE'),message=str(exc),details={})
+        return dict(result_id=result_id,mode=mode,score_ref=copy.deepcopy(member['final_score_ref']),asset_ref=final.ref(asset),
+                    renderer_profile=asset['renderer_version'],availability=available,errors=errors)
+
     def history_items(self):
         results = self._loaded['legacy'].get('results', []) if self.readonly else self._bundle['results']
         rows = []
@@ -775,15 +811,20 @@ class Controller(RecommendationFacade):
         items = self.history_items()
         row = next((r for r in items if r['id'] == result_id), None)
         if row is not None and row.get('scope')=='LOCAL':model.reject('局部方案仍有空缺，不能正式导出整曲。','TARGET_GAPS_UNRESOLVED')
-        if row is not None and row.get('score_ref') and mode is not None and mode != row['mode']:
+        expected_sha256=None
+        if row is not None and row.get('score_ref'):
+            from curve_recommendations import resolve
+            import curve_final_render as audio
             result=next(r for r in self._bundle['results'] if r.get('id')==result_id)
-            attempt,candidate=self._candidate(result['candidate_id']);member=candidate['modes'].get(mode)
+            if mode not in (None,'arranged','melody_only'):model.reject('请选择有效的输出模式。','INVALID_PARAMETERS')
+            selected_mode=result['mode'] if mode is None else mode
+            attempt,candidate=self._candidate(result['candidate_id']);member=candidate['modes'].get(selected_mode)
             if member is None:model.reject('此模式尚未准备。','SOURCE_UNAVAILABLE')
-            source=member['assets']['final']['files'][format]
-            import hashlib
-            data=Path(source['path']).read_bytes()
-            if len(data)!=source['bytes'] or hashlib.sha256(data).hexdigest()!=source['sha256']:model.reject('此模式对应文件已不可用。','SOURCE_UNAVAILABLE')
+            asset=member['assets']['final'];score=resolve(self._bundle['final_facts'],member['final_score_ref'])
+            audio.validate_asset(asset,score,dict(id=candidate['id'],version=1,fingerprint=candidate['id']),required_formats=(format,))
+            source=asset['files'][format];expected_sha256=source['sha256']
             row=dict(row,paths={k:v['path'] for k,v in member['assets']['final']['files'].items()},availability={format:True})
+        elif mode is not None:model.reject('旧工程历史不支持切换编配模式。','INVALID_PARAMETERS')
         if row is None or not row['availability'][format]:
             model.reject('此版本对应格式文件已不可用，请找回文件或选择其他版本。', 'SOURCE_UNAVAILABLE')
         protected = [Path(path) for item in items for path in item['paths'].values() if path]
@@ -795,7 +836,7 @@ class Controller(RecommendationFacade):
         directories = {path.parent for path in protected}
         for directory in directories:
             protected.extend(path for path in directory.rglob('*') if path.is_file())
-        return atomic_export(row['paths'][format], destination, protected)
+        return atomic_export(row['paths'][format], destination, protected,expected_sha256=expected_sha256)
 
 
 CurveController = Controller

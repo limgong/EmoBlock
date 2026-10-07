@@ -81,9 +81,9 @@ class FinalGateTests(unittest.TestCase):
             for layer in score['layers']:
                 if layer['drum']:(root/layer['drum']).write_bytes(b'test resource; no renderer used')
             with patch.object(engine,'sample_path',side_effect=lambda _,name:root/name):
-                audio.export_score(score,root)
+                audio.export_score(score,root,profile=audio.LEGACY_RENDERER)
                 files={k:audio._file(root/name) for k,name in [('mid','composition.mid'),('mmp','composition.mmp')]}
-                audio.validate_outputs(score,files)
+                audio.validate_outputs(score,files,profile=audio.LEGACY_RENDERER)
 
     def test_lmms_playback_controls_cannot_change_bound_score(self):
         import xml.etree.ElementTree as ET
@@ -112,16 +112,16 @@ class FinalGateTests(unittest.TestCase):
             for drum in drums:(resources/drum).write_bytes(b'known test resource:'+drum.encode())
             with patch.object(engine,'sample_path',side_effect=lambda _,name:resources/name):
                 for mutation in ('original','identical_copy','missing','wrong_content'):
-                    audio.export_score(score,root);xml=ET.parse(root/'composition.mmp');sample=xml.find('.//audiofileprocessor');original=Path(sample.get('src'))
+                    audio.export_score(score,root,profile=audio.LEGACY_RENDERER);xml=ET.parse(root/'composition.mmp');sample=xml.find('.//audiofileprocessor');original=Path(sample.get('src'))
                     replacement=root/mutation/original.name;replacement.parent.mkdir(exist_ok=True)
                     if mutation=='identical_copy':replacement.write_bytes(original.read_bytes())
                     elif mutation=='wrong_content':replacement.write_bytes(b'different test resource')
                     if mutation!='original':sample.set('src',str(replacement));xml.write(root/'composition.mmp')
                     files={k:audio._file(root/name) for k,name in [('mid','composition.mid'),('mmp','composition.mmp')]}
                     with self.subTest(mutation=mutation):
-                        if mutation in ('original','identical_copy'):audio.validate_outputs(score,files)
+                        if mutation in ('original','identical_copy'):audio.validate_outputs(score,files,profile=audio.LEGACY_RENDERER)
                         else:
-                            with self.assertRaises(m.ProjectError) as error:audio.validate_outputs(score,files)
+                            with self.assertRaises(m.ProjectError) as error:audio.validate_outputs(score,files,profile=audio.LEGACY_RENDERER)
                             self.assertEqual(error.exception.code,'OUTPUT_RESOURCE_UNAVAILABLE' if mutation=='missing' else 'OUTPUT_BINDING_MISMATCH')
     def test_registry_cache_rejects_changed_content_and_retains_no_data(self):
         request=boundary_request();plan=f.make_plan(request,algorithm.plan_boundaries(request));result=f.apply_boundaries(request,plan);score=f.make_score(request,plan,result)
