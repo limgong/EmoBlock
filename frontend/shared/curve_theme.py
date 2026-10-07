@@ -1,6 +1,6 @@
 """Semantic, static P2 themes, isolated from the legacy editor's styles."""
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, font as tkfont
 import ui_platform
 
 PALETTES = {
@@ -19,6 +19,12 @@ EMOTION_NAMES = dict(calm='平静', hope='希望', sad='悲伤', suspense='悬�
 
 def font(size=12, bold=False):
     return (ui_platform.font_family('Microsoft YaHei UI'), size, 'bold' if bold else 'normal')
+
+
+def title_font(root, size=14):
+    available=set(tkfont.families(root))
+    family=next((f for f in ('Songti SC','Noto Serif CJK SC','SimSun','STSong','Georgia') if f in available),font()[0])
+    return (family,size,'bold')
 
 
 def rounded(canvas, box, fill, outline='', radius=12, tags=()):
@@ -50,7 +56,8 @@ class Theme:
             for widget in ('TFrame', 'TLabel', 'TCheckbutton'):
                 s.configure('Curve.'+role+widget, background=p[surface], foreground=p['ink'], font=font())
         s.configure('Curve.Muted.TLabel', background=p['panel'], foreground=p['muted'], font=font())
-        s.configure('Curve.Title.TLabel', background=p['panel'], foreground=p['ink'], font=font(14, True))
+        s.configure('Curve.Title.TLabel', background=p['panel'], foreground=p['ink'], font=title_font(self.root))
+        s.configure('Curve.Brand.TLabel',background=p['bg'],foreground=p['ink'],font=title_font(self.root,16))
         for name_, background in (('Curve.TButton', p['inset']), ('Curve.Primary.TButton', p['accent'])):
             foreground = p['onaccent'] if 'Primary' in name_ else p['ink']
             if name=='dark' and 'Primary' in name_:
@@ -59,6 +66,20 @@ class Theme:
                         borderwidth=1, bordercolor=p['accent'] if 'Primary' in name_ else p['line'], font=font())
             s.map(name_, background=[('active', background)],
                   foreground=[('disabled', p['muted'])], bordercolor=[('focus', p['accent'])])
+        for style_,padding,size in (('Curve.Compact.TButton',(5,8),11),('Curve.Small.TButton',(5,2),10)):
+            s.configure(style_,background=p['inset'],foreground=p['ink'],borderwidth=1,bordercolor=p['line'],
+                        padding=padding,font=font(size),width=0)
+            s.map(style_,foreground=[('disabled',p['muted'])],bordercolor=[('focus',p['accent'])])
+        s.configure('Curve.TMenubutton',background=p['inset'],foreground=p['ink'],padding=(10,8),font=font(),borderwidth=1,width=0)
+        for axis in ('Horizontal','Vertical'):
+            s.configure('Curve.'+axis+'.TScrollbar',background=p['inset'],troughcolor=p['panel'],
+                        borderwidth=0,arrowsize=12,arrowcolor=p['muted'],lightcolor=p['line'],darkcolor=p['line'])
+            s.map('Curve.'+axis+'.TScrollbar',background=[('active',p['selected'])])
+        self.root.option_add('*Menu.background',p['inset'])
+        self.root.option_add('*Menu.foreground',p['ink'])
+        self.root.option_add('*Menu.activeBackground',p['selected'])
+        self.root.option_add('*Menu.activeForeground',p['ink'])
+        self.root.option_add('*Menu.font',font())
         for widget in ('TCombobox', 'TSpinbox', 'TEntry'):
             s.configure('Curve.'+widget, fieldbackground=p['inset'], background=p['panel'],
                         foreground=p['ink'], insertcolor=p['ink'], font=font())
@@ -72,7 +93,43 @@ class Theme:
         self.root.option_add('*TCombobox*Listbox.font',font())
 
 
+class Tooltip:
+    """A nonmodal hover/focus tip. Details remain available explicitly inline."""
+    def __init__(self, widget, text):
+        self.widget,self.text=widget,text
+        self.timer=self.window=None
+        for event in ('<Enter>','<FocusIn>'):widget.bind(event,self.schedule,add='+')
+        for event in ('<Leave>','<FocusOut>','<ButtonPress>','<Destroy>'):widget.bind(event,self.hide,add='+')
+
+    def schedule(self,event=None):
+        self.hide()
+        self.timer=self.widget.after(450,self.show)
+
+    def show(self):
+        self.timer=None
+        if not self.widget.winfo_exists() or not self.widget.winfo_ismapped():return
+        text=self.text() if callable(self.text) else self.text
+        if not text:return
+        root=self.widget.winfo_toplevel()
+        self.window=tk.Toplevel(root)
+        self.window.overrideredirect(True)
+        # Palette is read at display time, so a theme switch cannot leave an old tip.
+        style=ttk.Style(root)
+        background=style.lookup('Curve.Panel.TLabel','background')
+        foreground=style.lookup('Curve.Panel.TLabel','foreground')
+        tk.Label(self.window,text=text,justify='left',wraplength=340,padx=10,pady=8,
+                 bg=background,fg=foreground,font=font(),borderwidth=1,relief='solid').pack()
+        self.window.update_idletasks()
+        x=min(self.widget.winfo_rootx(),root.winfo_screenwidth()-self.window.winfo_reqwidth()-8)
+        y=min(self.widget.winfo_rooty()+self.widget.winfo_height()+4,root.winfo_screenheight()-self.window.winfo_reqheight()-8)
+        self.window.geometry(f'+{max(0,x)}+{max(0,y)}')
+
+    def hide(self,event=None):
+        if self.timer is not None:
+            self.widget.after_cancel(self.timer);self.timer=None
+        if self.window is not None:
+            self.window.destroy();self.window=None
+
+
 def hint(widget, text, show):
-    """Hover and focus share a persistent inline explanation, never a popup."""
-    for event in ('<Enter>', '<FocusIn>'):
-        widget.bind(event, lambda _, t=text: show(t() if callable(t) else t), add='+')
+    widget.curve_tooltip=Tooltip(widget,text)

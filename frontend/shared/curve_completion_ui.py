@@ -30,7 +30,7 @@ class CompletionUI:
         self.preview_candidate = None
         self.bookmark = None
         self.state = dict(status='IDLE', outcome=None, error=None, message='')
-        self.panel = ttk.Frame(app.page.right, style='Curve.Panel.TFrame')
+        self.panel = ttk.Frame(app.page.stage_area, style='Curve.Panel.TFrame')
         row = ttk.Frame(self.panel, style='Curve.Panel.TFrame')
         row.pack(fill='x')
         self.start_button = ttk.Button(row, text='补全基础候选', style='Curve.TButton',
@@ -65,11 +65,11 @@ class CompletionUI:
             self.preview_candidate = None
             self.bookmark = None
             return
-        self.panel.pack(fill='x', before=app.page.memory_label, pady=(4,0))
+        self.panel.pack(fill='x', before=app.page.stage_anchor, pady=(4,0))
         bridge = getattr(app,'bridge',None)
         connection = getattr(app,'connection',None)
         recommendation = getattr(app,'recommendation',None)
-        if (bridge and bridge.visible) or (connection and connection.visible) or (recommendation and recommendation.visible):self.panel.pack_forget()
+        if app.workspace_stage!='补全' or (bridge and bridge.visible) or (connection and connection.visible) or (recommendation and recommendation.visible):self.panel.pack_forget()
         if app.state_data['capabilities'].get('bridge',False):self.bridge_button.pack(side='left',padx=4)
         else:self.bridge_button.pack_forget()
         self.gaps = app.controller.gap_items()

@@ -7,7 +7,7 @@ from curve_theme import font, hint, rounded
 
 
 class MaterialCards(ttk.Frame):
-    CARD_HEIGHT = 132
+    CARD_HEIGHT = 96
 
     def __init__(self, parent, app):
         super().__init__(parent,style='Curve.Panel.TFrame')
@@ -21,7 +21,7 @@ class MaterialCards(ttk.Frame):
         self.materials = []
         self.canvas = tk.Canvas(self,highlightthickness=0,takefocus=True)
         self.canvas.pack(side='left',fill='both',expand=True)
-        bar = ttk.Scrollbar(self,command=self.canvas.yview)
+        bar = ttk.Scrollbar(self,style='Curve.Vertical.TScrollbar',command=self.canvas.yview)
         bar.pack(side='right',fill='y')
         self.scrollbar = bar
         self.canvas.configure(yscrollcommand=self.scrolled)
@@ -116,7 +116,7 @@ class MaterialCards(ttk.Frame):
             card.place(x=left,y=index*stride+4,width=max(1,width-left-4),height=self.CARD_HEIGHT)
             self.rows[ident] = card
             content = tk.Frame(card,bg=surface)
-            window = card.create_window(8,6,anchor='nw',window=content,height=self.CARD_HEIGHT-14)
+            window = card.create_window(8,4,anchor='nw',window=content,height=self.CARD_HEIGHT-8)
             def background(event,canvas=card,window=window,fill=surface,selected=selected):
                 canvas.itemconfigure(window,width=max(1,event.width-16))
                 canvas.delete('surface')
@@ -128,30 +128,43 @@ class MaterialCards(ttk.Frame):
             card.bind('<Configure>',background)
             prefix = '↳ ' if child else ''
             label = material['label']
+            parts=label.split(' · ')
+            if len(parts)>1 and any(ch.isdigit() for ch in parts[-1]):label=parts[-1]+' · '+' · '.join(parts[:-1])
             title = tk.Label(content,text=prefix+label,anchor='w',bg=surface,fg=p['ink'],font=font(12,True),
                              takefocus=True,cursor='hand2')
-            title.pack(fill='x',padx=10,pady=(8,0))
+            content.columnconfigure(0,weight=1)
+            title.grid(row=0,column=0,sticky='ew',padx=(4,2))
             def shorten(event,widget=title,text=prefix+label):
-                limit = max(6,event.width//17)
-                display = text[:limit]+('…' if len(text)>limit else '')
-                if widget.cget('text')!=display:widget.configure(text=display)
+                from tkinter import font as tkfont
+                measure=tkfont.Font(root=widget,font=widget.cget('font')).measure
+                value=text
+                while len(value)>1 and measure(value+'…')>event.width:value=value[:-1]
+                widget.configure(text=value+('…' if value!=text else ''))
             title.bind('<Configure>',shorten)
-            kind = '子块' if child else {'block':'原始分块','phrase':'乐句','combination':'组合','bridge':'Bridge'}.get(material['kind'],'素材')
-            if material['generation']:
-                kind = '新旋律 · '+str(material['generation'].get('method',''))
-            info = tk.Label(content,text=f'{kind} · {material["length_ticks"]/480:g} 拍',bg=surface,fg=p['muted'],anchor='w',font=font(11))
-            info.pack(fill='x',padx=10,pady=3)
-            row = tk.Frame(content,bg=surface)
-            row.pack(fill='x',padx=8)
-            for text,command in (('准备试听',lambda m=material:self.app.prepare_target('material',m['id'])),
-                                 ('播放',lambda m=material:self.app.play_target('material',m['id']))):
-                b = ttk.Button(row,text=text,style='Curve.TButton',command=lambda fn=command:self.app.safe(fn))
-                b.pack(side='left',padx=2)
-                hint(b,'准备只缓存音频；明确点击播放才开始试听。',self.app.show_detail)
+            kind='子块' if child else {'block':'原始分块','phrase':'乐句','combination':'组合','bridge':'Bridge'}.get(material['kind'],'素材')
+            if material['generation']:kind='新旋律'
+            info=tk.Label(content,text=f'{kind} · {material["length_ticks"]/480:g} 拍',bg=surface,fg=p['muted'],anchor='w',font=font(10))
+            info.grid(row=1,column=0,sticky='ew',padx=4)
+            b=ttk.Button(content,text='试听',style='Curve.Compact.TButton',
+                         command=lambda m=material:self.app.safe(lambda:self.app.audition_target('material',m['id'])))
+            b.grid(row=0,column=1,rowspan=2,sticky='ns',padx=2)
+            hint(b,'明确试听此素材；准备完成后仅有效播放意图可开始。',self.app.show_detail)
+            thumb=tk.Canvas(content,height=28,width=80,bg=surface,highlightthickness=0)
+            thumb.grid(row=2,column=0,sticky='ew',padx=4,pady=0)
+            def notes(event,c=thumb,m=material):
+                c.delete('all')
+                pitches=[n['pitch'] for n in m['notes']]
+                low,high=min(pitches,default=60),max(pitches,default=72)
+                for n in m['notes']:
+                    x=n['start_tick']/m['length_ticks']*max(1,event.width-4)+2
+                    end=(n['start_tick']+n['duration_tick'])/m['length_ticks']*max(1,event.width-4)+2
+                    y=24-(n['pitch']-low)/max(1,high-low)*20
+                    c.create_line(x,y,max(x+1,end),y,fill=p['muted'],width=2)
+            thumb.bind('<Configure>',notes)
             if expandable:
-                ttk.Button(row,text='收起' if ident in self.expanded else '展开',style='Curve.TButton',
-                           command=lambda i=ident:self.toggle(i)).pack(side='right')
-            for widget in (card,title,info):
+                ttk.Button(content,text='收起' if ident in self.expanded else '展开',style='Curve.Compact.TButton',
+                           command=lambda i=ident:self.toggle(i)).grid(row=2,column=1,sticky='ns',padx=2)
+            for widget in (card,title,info,thumb):
                 widget.bind('<ButtonPress-1>',lambda e,m=material,w=card:self.app.begin_material_drag(e,m,w))
                 widget.bind('<B1-Motion>',self.app.material_motion)
                 widget.bind('<ButtonRelease-1>',self.app.material_release)

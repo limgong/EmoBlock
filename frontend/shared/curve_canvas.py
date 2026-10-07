@@ -68,7 +68,7 @@ class CurveCanvas(ttk.Frame):
         hint(self.stage_selector,'分阶段折叠：补全、Bridge、连接和完整建议共用唯一画布；切换不会修改工程或播放对象。',app.show_detail)
         self.canvas = tk.Canvas(self, height=380, highlightthickness=0, takefocus=True, xscrollincrement=1)
         self.canvas.pack(fill='both', expand=True)
-        self.scrollbar = ttk.Scrollbar(self, orient='horizontal', command=self.canvas.xview)
+        self.scrollbar = ttk.Scrollbar(self,style='Curve.Horizontal.TScrollbar', orient='horizontal', command=self.canvas.xview)
         self.scrollbar.pack(fill='x')
         self.canvas.configure(xscrollcommand=self.scrollbar.set)
         self.canvas.bind('<Motion>',self.hover)

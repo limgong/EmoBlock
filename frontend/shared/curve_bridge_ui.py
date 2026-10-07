@@ -33,7 +33,7 @@ class BridgeUI:
                           protections=[], results=[], outcome=None, preview=None,
                           remaining_gaps=[], capabilities={}, error=None, message='')
         self.inputs = []
-        self.panel = ttk.Frame(app.page.right, style='Curve.Panel.TFrame')
+        self.panel = ttk.Frame(app.page.stage_area, style='Curve.Panel.TFrame')
         row = ttk.Frame(self.panel, style='Curve.Panel.TFrame')
         row.pack(fill='x')
         self.back_button = ttk.Button(row, text='←补全', style='Curve.TButton', command=self.show_completion)
@@ -124,7 +124,7 @@ class BridgeUI:
             self.start_button.pack(side='left')
         connection = getattr(app,'connection',None)
         if self.visible and not (connection and connection.visible):
-            self.panel.pack(fill='x',before=app.page.memory_label,pady=(4,0))
+            self.panel.pack(fill='x',before=app.page.stage_anchor,pady=(4,0))
             completion.panel.pack_forget()
         else:self.panel.pack_forget()
         self.update_elapsed()

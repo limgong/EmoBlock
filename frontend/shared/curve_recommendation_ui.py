@@ -56,47 +56,30 @@ class RecommendationUI:
             message='', search=None, insufficient_reason=None, accepted_ref=None, capabilities={})
         self.choice = tk.StringVar()
         self.mode = tk.StringVar(value=MODES['melody_only'])
-        self.panel = ttk.Frame(app.page.middle, style='Curve.Panel.TFrame')
-        row = ttk.Frame(self.panel, style='Curve.Panel.TFrame')
-        row.pack(fill='x')
-        self.calculate_button = ttk.Button(row, text='查看建议', width=0, style='Curve.TButton',
-            command=lambda: app.safe(self.start))
-        self.calculate_button.pack(side='left')
-        self.auto_button = ttk.Button(row, text='自动补全', width=0, style='Curve.TButton',
-            command=lambda: app.safe(lambda: self.start(automatic=True)))
-        self.auto_button.pack(side='left', padx=3)
-        self.cancel_button = ttk.Button(row, text='取消计算', width=0, style='Curve.TButton', command=self.cancel)
-        self.cancel_button.pack(side='right')
-        self.selector = ttk.Combobox(self.panel, textvariable=self.choice, state='readonly',
-            style='Curve.TCombobox')
-        self.selector.pack(fill='x', pady=3)
-        self.selector.bind('<<ComboboxSelected>>', self.select)
-        row = ttk.Frame(self.panel, style='Curve.Panel.TFrame')
-        row.pack(fill='x')
-        self.mode_selector = ttk.Combobox(row, textvariable=self.mode, values=list(MODES.values()),
-            state='readonly', width=9, style='Curve.TCombobox')
-        self.mode_selector.pack(side='left', fill='x', expand=True)
-        self.mode_selector.bind('<<ComboboxSelected>>', self.mode_changed)
-        self.retry_button = ttk.Button(row, text='准备/重试', width=0, style='Curve.TButton',
-            command=lambda: app.safe(self.prepare_mode))
-        self.retry_button.pack(side='right', padx=(3,0))
-        row = ttk.Frame(self.panel, style='Curve.Panel.TFrame')
-        row.pack(fill='x')
-        self.comparison_button = ttk.Button(row, text='播放基础', width=0, style='Curve.TButton',
-            command=lambda: app.safe(lambda: self.play('comparison')))
+        self.panel = ttk.Frame(app.page.stage_area, style='Curve.Panel.TFrame')
+        self.panel.columnconfigure(0,weight=1)
+        self.panel.columnconfigure(1,weight=1)
+        row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=0,column=0,columnspan=2,sticky='ew')
+        self.selector=ttk.Combobox(row,textvariable=self.choice,state='readonly',width=12,style='Curve.TCombobox')
+        self.selector.pack(side='left',fill='x',expand=True);self.selector.bind('<<ComboboxSelected>>',self.select)
+        self.mode_selector=ttk.Combobox(row,textvariable=self.mode,values=list(MODES.values()),state='readonly',width=9,style='Curve.TCombobox')
+        self.mode_selector.pack(side='left',padx=4);self.mode_selector.bind('<<ComboboxSelected>>',self.mode_changed)
+        self.retry_button=ttk.Button(row,text='重试',style='Curve.Compact.TButton',command=lambda:app.safe(self.prepare_mode))
+        self.retry_button.pack(side='right')
+        row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=2)
+        self.comparison_button=ttk.Button(row,text='试听基础',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('comparison')))
         self.comparison_button.pack(side='left')
-        self.final_button = ttk.Button(row, text='播放处理后', width=0, style='Curve.TButton',
-            command=lambda: app.safe(lambda: self.play('final')))
-        self.final_button.pack(side='right')
-        row = ttk.Frame(self.panel, style='Curve.Panel.TFrame')
-        row.pack(fill='x')
-        self.confirm_button = ttk.Button(row, text='确认同谱', width=0, style='Curve.TButton',
-            command=lambda: app.safe(self.confirm))
-        self.confirm_button.pack(side='left')
-        self.back_button = ttk.Button(row, text='返回编辑', width=0, style='Curve.TButton', command=self.exit_preview)
-        self.back_button.pack(side='right')
-        self.label = ttk.Label(self.panel, style='Curve.Muted.TLabel', takefocus=True)
-        self.label.pack(fill='x', pady=2)
+        self.final_button=ttk.Button(row,text='试听处理后',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('final')))
+        self.final_button.pack(side='left',padx=3)
+        self.confirm_button=ttk.Button(row,text='采用方案',style='Curve.Compact.TButton',command=lambda:app.safe(self.confirm))
+        self.confirm_button.pack(side='right')
+        self.back_button=ttk.Button(row,text='返回编辑',style='Curve.Compact.TButton',command=self.exit_preview)
+        self.back_button.pack(side='right',padx=3)
+        self.calculate_button=app.page.final_button
+        self.auto_button=ttk.Button(self.panel,text='自动补全并应用',style='Curve.TButton',command=lambda:app.safe(lambda:self.start(automatic=True)))
+        self.cancel_button=app.cancel_button
+        self.label=ttk.Label(self.panel,style='Curve.Muted.TLabel',takefocus=True)
+        self.label.grid(row=2,column=0,columnspan=2,sticky='ew')
         hint(self.label, self.description, app.show_detail)
         hint(self.selector, self.description, app.show_detail)
         self.label.bind('<Button-1>', lambda _: app.show_detail(self.description()))
@@ -134,7 +117,7 @@ class RecommendationUI:
         return text
 
     def update_elapsed(self):
-        limit = max(12,(self.app.page.middle.winfo_width()-20)//13)
+        limit = max(12,(self.app.page.right.winfo_width()-20)//13)
         text = self.status_text()
         self.label.configure(text=text[:limit]+('…' if len(text)>limit else ''))
 
@@ -170,7 +153,7 @@ class RecommendationUI:
         self.mode_selector.configure(state='readonly' if not app.jobs else 'disabled')
         if self.visible:
             for stage in (app.completion, app.bridge, app.connection):stage.panel.pack_forget()
-            self.panel.pack(fill='x', before=app.page.cards, pady=(4,0))
+            self.panel.pack(fill='x', before=app.page.stage_anchor, pady=(4,0))
         else:self.panel.pack_forget()
         self.update_elapsed()
 
