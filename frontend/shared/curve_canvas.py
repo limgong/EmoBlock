@@ -30,6 +30,8 @@ class CurveCanvas(ttk.Frame):
         self.recommendation_preview = None
         self.accepted_music = None
         self.boundary_boxes = {}
+        self.boundary_labels = {}
+        self.boundary_label_boxes = {}
         self.accepted_bridge_boxes = {}
         self.range_badges = []
         self.range_badge_targets = {}
@@ -70,7 +72,7 @@ class CurveCanvas(ttk.Frame):
         self.canvas.pack(fill='both', expand=True)
         self.scrollbar = ttk.Scrollbar(self,style='Curve.Horizontal.TScrollbar', orient='horizontal', command=self.canvas.xview)
         self.scrollbar.pack(fill='x')
-        self.canvas.configure(xscrollcommand=self.scrollbar.set)
+        self.canvas.configure(xscrollcommand=self.scrolled)
         self.empty_import=ttk.Button(self.canvas,text='导入旋律，开始创作',style='Curve.Primary.TButton',command=lambda:app.safe(app.import_file))
         self.canvas.bind('<Motion>',self.hover)
         for event, handler in (('<Configure>', self.draw), ('<ButtonPress-1>', self.press),
@@ -154,6 +156,8 @@ class CurveCanvas(ttk.Frame):
         self.bridge_boxes = {}
         self.connection_boxes = {}
         self.boundary_boxes = {}
+        self.boundary_labels = {}
+        self.boundary_label_boxes = {}
         self.accepted_bridge_boxes = {}
         self.range_badges = []
         self.range_badge_targets = {}
@@ -239,6 +243,7 @@ class CurveCanvas(ttk.Frame):
         elif self.accepted_music and self.accepted_music['derived_layers_status']=='STALE':text = '已接受派生层失效 · 固定Bridge保留'
         c.create_text(self.margin,height-16,anchor='w',text=text+' · 移动不搬动强度线',fill=p['muted'],font=font(8))
         c.xview_moveto(view)
+        self.layout_boundary_labels()
 
     def draw_final_music(self):
         p = self.app.theme.colors
@@ -286,9 +291,55 @@ class CurveCanvas(ttk.Frame):
                 x = self.x(overlay['tick'])
                 self.boundary_boxes[overlay['id']] = (x-4,43,x+4,self.canvas.winfo_height()-38)
                 self.canvas.create_line(x,43,x,self.canvas.winfo_height()-38,fill=p['accent'],dash=(2,4),tags='final-boundary')
-                self.canvas.create_text(x+4,50,anchor='nw',text='边界',fill=p['ink'],font=font(9),tags='final-boundary')
+                label = self.canvas.create_text(x+4,50,anchor='nw',text='边界',fill=p['ink'],font=font(9),tags='final-boundary')
+                link = self.canvas.create_line(x,43,x,50,fill=p['accent'],tags='boundary-label-link')
+                self.boundary_labels[overlay['id']] = (label,link)
+
+    def scrolled(self, first, last):
+        self.scrollbar.set(first,last)
+        self.layout_boundary_labels()
+
+    def layout_boundary_labels(self):
+        """Pack measured labels in the viewport; exact boundary lines never move."""
+        c = self.canvas
+        left,right = c.canvasx(0)+4,c.canvasx(c.winfo_width())-4
+        placed = [box for box,_ in self.range_badges]
+        self.boundary_label_boxes = {}
+        for ident,(label,link) in self.boundary_labels.items():
+            x = (self.boundary_boxes[ident][0]+self.boundary_boxes[ident][2])/2
+            visible = left-4<=x<=right+4
+            c.itemconfigure(label,state='normal' if visible else 'hidden')
+            c.itemconfigure(link,state='normal' if visible else 'hidden')
+            if not visible:continue
+            a,t,b,d = c.bbox(label)
+            width,height = b-a,d-t
+            if width>right-left:
+                c.itemconfigure(label,state='hidden')
+                c.itemconfigure(link,state='hidden')
+                continue
+            y = 50
+            while True:
+                blocks = sorted((max(left,a-4),min(right,b+4)) for a,t,b,d in placed
+                                if t<y+height and y<d and b+4>left and a-4<right)
+                cursor = left
+                options = []
+                for a,b in blocks+[(right,right)]:
+                    if a-cursor>=width:
+                        options.append(max(cursor,min(x+3,a-width)))
+                    cursor = max(cursor,b)
+                if options:break
+                y += height+4
+            target = min(options,key=lambda a:abs(a-(x+3)))
+            c.move(label,target-c.bbox(label)[0],y-c.bbox(label)[1])
+            box = c.bbox(label)
+            self.boundary_label_boxes[ident] = box
+            placed.append(box)
+            c.coords(link,x,43,x,y-3,(box[0]+box[2])/2,y-3,(box[0]+box[2])/2,y)
 
     def hit_boundary(self, x, y):
+        label = next((ident for ident,(a,t,b,d) in self.boundary_label_boxes.items()
+                      if a<=x<=b and t<=y<=d),None)
+        if label:return label
         return next((ident for ident,(a,t,b,d) in reversed(list(self.boundary_boxes.items()))
                      if a<=x<=b and t<=y<=d),None)
 
@@ -511,6 +562,13 @@ class CurveCanvas(ttk.Frame):
 
     def press(self, event):
         if self.app.material_drag:return
+        if self.readonly:
+            x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
+                   self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
+            if any(a<=x<=b and t<=y<=d for a,t,b,d in self.boundary_label_boxes.values()):
+                self.canvas.focus_set()
+                self.final_detail(x,y)
+                return
         self.cancel()
         self.canvas.focus_set()
         if not self.project:return

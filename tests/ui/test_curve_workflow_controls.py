@@ -151,6 +151,52 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.assertTrue(self.rec.final_button.winfo_ismapped());self.assertTrue(self.rec.confirm_button.winfo_ismapped())
         self.assertEqual(before,self.music_state());self.assertEqual(draft,self.app.combo_inputs)
 
+    def test_mapped_boundary_labels_avoid_dense_neighbors_and_scrolled_edges(self):
+        self.ready();self.select()
+        timeline=self.app.page.timeline;canvas=timeline.canvas
+        preview=self.controller.rec['candidates'][0]['preview']
+        template=copy.deepcopy(preview['boundary_overlays'][0])
+        total=preview['project']['total_ticks']
+        ticks=[0,1920,2100]+list(range(3600,3632))+[total-1,total]
+        preview['boundary_overlays']=[dict(copy.deepcopy(template),id='boundary-'+str(i),tick=tick)
+                                      for i,tick in enumerate(ticks)]
+        self.select();self.root.update()
+        overlays=copy.deepcopy(self.rec.preview['boundary_overlays'])
+        asset=dict(wav_path=str(self.wav),body_seconds=1.,audio_seconds=1.)
+        self.app.start_playback(asset,('fixture','retained'),'已明确试听对象')
+        before=self.music_state();selection=self.rec.selected_id
+        for theme in ('light','dark'):
+            if self.app.theme.name!=theme:self.app.toggle_theme()
+            for size in ('1020x700','1280x800','1440x900'):
+                self.root.geometry(size);self.root.update()
+                for scroll in (0.,.35,1.):
+                    # Invoke the same native canvas scroll command as the scrollbar.
+                    self.root.tk.call(timeline.scrollbar.cget('command'),'moveto',scroll)
+                    self.root.update()
+                    left,right=canvas.canvasx(0),canvas.canvasx(canvas.winfo_width())
+                    boxes=timeline.boundary_label_boxes
+                    visible={o['id'] for o in overlays if left<=timeline.x(o['tick'])<=right}
+                    self.assertEqual(set(boxes),visible)
+                    for ident,box in boxes.items():
+                        self.assertGreaterEqual(box[0],left+4);self.assertLessEqual(box[2],right-4)
+                        self.assertGreaterEqual(box[1],43);self.assertLess(box[3],canvas.winfo_height()-38)
+                        for other,other_box in boxes.items():
+                            if other!=ident:
+                                self.assertFalse(max(box[0],other_box[0])<min(box[2],other_box[2]) and
+                                                 max(box[1],other_box[1])<min(box[3],other_box[3]))
+                        x,y=(box[0]+box[2])//2,(box[1]+box[3])//2
+                        self.assertEqual(timeline.hit_boundary(x,y),ident)
+                        lx,ly=round(x-left),round(y-canvas.canvasy(0))
+                        coords=dict(x=lx,y=ly,rootx=canvas.winfo_rootx()+lx,rooty=canvas.winfo_rooty()+ly)
+                        with patch.object(self.rec,'describe_overlay',return_value='boundary detail') as describe:
+                            canvas.event_generate('<ButtonPress-1>',**coords)
+                            canvas.event_generate('<ButtonRelease-1>',**coords);self.root.update()
+                        self.assertEqual(describe.call_args.args[0]['id'],ident)
+                    lines=[canvas.coords(i)[0] for i in canvas.find_withtag('final-boundary') if canvas.type(i)=='line']
+                    self.assertEqual(lines,[timeline.x(o['tick']) for o in overlays])
+                    self.assertEqual(overlays,self.rec.preview['boundary_overlays'])
+                    self.assertEqual(before,self.music_state());self.assertEqual(selection,self.rec.selected_id)
+
     def test_rest_only_material_cannot_start_generation_and_short_labels_remain_human(self):
         self.ready();self.select();self.root.update()
         before=self.music_state()
