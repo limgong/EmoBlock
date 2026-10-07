@@ -8,6 +8,8 @@ from tkinter import ttk
 import intensity_curve
 import ui_platform
 from curve_theme import rounded, font, hint, EMOTION_COLORS, EMOTION_NAMES, EMOTION_INK
+from curve_visuals import stable_number, draw_notes
+from curve_scrollbar import TransientScrollbar
 
 
 def snap_tick(tick):
@@ -45,6 +47,8 @@ class CurveCanvas(ttk.Frame):
         self.boxes = {}
         self.drag = None
         self.preview = None
+        self.preview_state = None
+        self.preview_material = None
         self.edge_timer = None
         self.intensity_draft = None
         self.point_boxes = []
@@ -70,8 +74,8 @@ class CurveCanvas(ttk.Frame):
         hint(self.stage_selector,'分阶段折叠：补全、Bridge、连接和完整建议共用唯一画布；切换不会修改工程或播放对象。',app.show_detail)
         self.canvas = tk.Canvas(self, height=380, highlightthickness=0, takefocus=True, xscrollincrement=1)
         self.canvas.pack(fill='both', expand=True)
-        self.scrollbar = ttk.Scrollbar(self,style='Curve.Horizontal.TScrollbar', orient='horizontal', command=self.canvas.xview)
-        self.scrollbar.pack(fill='x')
+        self.scrollbar = TransientScrollbar(self,app,self.canvas.xview,orient='horizontal')
+        self.scrollbar.pack(fill='x');self.scrollbar.attach(self.canvas)
         self.canvas.configure(xscrollcommand=self.scrolled)
         self.empty_import=ttk.Button(self.canvas,text='导入旋律，开始创作',style='Curve.Primary.TButton',command=lambda:app.safe(app.import_file))
         self.canvas.bind('<Motion>',self.hover)
@@ -210,29 +214,37 @@ class CurveCanvas(ttk.Frame):
             center = self.y(self.level(placement['start_tick']+placement['length_ticks']/2))
             box = (a,center-28,b,center+28)
             self.boxes[placement['id']] = box
-            if self.app.theme.name=='light':
-                rounded(c,(a+2,center-25,b+2,center+31),p['shadow'])
             rounded(c,box,EMOTION_COLORS[placement['emotion']],p['accent'] if placement['id']==self.selected_id else p['line'])
-            if b-a >= 52:
-                label = placement['base_snapshot']['label']
-                limit = max(2,int((b-a-24)/17))
-                remembered = memory and memory[0]['placement_id']==placement['id']
-                c.create_text(a+12,center+1 if remembered else center-8,anchor='w',text=label[:limit]+('…' if len(label)>limit else ''),
-                              fill=EMOTION_INK,font=font())
-                c.create_text(a+12,center+20 if remembered else center+13,anchor='w',text=EMOTION_NAMES[placement['emotion']],fill=EMOTION_INK,font=font(10))
+            snapshot = placement['emotion_variant'] or placement['base_snapshot']
+            notes = self.display_notes()
+            if notes is None:
+                notes=[dict(n,start_tick=n['start_tick']+placement['start_tick']) for n in snapshot['notes']]
+            if b-a<8:
+                self.range_badge(box,stable_number(placement['base_snapshot']),p['ink'],'short-block-label',3,
+                    placement['base_snapshot']['label']+' · '+placement['base_snapshot']['id']+' · '+EMOTION_NAMES[placement['emotion']],('placement',placement['id']))
+            self.draw_block_music(box,notes,placement['start_tick'],placement['length_ticks'],
+                                  stable_number(placement['base_snapshot'])+' · '+EMOTION_NAMES[placement['emotion']],
+                                  EMOTION_INK,'placement-note')
         if self.preview:
             start,length = self.preview
             center = self.y(self.level(start+length/2))
             c.create_rectangle(self.x(start),center-25,self.x(start+length),center+25,
-                               outline=p['accent'],width=1,dash=(4,3),tags='drop-preview')
+                               outline=p['error'] if self.preview_state and self.preview_state['allowed'] is False else p['accent'],
+                               width=1,dash=(4,3) if self.preview_state and self.preview_state['allowed'] is False else (),tags='drop-preview')
+            if self.preview_material:
+                notes=[dict(n,start_tick=n['start_tick']+start) for n in self.preview_material['notes']]
+                self.draw_block_music((self.x(start),center-25,self.x(start+length),center+25),notes,start,length,stable_number(self.preview_material),p['ink'],'drop-note')
         self.draw_connections()
         self.draw_memory()
         self.draw_bridges()
         self.draw_final_music()
-        for index,point in enumerate(self.points()):
-            x,y = self.x(point['tick']),self.y(point['level'])
-            self.point_boxes.append((index,x,y))
-            c.create_oval(x-6,y-6,x+6,y+6,fill=p['panel'],outline=p['accent'] if self.mode=='points' and not self.readonly else p['muted'],width=1,tags='control-point')
+        c.tag_raise('strength')
+        self.draw_playing()
+        if self.mode in ('points','trace'):
+            for index,point in enumerate(self.points()):
+                x,y = self.x(point['tick']),self.y(point['level'])
+                self.point_boxes.append((index,x,y))
+                c.create_oval(x-6,y-6,x+6,y+6,fill=p['panel'],outline=p['accent'] if self.mode=='points' and not self.readonly else p['muted'],width=1,tags='control-point')
         text = ('手绘 · 释放提交，Esc 取消' if self.mode=='trace' else '控制点 · 点击添加，拖动调整')
         if self.mode in ('arrange','gaps'):text = '编排 · 拖放每拍吸附 · 选择空缺可仅生成此处方案'
         if not self.app.can_edit('intensity_edit'):text = '强度不可编辑'
@@ -244,6 +256,32 @@ class CurveCanvas(ttk.Frame):
         c.create_text(self.margin,height-16,anchor='w',text=text+' · 移动不搬动强度线',fill=p['muted'],font=font(8))
         c.xview_moveto(view)
         self.layout_boundary_labels()
+
+    def draw_playing(self):
+        self.canvas.delete('playing-block')
+        if not self.project:return
+        from curve_playback_ui import playing_owner
+        owner=playing_owner(self.app,self)
+        box=self.boxes.get(owner) or self.bridge_boxes.get(owner) or self.connection_boxes.get(owner) or self.accepted_bridge_boxes.get(owner)
+        if box:
+            a,b,c,d=box
+            self.canvas.create_rectangle(a,b,c,d,outline=self.app.theme.colors['accent'],width=2,dash=(5,2),tags='playing-block')
+
+    def display_notes(self):
+        if self.recommendation_preview is not None:return self.recommendation_preview['notes']
+        if self.connection_preview is not None:return self.connection_preview['notes']
+        if self.bridge_preview is not None:return self.bridge_preview.get('notes')
+        return self.accepted_music['notes'] if self.accepted_music is not None else None
+
+    def draw_block_music(self,box,notes,start,length,label,ink,tag):
+        from tkinter.font import Font
+        a,top,b,bottom=box
+        if b-a<8:return
+        measure=Font(root=self.canvas,font=font(10)).measure
+        text=label
+        while text and measure(text+('…' if text!=label else ''))>b-a-8:text=text[:-1]
+        if text:self.canvas.create_text(a+4,top+13,anchor='nw',text=text+('…' if text!=label else ''),fill=ink,font=font(10),tags='block-label')
+        draw_notes(self.canvas,(a+4,top+30,b-4,bottom-5),notes,start,length,ink,stroke=2,tags=(tag,'final-note') if self.recommendation_preview is not None or self.accepted_music is not None else tag)
 
     def draw_final_music(self):
         p = self.app.theme.colors
@@ -259,6 +297,7 @@ class CurveCanvas(ttk.Frame):
                 self.accepted_bridge_boxes[protection['id']] = box
                 self.canvas.create_rectangle(*box,fill=p['selected'],outline=p['ink'],width=1,
                     dash=() if protection['status']=='CONTENT_READY' else (3,3),tags='accepted-bridge')
+                self.draw_block_music(box,music['notes'],start,end-start,'',p['ink'],'accepted-bridge-note')
                 if box[2]-box[0]>70:
                     self.canvas.create_text(box[0]+4,center-14,anchor='w',text='Bridge · 保护/只读',
                         fill=p['ink'],font=font(10),tags='accepted-bridge')
@@ -266,26 +305,7 @@ class CurveCanvas(ttk.Frame):
                     state = '音乐已就绪/保护' if protection['status']=='CONTENT_READY' else '范围已保护，音乐尚未就绪'
                     self.range_badge(box,'Bridge',p['ink'],'accepted-bridge',1,
                         f'已接受Bridge · {state} · {start}–{end} tick · 后续算法不得覆盖。')
-        # The displayed note marks come exclusively from this authenticated layout.
-        notes = music['notes']
-        if notes:
-            low,high = min(n['pitch'] for n in notes),max(n['pitch'] for n in notes)
-            for note in notes:
-                center = self.y(self.level(note['start_tick']))
-                y = center+14-(note['pitch']-low)/max(1,high-low)*20
-                start,end = self.x(note['start_tick']),self.x(note['start_tick']+note['duration_tick'])
-                data_faces = [box for box in self.boxes.values() if box[1]<=y<=box[3]]
-                stage_faces = [box for box in (*self.bridge_boxes.values(),*self.connection_boxes.values(),
-                                              *self.accepted_bridge_boxes.values()) if box[1]<=y<=box[3]]
-                edges = sorted({start,end,*[x for box in data_faces+stage_faces
-                                            for x in (box[0],box[2]) if start<x<end]})
-                for left,right in zip(edges,edges[1:]):
-                    midpoint = (left+right)/2
-                    data_face = any(box[0]<=midpoint<=box[2] for box in data_faces)
-                    stage_face = any(box[0]<=midpoint<=box[2] for box in stage_faces)
-                    # Emotion surfaces are data colors, while stage overlays use theme surfaces.
-                    ink = EMOTION_INK if data_face and not stage_face else p['ink']
-                    self.canvas.create_line(left,y,right,y,fill=ink,width=1,tags='final-note')
+        # Each block miniature is already bounded to its own current layout.
         if preview is not None:
             for overlay in preview['boundary_overlays']:
                 x = self.x(overlay['tick'])
@@ -387,7 +407,7 @@ class CurveCanvas(ttk.Frame):
                 detail = (f'手动Bridge · {state} · {protection["start_tick"]}–{protection["end_tick"]} tick\n'
                           '保护表示后续算法不得覆盖；用户仍可编辑。')
                 if b-a>=70:
-                    self.canvas.create_text(a+4,center-17,anchor='w',text='Bridge · 保护',
+                    self.canvas.create_text(a+4,center-39,anchor='w',text='Bridge · 保护',
                         fill=EMOTION_INK,font=font(10,True),tags='manual-bridge-label')
                 else:self.range_badge(box,'Bridge',colors['ink'],'manual-bridge-label',1,detail)
             return
@@ -403,16 +423,14 @@ class CurveCanvas(ttk.Frame):
             # No fabricated placement/music: the rectangle is the backend's overlay range.
             self.canvas.create_rectangle(*box,fill=colors['selected'],
                 outline=outline,width=1,dash=() if overlay['status']=='CONTENT_READY' else (3,3),tags='bridge-range')
+            material = overlay['material']
+            if material:
+                notes=[dict(n,start_tick=n['start_tick']+region['start_tick']) for n in material['notes']]
+                self.draw_block_music(box,notes,region['start_tick'],region['end_tick']-region['start_tick'],
+                                      stable_number(material),colors['ink'],'bridge-note')
             if b-a>=64:
-                label = 'Bridge · '+('就绪/保护' if overlay['status']=='CONTENT_READY' else '范围保护')
-                if failed:label += ' · '+('失败' if overlay['result_status']=='FAILED' else '取消')
-                limit = max(3,int((b-a-8)/13))
-                self.canvas.create_text(a+4,center-14,anchor='w',text=label[:limit]+('…' if len(label)>limit else ''),
-                                        fill=ink,font=font(10,True),tags='bridge-label')
-                material = overlay['material']
-                if material:
-                    self.canvas.create_text(a+4,center+10,anchor='w',text=material['label'][:limit],
-                                            fill=colors['ink'],font=font(10),tags='bridge-label')
+                self.canvas.create_text(a+4,center-39,anchor='w',text='Bridge · '+('就绪' if overlay['status']=='CONTENT_READY' else '范围保护')+(' · 失败' if failed else ''),
+                                        fill=ink,font=font(8),tags='bridge-label')
             else:self.range_badge(box,'Bridge',ink,'bridge-label',1,self.app.describe_bridge_overlay(overlay),
                 ('bridge',overlay['id']))
 
@@ -444,12 +462,8 @@ class CurveCanvas(ttk.Frame):
                 self.canvas.create_text(a+4,center-15,anchor='w',text=label[:limit]+('…' if len(label)>limit else ''),
                     fill=ink,font=font(10,True),tags='connection-label')
                 if ready:
-                    notes = overlay['notes']
-                    low,high = min(n['pitch'] for n in notes),max(n['pitch'] for n in notes)
-                    for note in notes:
-                        y = center+20-(note['pitch']-low)/max(1,high-low)*22
-                        self.canvas.create_line(self.x(note['start_tick']),y,
-                            self.x(note['start_tick']+note['duration_tick']),y,fill=p['ink'],width=1,tags='connection-note')
+                    draw_notes(self.canvas,(a+4,center+3,b-4,center+23),overlay['notes'],region['start_tick'],
+                               region['end_tick']-region['start_tick'],p['ink'],tags='connection-note')
             elif b-a>=18:
                 self.canvas.create_text((a+b)/2,center,text='连',fill=ink,font=font(10),tags='connection-label')
             else:self.range_badge(box,'连',ink,'connection-label',2,self.app.describe_connection_overlay(overlay),
@@ -473,16 +487,22 @@ class CurveCanvas(ttk.Frame):
         self.canvas.create_rectangle(a,box[1]-3,b,box[3]+3,outline=p['ink'],width=1,
                                      dash=() if protection else (3,3),tags='memory-range')
         label = ('记忆' if protection else '记忆目标') if b-a>=70 else '忆'
-        if b-a>=18:
-            self.canvas.create_text(a+4,box[1]+3,anchor='nw',text=label,
-                                    fill=EMOTION_INK,font=font(10,True),tags='memory-label')
+        if b-a>=70:
+            from tkinter import font as tkfont
+            width=tkfont.Font(root=self.canvas,font=font(9,True)).measure(label)+12
+            badge=(a+3,box[1]-12,min(b-3,a+3+width),box[1]+7)
+            rounded(self.canvas,badge,'#eee3c8',EMOTION_INK,radius=5,tags='memory-label')
+            self.canvas.create_text(badge[0]+6,(badge[1]+badge[3])/2,anchor='w',text=label,
+                                    fill=EMOTION_INK,font=font(9,True),tags='memory-label')
+            detail=self.app.preview_memory_description() if self.readonly else self.app.memory_description()
+            self.range_badges.append((badge,detail))
         else:self.range_badge((a,box[1],b,box[3]),'忆',p['ink'],'memory-label',0,
             self.app.preview_memory_description() if self.readonly else self.app.memory_description())
         if protection:
             for note in protection['notes']:
                 self.canvas.create_line(self.x(note['start_tick']),box[3]+7,
                                         self.x(note['start_tick']+note['duration_tick']),box[3]+7,
-                                        fill=p['ink'],dash=(3,3),tags='memory-support')
+                                        fill=p['ink'],dash=(3,3),tags='memory-support',state='hidden')
 
     def range_badge(self, box, text, ink, tag, lane, detail, target=None):
         """Readable callout for a narrow exact range; never enlarge musical geometry."""
@@ -494,8 +514,20 @@ class CurveCanvas(ttk.Frame):
         y = 44+lane*22
         label = c.create_text(x+3,y+2,anchor='nw',text=text,fill=ink,font=font(9,True),tags=tag)
         l,t,r,d = c.bbox(label)
-        badge = (l-3,t-2,r+3,d+2)
-        c.create_line((a+b)/2,top,(a+b)/2,y+8,x,y+8,fill=ink,width=1,tags=tag)
+        width,height=r-l+6,d-t+4
+        y=44+lane*22
+        while True:
+            occupied=sorted((max(left+4,u-3),min(right-4,z+3)) for (u,v,z,w),_ in self.range_badges if v<y+height and y<w)
+            cursor=left+4;options=[]
+            for u,z in occupied+[(right-4,right-4)]:
+                if u-cursor>=width:options.append(max(cursor,min(x,u-width)))
+                cursor=max(cursor,z)
+            if options:break
+            y+=height+3
+        x=min(options,key=lambda v:abs(v-(a+b)/2))
+        c.move(label,x+3-l,y+2-t)
+        badge=(x,y,x+width,y+height)
+        c.create_line((a+b)/2,top,(a+b)/2,y-2,x+width/2,y-2,x+width/2,y,fill=ink,width=1,tags=tag)
         surface = c.create_rectangle(*badge,fill=self.app.theme.colors['panel'],outline=ink,width=1,tags=tag)
         c.tag_raise(label,surface)
         self.range_badges.append((badge,detail))
@@ -508,6 +540,9 @@ class CurveCanvas(ttk.Frame):
                 if select and target:
                     self.selected_bridge_id = target[1] if target[0]=='bridge' else None
                     self.selected_connection_id = target[1] if target[0]=='connection' else None
+                    if target[0]=='placement':
+                        self.selected_id=target[1]
+                        if not self.readonly:self.app.select_target('placement',target[1],redraw=False)
                 self.app.show_detail(detail)
                 return True
         return False
@@ -675,7 +710,14 @@ class CurveCanvas(ttk.Frame):
                 return
             d['active'] = True
             self.canvas.grab_set()
-        self.preview = (snap_tick(self.root_tick(event.x_root,d['offset'])),d['length'])
+        raw=self.root_tick(event.x_root,d['offset'])
+        self.preview = (snap_tick(raw),d['length'])
+        place=next(p for p in self.project['placements'] if p['id']==d['id'])
+        material=place['emotion_variant'] or place['base_snapshot']
+        result=self.app.ghost().check('move',placement_id=d['id'],start_tick=self.preview[0])
+        if not self.contains_root(event.x_root,event.y_root) or raw<0 or raw+d['length']>self.project['total_ticks']:result=dict(allowed=False,error=dict(message='落点超出时间轴'))
+        self.preview_state=result;self.preview_material=material
+        self.app.ghost().show(material,event.x_root,event.y_root,result)
         self.edge_scroll(event.x_root,event.y_root)
         self.draw()
 
@@ -730,14 +772,14 @@ class CurveCanvas(ttk.Frame):
         if direction:
             self.canvas.xview_scroll(direction*18,'units')
             if self.drag and self.drag['active']:
-                self.preview = (snap_tick(self.root_tick(x,self.drag['offset'])),self.drag['length'])
+                self.motion(SimpleNamespace(x_root=x,y_root=y))
             elif self.app.material_drag and self.app.material_drag['active']:
                 d = self.app.material_drag
-                self.preview = (snap_tick(self.root_tick(x,d['offset'])),d['material']['length_ticks'])
+                self.app.material_preview(x,y)
             elif self.intensity_draft and self.intensity_draft['active']:
                 self.preview_intensity(SimpleNamespace(x_root=x,y_root=y))
             self.draw()
-            self.edge_timer = self.after(60,self._edge_step)
+            if self.edge_timer is None:self.edge_timer = self.after(60,self._edge_step)
 
     def cancel(self, event=None):
         if self.edge_timer is not None:
@@ -746,6 +788,8 @@ class CurveCanvas(ttk.Frame):
         self.drag = None
         self.intensity_draft = None
         self.preview = None
+        self.preview_state=None;self.preview_material=None
+        if self.app.drag_ghost:self.app.drag_ghost.clear()
         if self.canvas.grab_current()==self.canvas:
             self.canvas.grab_release()
         self.draw()

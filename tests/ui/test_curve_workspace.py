@@ -73,7 +73,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
         cards=self.app.page.cards;card=cards.rows['phrase']
         self.assertEqual(card.winfo_height(),96)
         content=card.winfo_children()[0]
-        thumbnails=[w for w in content.winfo_children() if w.winfo_class()=='Canvas']
+        thumbnails=[w for w in content.winfo_children() if w.winfo_class()=='Canvas' and getattr(w,'material_thumbnail',False)]
         self.assertTrue(thumbnails[0].find_all())
         title=content.winfo_children()[0]
         tip=title.curve_tooltip

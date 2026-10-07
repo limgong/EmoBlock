@@ -4,6 +4,9 @@ import math
 import tkinter as tk
 from tkinter import ttk
 from curve_theme import font, hint, rounded
+from curve_visuals import TYPE_COLORS, TYPE_NAMES, DATA_INK, material_type, stable_number, draw_notes
+from curve_icons import CardIconButton
+from curve_scrollbar import TransientScrollbar
 
 
 class MaterialCards(ttk.Frame):
@@ -21,9 +24,10 @@ class MaterialCards(ttk.Frame):
         self.materials = []
         self.canvas = tk.Canvas(self,highlightthickness=0,takefocus=True)
         self.canvas.pack(side='left',fill='both',expand=True)
-        bar = ttk.Scrollbar(self,style='Curve.Vertical.TScrollbar',command=self.canvas.yview)
+        bar = TransientScrollbar(self,app,self.canvas.yview)
         bar.pack(side='right',fill='y')
         self.scrollbar = bar
+        bar.attach(self.canvas)
         self.canvas.configure(yscrollcommand=self.scrolled)
         self.body = tk.Frame(self.canvas)
         self.body.pack_propagate(False)
@@ -101,7 +105,7 @@ class MaterialCards(ttk.Frame):
             selected = ident==self.app.selected_material_id
             expandable = material['kind']=='phrase' and any(v['phrase_id']==ident for v in self.materials)
             version = (material,child,self.app.theme.name,selected,expandable,ident in self.expanded)
-            left = 16 if child else 4
+            left = 4
             old_version = self.row_versions.get(ident)
             dragging = drag and ident==drag['material']['id'] and ident in self.rows
             if dragging and (old_version[0]!=material or old_version[2]!=self.app.theme.name):
@@ -111,7 +115,8 @@ class MaterialCards(ttk.Frame):
                 continue
             if ident in self.rows:self.rows.pop(ident).destroy()
             self.row_versions[ident] = copy.deepcopy(version)
-            surface = p['selected'] if selected else p['inset']
+            category = material_type(material,self.materials)
+            surface = TYPE_COLORS[category]
             card = tk.Canvas(self.body,bg=p['panel'],height=self.CARD_HEIGHT,highlightthickness=0,borderwidth=0)
             card.place(x=left,y=index*stride+4,width=max(1,width-left-4),height=self.CARD_HEIGHT)
             self.rows[ident] = card
@@ -120,46 +125,40 @@ class MaterialCards(ttk.Frame):
             def background(event,canvas=card,window=window,fill=surface,selected=selected):
                 canvas.itemconfigure(window,width=max(1,event.width-16))
                 canvas.delete('surface')
-                if self.app.theme.name=='light':
-                    rounded(canvas,(3,4,event.width-1,self.CARD_HEIGHT-1),p['shadow'],tags='surface')
                 rounded(canvas,(1,1,event.width-4,self.CARD_HEIGHT-4),fill,
                         p['accent'] if selected else p['line'],tags='surface')
                 canvas.tag_lower('surface')
             card.bind('<Configure>',background)
-            prefix = '↳ ' if child else ''
-            label = material['label']
-            parts=label.split(' · ')
-            if len(parts)>1 and any(ch.isdigit() for ch in parts[-1]):label=parts[-1]+' · '+' · '.join(parts[:-1])
-            title = tk.Label(content,text=prefix+label,anchor='w',bg=surface,fg=p['ink'],font=font(12,True),
-                             takefocus=True,cursor='hand2')
+            prefix = '子块 · ' if child else ''
+            label = stable_number(material)+' · '+material['label']
+            title = tk.Canvas(content,height=28,width=1,bg=surface,highlightthickness=0,takefocus=True,cursor='hand2')
             content.columnconfigure(0,weight=1)
             title.grid(row=0,column=0,sticky='ew',padx=(4,2))
             def shorten(event,widget=title,text=prefix+label):
                 from tkinter import font as tkfont
-                measure=tkfont.Font(root=widget,font=widget.cget('font')).measure
+                measure=tkfont.Font(root=widget,font=font(12,True)).measure
                 value=text
-                while len(value)>1 and measure(value+'…')>event.width:value=value[:-1]
-                widget.configure(text=value+('…' if value!=text else ''))
-            title.bind('<Configure>',shorten)
-            kind='子块' if child else {'block':'原始分块','phrase':'乐句','combination':'组合','bridge':'Bridge'}.get(material['kind'],'素材')
-            if material['generation']:kind='新旋律'
-            info=tk.Label(content,text=f'{kind} · {material["length_ticks"]/480:g} 拍',bg=surface,fg=p['muted'],anchor='w',font=font(10))
+                while len(value)>1 and measure(value+'…')>widget.winfo_width()-4:value=value[:-1]
+                widget.delete('all')
+                widget.create_text(1,14,anchor='w',text=value+('…' if value!=text else ''),fill=DATA_INK,font=font(12,True),tags='card-title')
+                if widget.focus_get()==widget:widget.create_rectangle(0,0,max(1,widget.winfo_width()-1),27,outline=self.app.theme.colors['accent'],width=1,tags='card-focus')
+            title.bind('<Configure>',shorten);title.bind('<FocusIn>',shorten,add='+');title.bind('<FocusOut>',shorten,add='+')
+            kind=TYPE_NAMES[category]+(' · 子块' if child else '')
+            info=tk.Canvas(content,height=24,width=1,bg=surface,highlightthickness=0)
             info.grid(row=1,column=0,sticky='ew',padx=4)
-            b=ttk.Button(content,text='试听',style='Curve.Compact.TButton',
+            def type_label(event,widget=info,text=f'{kind} · {material["length_ticks"]/480:g} 拍'):
+                widget.delete('all');widget.create_text(1,12,anchor='w',text=text,fill=DATA_INK,font=font(10),tags='card-type')
+            info.bind('<Configure>',type_label)
+            b=CardIconButton(content,self.app,'play','试听',
                          command=lambda m=material:self.app.safe(lambda:self.app.audition_target('material',m['id'])))
             b.grid(row=0,column=1,rowspan=2,sticky='ns',padx=2)
             hint(b,'明确试听此素材；准备完成后仅有效播放意图可开始。',self.app.show_detail)
             thumb=tk.Canvas(content,height=28,width=80,bg=surface,highlightthickness=0)
+            thumb.material_thumbnail=True
             thumb.grid(row=2,column=0,sticky='ew',padx=4,pady=0)
             def notes(event,c=thumb,m=material):
                 c.delete('all')
-                pitches=[n['pitch'] for n in m['notes']]
-                low,high=min(pitches,default=60),max(pitches,default=72)
-                for n in m['notes']:
-                    x=n['start_tick']/m['length_ticks']*max(1,event.width-4)+2
-                    end=(n['start_tick']+n['duration_tick'])/m['length_ticks']*max(1,event.width-4)+2
-                    y=24-(n['pitch']-low)/max(1,high-low)*20
-                    c.create_line(x,y,max(x+1,end),y,fill=p['muted'],width=2)
+                draw_notes(c,(2,2,event.width-2,26),m['notes'],0,m['length_ticks'],DATA_INK,tags='material-note')
             thumb.bind('<Configure>',notes)
             if expandable:
                 ttk.Button(content,text='收起' if ident in self.expanded else '展开',style='Curve.Compact.TButton',
@@ -201,6 +200,21 @@ class MaterialCards(ttk.Frame):
             if surfaces:
                 row.itemconfigure(surfaces[-1],outline=self.app.theme.colors[
                     'accent' if ident==self.app.selected_material_id else 'line'])
+            row.delete('playing-card')
+            from curve_playback_ui import same_card
+            material=next((m for m in self.materials if m['id']==ident),None)
+            if material and self.app.player.status()[1] in ('playing','paused') and same_card(self.app.playing_target,material):
+                row.create_line(8,self.CARD_HEIGHT-8,row.winfo_width()-10,self.CARD_HEIGHT-8,fill=self.app.theme.colors['accent'],width=2,dash=(4,2),tags='playing-card')
+
+    def clear_drop_target(self):
+        for row in self.rows.values():row.delete('combine-preview')
+
+    def show_drop_target(self,ident,side):
+        self.clear_drop_target()
+        row=self.rows.get(ident)
+        if row:
+            x=3 if side=='left' else row.winfo_width()-4
+            row.create_line(x,5,x,self.CARD_HEIGHT-5,fill=self.app.theme.colors['accent'],width=3,tags='combine-preview')
 
     def at_root(self, x, y):
         if not (self.canvas.winfo_rootx()<=x<self.canvas.winfo_rootx()+self.canvas.winfo_width()

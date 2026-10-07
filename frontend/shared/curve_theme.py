@@ -4,9 +4,9 @@ from tkinter import ttk, font as tkfont
 import ui_platform
 
 PALETTES = {
-    'light': dict(bg='#eef1f5', panel='#fafbfd', inset='#e7ebf1', line='#cbd2de',
-                  ink='#252c38', muted='#536074', accent='#245fc4', selected='#e1eafa',
-                  shadow='#d7dde7', onaccent='#ffffff', error='#ac2336'),
+    'light': dict(bg='#f1f5f9', panel='#ffffff', inset='#f5f6fa', line='#dbe0ea',
+                  ink='#293244', muted='#626d80', accent='#6667b0', selected='#e7e7ff',
+                  shadow='#d9dfea', onaccent='#ffffff', error='#ac2336'),
     'dark': dict(bg='#1c1c1e', panel='#2c2c2e', inset='#3a3a3c', line='#66666a',
                  ink='#f5f5f7', muted='#c4c4cc', accent='#0a84ff', selected='#3a3a3c',
                  shadow='#1c1c1e', onaccent='#ffffff', error='#ffb4bc'),
@@ -37,6 +37,32 @@ def rounded(canvas, box, fill, outline='', radius=12, tags=()):
                                  outline=outline, width=1, tags=tags)
 
 
+def install_surfaces(root, style, palette, name):
+    """Native scalable image elements, with one real soft shadow in light."""
+    from curve_raster import surface_image, pixels
+    cache=getattr(root,'curve_surface_images',{})
+    resource=name+str(pixels(root,44))
+    if resource not in cache:
+        images=[]
+        for role in ('Button','Primary','Header'):
+            states=[surface_image(root,palette,role,state) for state in
+                    ('normal','active','pressed','focus','disabled','selected')]
+            element='CurveSurface'+role+resource
+            style.element_create(element,'image',states[0],('disabled',states[4]),('pressed',states[2]),
+                                 ('focus',states[3]),('selected',states[5]),('active',states[1]),border=pixels(root,11),sticky='nsew')
+            images.extend(states)
+        small=[image.subsample(2) for image in images[:6]]
+        style.element_create('CurveSurfaceSmall'+resource,'image',small[0],('disabled',small[4]),('pressed',small[2]),('focus',small[3]),('selected',small[5]),('active',small[1]),border=pixels(root,1),sticky='nsew')
+        images.extend(small)
+        cache[resource]=images;root.curve_surface_images=cache
+    for suffix,role in (('TButton','Button'),('Primary.TButton','Primary'),('Header.TButton','Header'),
+                        ('Compact.TButton','Button'),('Small.TButton','Small'),('TMenubutton','Button')):
+        label='Menubutton.label' if suffix=='TMenubutton' else 'Button.label'
+        style.layout('Curve.'+suffix,[('CurveSurface'+role+resource,dict(sticky='nsew',children=[
+            ('Button.padding',dict(sticky='nsew',children=[(label,dict(sticky='nsew'))]))]))])
+        style.configure('Curve.'+suffix,borderwidth=0,relief='flat')
+
+
 class Theme:
     def __init__(self, root, name='light'):
         self.root = root
@@ -62,11 +88,11 @@ class Theme:
             foreground = p['onaccent'] if 'Primary' in name_ else p['ink']
             if name=='dark' and 'Primary' in name_:
                 background,foreground = p['inset'],p['ink']
-            s.configure(name_, background=background, foreground=foreground, padding=(10,8), width=0,
+            s.configure(name_, background=background, foreground=foreground, padding=(5,0), width=0,
                         borderwidth=1, bordercolor=p['accent'] if 'Primary' in name_ else p['line'], font=font())
             s.map(name_, background=[('active', background)],
                   foreground=[('disabled', p['muted'])], bordercolor=[('focus', p['accent'])])
-        for style_,padding,size in (('Curve.Compact.TButton',(5,9),11),('Curve.Small.TButton',(5,2),10)):
+        for style_,padding,size in (('Curve.Compact.TButton',(3,1),11),('Curve.Small.TButton',(5,0),10)):
             s.configure(style_,background=p['inset'],foreground=p['ink'],borderwidth=1,bordercolor=p['line'],
                         padding=padding,font=font(size),width=0)
             s.map(style_,foreground=[('disabled',p['muted'])],bordercolor=[('focus',p['accent'])])
@@ -100,6 +126,11 @@ class Theme:
         self.root.option_add('*TCombobox*Listbox.selectBackground',p['selected'])
         self.root.option_add('*TCombobox*Listbox.selectForeground',p['ink'])
         self.root.option_add('*TCombobox*Listbox.font',font())
+        s.configure('Curve.Header.TButton',background=p['bg'],foreground=p['ink'],padding=0,font=font())
+        install_surfaces(self.root,s,p,name)
+        for bar in getattr(self.root,'curve_scrollbars',()):bar.draw()
+        for button in tuple(getattr(self.root,'curve_icon_buttons',())):
+            if button.winfo_exists():button.refresh_icon()
 
 
 class Tooltip:

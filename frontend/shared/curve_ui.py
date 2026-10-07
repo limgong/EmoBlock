@@ -92,6 +92,7 @@ class CurveApplication:
         self.messages = queue.Queue()
         self.ready_assets = {}
         self.ready_file_digests = {}
+        self.ready_contexts = {}
         self.card_view_flags = None
         self.playing_target = None
         self.play_intent = PlayIntent()
@@ -104,6 +105,7 @@ class CurveApplication:
         self.combo_inputs = []
         self.material_drag = None
         self.card_scroll_timer = None
+        self.drag_ghost = None
         self.status_error = False
         self.full_status='导入旋律，开始创作。'
         self.source_user_collapsed = None
@@ -480,6 +482,7 @@ class CurveApplication:
                                        recommendation_preview=recommendation_preview,accepted_music=self.accepted_music if not private else None)
         if project:
             self.page.grid_count.set(str(project['grid_count']))
+            self.page.grid_summary.set(f'{project["grid_count"]}格 · {project["grid_count"]*4}拍')
         self.history = self.controller.history() if self.recommendation.available() else self.controller.history_items()
         self.page.history_list.delete(0,'end')
         for i,item in enumerate(self.history):
@@ -500,6 +503,11 @@ class CurveApplication:
         else:
             self.page.history_panel.pack_forget()
         self.history_button.configure(text=f'历史 {len(self.history)}')
+        self.version_ids=[item['id'] for item in self.history]
+        self.version_selector.configure(values=[f'v{item.get("version",i+1)} · {item["label"]}' for i,item in enumerate(self.history)])
+        if self.selected_history_id in self.version_ids:self.version_selector.current(self.version_ids.index(self.selected_history_id))
+        else:self.player_version.set('选择导出版本')
+        self.version_selector.configure(state='readonly' if self.history else 'disabled')
         self.page.source_audition.state(['!disabled'] if self.selected_source_id else ['disabled'])
         for text,button in self.edit_buttons:
             enabled = self.editable
@@ -511,6 +519,10 @@ class CurveApplication:
         for button in (self.page.derive_button,self.page.grid_entry,self.page.resize_button):
             button.state(['!disabled'] if self.editable else ['disabled'])
         if not materials:self.page.derive_button.state(['disabled'])
+        self.page.minus_button.state(['!disabled'] if self.editable and project and project['grid_count']>1 else ['disabled'])
+        for text,button in self.file_actions:
+            enabled=not self.jobs if text!='保存快照' else self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION','RECOMMENDATION','RECOMMENDATION_MODE') for j in self.jobs.values())
+            button.state(['!disabled'] if enabled else ['disabled'])
         self.update_exports()
         self.update_workspace()
         if getattr(self,'resumed_view',None):
@@ -657,6 +669,11 @@ class CurveApplication:
         self.refresh()
         self.tell('工程已更新 · 一次撤销可恢复。' if changed else '位置与工程内容未改变。')
         return changed
+
+    def adjust_grid(self, delta):
+        project=self.state_data['project']
+        if not project or not self.editable:return False
+        return self.edit('resize',grid_count=max(1,project['grid_count']+delta))
 
     def resize_grid(self):
         try:
@@ -830,6 +847,7 @@ class CurveApplication:
             if Path(asset['wav_path'])==path:
                 self.ready_assets.pop(key,None)
                 self.ready_file_digests.pop(key,None)
+                self.ready_contexts.pop(key,None)
 
     def audition_profile(self):
         query = getattr(self.controller,'audition_renderer_profile',None)
@@ -859,7 +877,7 @@ class CurveApplication:
                 return None
         return asset
 
-    def _cache_asset(self, key, asset, expected_profile=None):
+    def _cache_asset(self, key, asset, expected_profile=None, context=None):
         path = Path(asset['wav_path'])
         profile = self.audition_profile()
         if ((expected_profile is not None and asset.get('renderer_version')!=expected_profile)
@@ -874,6 +892,12 @@ class CurveApplication:
             raise ValueError('试听准备失败：输出文件缺失，请重新准备。') from exc
         self.ready_assets[key] = copy.deepcopy(asset)
         self.ready_file_digests[key] = identity
+        if context is not None:self.ready_contexts[key]=copy.deepcopy(context)
+        protected=(self.playing_target or {}).get('context',{}).get('key')
+        for old in list(self.ready_assets):
+            if len(self.ready_assets)<=16:break
+            if old!=protected and old!=key:
+                self.ready_assets.pop(old,None);self.ready_file_digests.pop(old,None);self.ready_contexts.pop(old,None)
 
     def prepare_target(self, kind, ident):
         target = self.resolve(kind,ident)
@@ -890,7 +914,9 @@ class CurveApplication:
             return
         def done(asset,token,snapshot):
             key = audition_key(kind,snapshot['target'],snapshot['project']['bpm'])
-            self._cache_asset(key,asset,snapshot.get('audition_profile'))
+            from curve_playback_ui import neutral_context
+            context=neutral_context(kind,ident,snapshot,key,snapshot_key('input',snapshot['project']))
+            self._cache_asset(key,asset,snapshot.get('audition_profile'),context)
             self.tell(f'试听已就绪 · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒。')
             return key
         return self._start_job('AUDITION',dict(kind=kind,id=ident),
@@ -908,6 +934,7 @@ class CurveApplication:
         if not target:
             self.tell('请选择可播放对象。')
             return False
+        context=None
         if kind=='history':
             output = self.history_output(target)
             if not output['availability']['wav']:
@@ -915,19 +942,24 @@ class CurveApplication:
                 return False
             if target.get('scope') in ('FULL','LOCAL'):
                 mode = output['mode']
-                asset = playback_asset(self.controller.history_asset(ident,mode=mode))
+                query=getattr(self.controller,'history_playback',None)
+                context=query(ident,mode=mode) if query else None
+                asset = playback_asset(context['asset'] if context else self.controller.history_asset(ident,mode=mode))
                 label = target['label']+' · '+MODES[mode]
             else:
                 asset = dict(wav_path=target['paths']['wav'],audio_seconds=target['audio_seconds'],body_seconds=target['body_seconds'])
                 label = target['label']
+                query=getattr(self.controller,'history_playback',None)
+                if query:context=query(ident);asset=playback_asset(context['asset'])
         else:
             asset = self._ready_asset(audition_key(kind,target,self.state_data['project']['bpm']))
             if not asset:
                 self.tell('该对象尚未就绪，请先准备试听。')
                 return False
-        return self.start_playback(asset,(kind,ident),label if kind=='history' else target['label'])
+            context=self.ready_contexts.get(audition_key(kind,target,self.state_data['project']['bpm']))
+        return self.start_playback(asset,(kind,ident),label if kind=='history' else target['label'],context=context)
 
-    def start_playback(self, asset, target, label):
+    def start_playback(self, asset, target, label, context=None):
         self.invalidate_play_intent()
         path = Path(asset['wav_path'])
         if not path.is_file():
@@ -935,7 +967,9 @@ class CurveApplication:
             self.tell('试听文件已移动或缺失，请重新准备。',True)
             return False
         duration = self.player.play(path)
-        self.playing_target = dict(target=target,label=label,asset=copy.deepcopy(asset))
+        self.playing_target = dict(target=target,label=label,asset=copy.deepcopy(asset),context=copy.deepcopy(context) or {},
+            wav_digest=self.file_digest(path),segments=copy.deepcopy((context or {}).get('segments',[])),
+            bpm=(context or {}).get('bpm'),mapping_reason=(context or {}).get('mapping_reason') or (None if context else '无可信音符映射；仅显示实际音频与时间。'))
         self.play_duration = duration
         self.seek.configure(to=duration)
         self.update_transport()
@@ -949,7 +983,7 @@ class CurveApplication:
             key = audition_key('draft',self.combo_inputs,self.state_data['project']['bpm'])
             asset = self._ready_asset(key)
             if asset:
-                return self.start_playback(asset,('draft',key),'组合草稿')
+                return self.start_playback(asset,('draft',key),'组合草稿',context=self.ready_contexts.get(key))
             self.tell('组合草稿尚未就绪，请先准备试听。')
             return False
         return self.play_target(kind,ident)
@@ -976,16 +1010,28 @@ class CurveApplication:
                 self.stop()
             else:
                 was_paused = self.player.status()[1]=='paused'
-                target = self.playing_target['target']
-                old_asset = self.playing_target['asset']
-                if 'files' in old_asset:
-                    if target[0]=='recommendation':
-                        asset = self.controller.recommendation_asset(target[1],kind=target[3],mode=target[2])
-                    else:asset = self.controller.history_asset(target[1],mode=old_asset['mode'])
-                    if any(asset[k]!=old_asset[k] for k in ('id','version','score_ref','mode')):
-                        raise ValueError('播放资产版本已更新，请明确选择后播放。')
+                self.validate_playing()
                 self.player.play(self.playing_target['asset']['wav_path'],start=max(0.,position))
                 if was_paused:self.player.pause()
+
+    def validate_playing(self):
+        playing=self.playing_target
+        if not playing:raise ValueError('尚无播放对象。')
+        context=playing['context'];old=playing['asset'];target=playing['target']
+        if context.get('neutral'):
+            asset=self._ready_asset(context['key'])
+            if asset!=old:raise ValueError('播放缓存身份已变化，请明确重新准备。')
+        elif context.get('schema')=='emoblocks.ui-playback.v1':
+            ref=context['target']
+            if ref['kind']=='recommendation':facts=self.controller.recommendation_playback(ref['id'],kind=ref['side'],mode=ref['mode'])
+            else:facts=self.controller.history_playback(ref['id'],mode=ref['mode'])
+            if facts!=context:raise ValueError('播放谱或资产身份已变化，请明确重新选择。')
+        elif 'files' in old:
+            asset=(self.controller.recommendation_asset(target[1],kind=target[3],mode=target[2])
+                   if target[0]=='recommendation' else self.controller.history_asset(target[1],mode=old['mode']))
+            if any(asset[k]!=old[k] for k in ('id','version','score_ref','mode')):raise ValueError('播放资产版本已更新，请明确选择后播放。')
+        if self.file_digest(old['wav_path'])!=playing['wav_digest']:raise ValueError('播放文件字节已变化，请明确重新准备。')
+        return True
 
     def update_transport(self):
         position,mode = self.player.status()
@@ -1010,6 +1056,12 @@ class CurveApplication:
         side_label=('基础' if asset.get('kind')=='comparison' else '处理后' if asset.get('kind')=='final' else '') if asset else ''
         self.transport_label.configure(text=self.compact(f'{prefix} · {playing[:9]}'+(f' · {mode_label} {side_label}' if asset else '')+f' · {position:.1f}/{self.play_duration:.1f}秒'+(f' · 预计正文{asset["body_seconds"]:.1f}秒 / 实际音频{asset["audio_seconds"]:.1f}秒' if asset else ''),width=self.page.right.winfo_width()-(180 if self.last_export else 28)),wraplength=0)
         self.cancel_button.state(['!disabled'] if self.jobs else ['disabled'])
+        self.pause_button.set_icon('play' if mode=='paused' else 'pause')
+        self.pause_button.state(['!disabled'] if mode in ('playing','paused') else ['disabled'])
+        from curve_player_ui import update_navigation
+        update_navigation(self)
+        self.page.timeline.draw_playing()
+        self.page.cards.mark_selection()
 
     def transport_description(self):
         playing = self.playing_target['label'] if self.playing_target else '尚未播放'
@@ -1018,6 +1070,12 @@ class CurveApplication:
         asset=self.playing_target['asset'] if self.playing_target else None
         durations=f'\n预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
         return '当前播放：'+playing+'\n当前选择：'+selected+durations
+
+    def ghost(self):
+        if self.drag_ghost is None:
+            from curve_drag_ui import DragGhost
+            self.drag_ghost=DragGhost(self)
+        return self.drag_ghost
 
     def begin_material_drag(self, event, material, card):
         self.select_target('material',material['id'],redraw=False)
@@ -1044,6 +1102,8 @@ class CurveApplication:
             self.card_scroll_pointer = (event.x_root,event.y_root)
             if self.card_scroll_timer is None:
                 self.card_scroll_timer = self.root.after(60,self.cards_edge_step)
+            self.page.cards.show_drop_target(*hit)
+            self.ghost().show(d['material'],event.x_root,event.y_root,text='组合 · '+('放在目标之前' if hit[1]=='left' else '放在目标之后'))
             self.show_detail('松开后加入行内组合草稿：'+('放在目标左侧' if hit[1]=='left' else '放在目标右侧'))
 
     def cards_edge_step(self):
@@ -1064,11 +1124,18 @@ class CurveApplication:
         d = self.material_drag
         canvas = self.page.timeline
         canvas.edge_pointer = (x,y)
+        self.page.cards.clear_drop_target()
         if d and canvas.contains_root(x,y):
-            canvas.preview = (snap_tick(canvas.root_tick(x,d['offset'])),d['material']['length_ticks'])
+            raw=canvas.root_tick(x,d['offset'])
+            canvas.preview = (snap_tick(raw),d['material']['length_ticks'])
+            result=self.ghost().check('place',material_id=d['material']['id'],start_tick=canvas.preview[0])
+            if raw<0 or raw+d['material']['length_ticks']>canvas.project['total_ticks']:result=dict(allowed=False,error=dict(message='落点超出时间轴'))
+            canvas.preview_state=result;canvas.preview_material=d['material']
+            self.ghost().show(d['material'],x,y,result)
             canvas.edge_scroll(x,y)
         else:
             canvas.preview = None
+            if d and d['active']:self.ghost().show(d['material'],x,y,dict(allowed=False),text='移入画布或素材卡；其它位置取消')
         canvas.draw()
 
     def material_release(self, event):
@@ -1103,6 +1170,8 @@ class CurveApplication:
             if widget.winfo_exists() and widget.grab_current()==widget:
                 widget.grab_release()
         self.material_drag = None
+        if self.drag_ghost:self.drag_ghost.clear()
+        self.page.cards.clear_drop_target()
         self.page.timeline.cancel()
         if event is not None:self.exit_private_preview()
         return 'break' if event else None
@@ -1152,12 +1221,15 @@ class CurveApplication:
             return
         def work(snapshot):
             material = _provider().combine(snapshot['project'],inputs,label)
-            if audition:return _provider().render_audition(material,bpm=snapshot['project']['bpm'])
+            if audition:return dict(asset=_provider().render_audition(material,bpm=snapshot['project']['bpm']),material=material)
             return dict(sources=[],materials=[material],warnings=[])
         def done(payload,token,snapshot):
             if audition:
+                prepared_material=payload['material'];payload=payload['asset']
                 key = audition_key('draft',inputs,snapshot['project']['bpm'])
-                self._cache_asset(key,payload,snapshot.get('audition_profile'))
+                from curve_playback_ui import neutral_context
+                target_snapshot=dict(snapshot,target=prepared_material)
+                self._cache_asset(key,payload,snapshot.get('audition_profile'),neutral_context('draft',key,target_snapshot,key,snapshot_key('input',snapshot['project'])))
                 self.tell(f'组合试听已就绪 · 预计正文 {payload["body_seconds"]:.1f} 秒 / 实际音频 {payload["audio_seconds"]:.1f} 秒。')
                 return key
             else:
@@ -1240,7 +1312,8 @@ class CurveApplication:
                 self.export_receipt.insert('1.0',f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.export_receipt.configure(state='disabled')
                 self.export_summary.configure(text=f'{display_format} 已导出')
-                self.export_row.grid(row=0,column=1,sticky='e',padx=(4,0))
+                self.export_row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(1,0))
+                self.page.footer.configure(height=162)
                 self.show_detail(f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.tell('导出成功 · '+display_format+' · 完整位置见详情。')
                 return path
@@ -1327,6 +1400,7 @@ class CurveApplication:
         self.cancel_interaction()
         self.theme.set('dark' if self.theme.name=='light' else 'light')
         self.theme_button.configure(text='浅色' if self.theme.name=='dark' else '深色')
+        self.theme_button.set_icon('sun' if self.theme.name=='dark' else 'moon')
         self.refresh()
 
     def wheel(self, event):

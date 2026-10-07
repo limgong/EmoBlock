@@ -415,9 +415,11 @@ class RecommendationUI:
         return self.play_authenticated(candidate,mode,kind)
 
     def play_authenticated(self, candidate, mode, kind):
-        asset=self.app.controller.recommendation_asset(candidate['id'],kind=kind,mode=mode)
+        query=getattr(self.app.controller,'recommendation_playback',None)
+        context=query(candidate['id'],kind=kind,mode=mode) if query else None
+        asset=context['asset'] if context else self.app.controller.recommendation_asset(candidate['id'],kind=kind,mode=mode)
         label=candidate['title']+' · '+MODES[mode]+' · '+('基础拼接' if kind=='comparison' else '处理后')
-        return self.app.start_playback(playback_asset(asset),('recommendation',candidate['id'],mode,kind),label)
+        return self.app.start_playback(playback_asset(asset),('recommendation',candidate['id'],mode,kind),label,context=context)
 
     def apply(self, candidate_id, mode):
         ref = self.app.controller.confirmation_ref(candidate_id,mode=mode)
