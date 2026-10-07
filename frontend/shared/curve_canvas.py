@@ -10,6 +10,7 @@ import ui_platform
 from curve_theme import rounded, font, hint, EMOTION_COLORS, EMOTION_NAMES, EMOTION_INK
 from curve_visuals import stable_number, draw_notes
 from curve_scrollbar import TransientScrollbar
+from curve_raster import pixels
 
 
 def snap_tick(tick):
@@ -24,6 +25,7 @@ class CurveCanvas(ttk.Frame):
     def __init__(self, parent, app, stage_parent=None):
         super().__init__(parent, style='Curve.Panel.TFrame')
         self.app = app
+        self.scroll_timer=None;self.last_scroll=None
         self.project = None
         self.readonly = False
         self.view_memory_info = None
@@ -36,14 +38,16 @@ class CurveCanvas(ttk.Frame):
         self.boundary_label_boxes = {}
         self.accepted_bridge_boxes = {}
         self.range_badges = []
+        self.number_badges = []
         self.range_badge_targets = {}
         self.bridge_boxes = {}
         self.connection_boxes = {}
         self.selected_bridge_id = None
         self.selected_connection_id = None
         self.selected_id = None
-        self.scale = .085
-        self.margin = 36
+        self.scale = .085*pixels(app.root,100)/100
+        self.half_block=pixels(app.root,28)
+        self.margin = pixels(app.root,36)
         self.boxes = {}
         self.drag = None
         self.preview = None
@@ -164,6 +168,7 @@ class CurveCanvas(ttk.Frame):
         self.boundary_label_boxes = {}
         self.accepted_bridge_boxes = {}
         self.range_badges = []
+        self.number_badges = []
         self.range_badge_targets = {}
         if self.project is None:
             c.configure(scrollregion=(0,0,max(1,c.winfo_width()),max(1,c.winfo_height())))
@@ -212,7 +217,7 @@ class CurveCanvas(ttk.Frame):
         for placement in self.project['placements']:
             a,b = self.x(placement['start_tick']), self.x(placement['start_tick']+placement['length_ticks'])
             center = self.y(self.level(placement['start_tick']+placement['length_ticks']/2))
-            box = (a,center-28,b,center+28)
+            box = (a,center-self.half_block,b,center+self.half_block)
             self.boxes[placement['id']] = box
             rounded(c,box,EMOTION_COLORS[placement['emotion']],p['accent'] if placement['id']==self.selected_id else p['line'])
             snapshot = placement['emotion_variant'] or placement['base_snapshot']
@@ -280,8 +285,8 @@ class CurveCanvas(ttk.Frame):
         measure=Font(root=self.canvas,font=font(10)).measure
         text=label
         while text and measure(text+('…' if text!=label else ''))>b-a-8:text=text[:-1]
-        if text:self.canvas.create_text(a+4,top+13,anchor='nw',text=text+('…' if text!=label else ''),fill=ink,font=font(10),tags='block-label')
-        draw_notes(self.canvas,(a+4,top+30,b-4,bottom-5),notes,start,length,ink,stroke=2,tags=(tag,'final-note') if self.recommendation_preview is not None or self.accepted_music is not None else tag)
+        if text:self.canvas.create_text(a+4,top+pixels(self.app.root,13),anchor='nw',text=text+('…' if text!=label else ''),fill=ink,font=font(10),tags='block-label')
+        draw_notes(self.canvas,(a+4,top+pixels(self.app.root,30),b-4,bottom-pixels(self.app.root,5)),notes,start,length,ink,stroke=2,tags=(tag,'final-note') if self.recommendation_preview is not None or self.accepted_music is not None else tag)
 
     def draw_final_music(self):
         p = self.app.theme.colors
@@ -293,7 +298,7 @@ class CurveCanvas(ttk.Frame):
                 if protection['kind']!='bridge' or protection['origin']!='automatic':continue
                 start,end = protection['start_tick'],protection['end_tick']
                 center = self.y(self.level((start+end)/2))
-                box = (self.x(start),center-28,self.x(end),center+28)
+                box = (self.x(start),center-self.half_block,self.x(end),center+self.half_block)
                 self.accepted_bridge_boxes[protection['id']] = box
                 self.canvas.create_rectangle(*box,fill=p['selected'],outline=p['ink'],width=1,
                     dash=() if protection['status']=='CONTENT_READY' else (3,3),tags='accepted-bridge')
@@ -318,12 +323,19 @@ class CurveCanvas(ttk.Frame):
     def scrolled(self, first, last):
         self.scrollbar.set(first,last)
         self.layout_boundary_labels()
+        view=(first,last)
+        if self.last_scroll!=view:
+            self.last_scroll=view
+            if self.project and self.scroll_timer is None:self.scroll_timer=self.after_idle(self.redraw_scroll)
+
+    def redraw_scroll(self):
+        self.scroll_timer=None;self.draw()
 
     def layout_boundary_labels(self):
         """Pack measured labels in the viewport; exact boundary lines never move."""
         c = self.canvas
         left,right = c.canvasx(0)+4,c.canvasx(c.winfo_width())-4
-        placed = [box for box,_ in self.range_badges]
+        placed = [box for box,_ in self.range_badges+self.number_badges]
         self.boundary_label_boxes = {}
         for ident,(label,link) in self.boundary_labels.items():
             x = (self.boundary_boxes[ident][0]+self.boundary_boxes[ident][2])/2
@@ -400,7 +412,7 @@ class CurveCanvas(ttk.Frame):
                 if protection['kind']!='bridge' or protection['origin']!='manual':continue
                 a,b = self.x(protection['start_tick']),self.x(protection['end_tick'])
                 center = self.y(self.level((protection['start_tick']+protection['end_tick'])/2))
-                box = (a,center-28,b,center+28)
+                box = (a,center-self.half_block,b,center+self.half_block)
                 self.canvas.create_rectangle(*box,outline=colors['ink'],width=1,
                     dash=() if protection['status']=='CONTENT_READY' else (3,3),tags='manual-bridge-range')
                 state = '音乐已就绪/保护' if protection['status']=='CONTENT_READY' else '范围已保护，音乐尚未就绪'
@@ -415,7 +427,7 @@ class CurveCanvas(ttk.Frame):
             region = overlay['range']
             a,b = self.x(region['start_tick']),self.x(region['end_tick'])
             center = self.y(self.level((region['start_tick']+region['end_tick'])/2))
-            box = (a,center-28,b,center+28)
+            box = (a,center-self.half_block,b,center+self.half_block)
             self.bridge_boxes[overlay['id']] = box
             failed = overlay['result_status'] in ('FAILED','CANCELLED')
             ink = colors['error'] if failed else colors['ink']
@@ -447,7 +459,7 @@ class CurveCanvas(ttk.Frame):
             region = overlay['range']
             a,b = self.x(region['start_tick']),self.x(region['end_tick'])
             center = self.y(self.level((region['start_tick']+region['end_tick'])/2))
-            box = (a,center-28,b,center+28)
+            box = (a,center-self.half_block,b,center+self.half_block)
             self.connection_boxes[overlay['id']] = box
             ready = overlay['status']=='CONTENT_READY'
             failed = overlay['result_status'] in ('FAILED','CANCELLED')
@@ -475,6 +487,11 @@ class CurveCanvas(ttk.Frame):
             if a-pad<=x<=b+pad and t<=y<=d:return ident
         return None
 
+    def memory_detail(self):
+        if not self.readonly:return self.app.memory_description()
+        protections=self.bridge_preview['protections'] if self.bridge_preview is not None else self.project['protections']
+        return self.app.preview_memory_description(dict(project=self.project,memory_info=self.view_memory_info,protections=protections))
+
     def draw_memory(self):
         overlay = self.memory_overlay()
         if not overlay:return
@@ -494,10 +511,10 @@ class CurveCanvas(ttk.Frame):
             rounded(self.canvas,badge,'#eee3c8',EMOTION_INK,radius=5,tags='memory-label')
             self.canvas.create_text(badge[0]+6,(badge[1]+badge[3])/2,anchor='w',text=label,
                                     fill=EMOTION_INK,font=font(9,True),tags='memory-label')
-            detail=self.app.preview_memory_description() if self.readonly else self.app.memory_description()
+            detail=self.memory_detail()
             self.range_badges.append((badge,detail))
         else:self.range_badge((a,box[1],b,box[3]),'忆',p['ink'],'memory-label',0,
-            self.app.preview_memory_description() if self.readonly else self.app.memory_description())
+            self.memory_detail())
         if protection:
             for note in protection['notes']:
                 self.canvas.create_line(self.x(note['start_tick']),box[3]+7,
@@ -515,9 +532,11 @@ class CurveCanvas(ttk.Frame):
         label = c.create_text(x+3,y+2,anchor='nw',text=text,fill=ink,font=font(9,True),tags=tag)
         l,t,r,d = c.bbox(label)
         width,height=r-l+6,d-t+4
+        if width>right-left-8:
+            c.delete(label);return
         y=44+lane*22
         while True:
-            occupied=sorted((max(left+4,u-3),min(right-4,z+3)) for (u,v,z,w),_ in self.range_badges if v<y+height and y<w)
+            occupied=sorted((max(left+4,u-3),min(right-4,z+3)) for (u,v,z,w),_ in self.range_badges+self.number_badges if v<y+height and y<w)
             cursor=left+4;options=[]
             for u,z in occupied+[(right-4,right-4)]:
                 if u-cursor>=width:options.append(max(cursor,min(x,u-width)))
@@ -530,11 +549,11 @@ class CurveCanvas(ttk.Frame):
         c.create_line((a+b)/2,top,(a+b)/2,y-2,x+width/2,y-2,x+width/2,y,fill=ink,width=1,tags=tag)
         surface = c.create_rectangle(*badge,fill=self.app.theme.colors['panel'],outline=ink,width=1,tags=tag)
         c.tag_raise(label,surface)
-        self.range_badges.append((badge,detail))
+        (self.number_badges if tag=='short-block-label' else self.range_badges).append((badge,detail))
         if target:self.range_badge_targets[badge] = target
 
     def badge_detail(self, x, y, select=False):
-        for (a,t,b,d),detail in reversed(self.range_badges):
+        for (a,t,b,d),detail in reversed(self.number_badges+self.range_badges):
             if a<=x<=b and t<=y<=d:
                 target = self.range_badge_targets.get((a,t,b,d))
                 if select and target:
@@ -571,7 +590,7 @@ class CurveCanvas(ttk.Frame):
             if overlay and self.hit(x,y)==overlay[0]['placement_id']:
                 region = overlay[1] or overlay[0]['range']
                 if region and self.x(region['start_tick'])<=x<=self.x(region['end_tick']):
-                    self.app.show_detail(self.app.preview_memory_description() if self.readonly else self.app.memory_description())
+                    self.app.show_detail(self.memory_detail())
 
     def contains_root(self, x_root, y_root):
         c = self.canvas
@@ -802,6 +821,8 @@ class CurveCanvas(ttk.Frame):
         return 'break'
 
     def destroyed(self, event):
+        if event.widget==self and self.scroll_timer is not None:
+            self.after_cancel(self.scroll_timer);self.scroll_timer=None
         if event.widget==self and self.edge_timer is not None:
             self.after_cancel(self.edge_timer)
             self.edge_timer = None

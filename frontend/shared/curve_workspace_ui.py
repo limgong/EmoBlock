@@ -5,6 +5,7 @@ from curve_theme import font, hint
 from curve_cards import MaterialCards
 from curve_canvas import CurveCanvas
 from curve_icons import IconButton
+from curve_raster import pixels
 from curve_scrollbar import TransientScrollbar
 
 
@@ -15,10 +16,10 @@ def button(parent, text, command, style='Curve.TButton', **kw):
 def build_page(page, parent, app, methods, emotions):
     ttk.Frame.__init__(page, parent, style='Curve.TFrame')
     page.app = app
-    page.columnconfigure(1, weight=0, minsize=252)
-    page.columnconfigure(2, weight=1, minsize=440)
+    page.columnconfigure(1, weight=0, minsize=pixels(app.root,252))
+    page.columnconfigure(2, weight=1, minsize=pixels(app.root,440))
     page.rowconfigure(0, weight=1)
-    page.source_panel = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=180)
+    page.source_panel = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=pixels(app.root,180))
     page.source_panel.grid(row=0, column=0, sticky='nsew', padx=(0,8))
     page.source_panel.pack_propagate(False)
     row = ttk.Frame(page.source_panel, style='Curve.Panel.TFrame'); row.pack(fill='x')
@@ -42,7 +43,7 @@ def build_page(page, parent, app, methods, emotions):
     hint(page.source_audition, '选择来源只筛选；试听明确准备并播放该原始旋律。', app.show_detail)
     page.source_reminder=ttk.Label(page.source_panel,text='原始来源始终保留',style='Curve.Muted.TLabel')
     page.source_reminder.pack(anchor='w',pady=8)
-    page.middle = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=252)
+    page.middle = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=pixels(app.root,252))
     page.middle.grid(row=0, column=1, sticky='nsew', padx=(0,8));page.middle.pack_propagate(False)
     ttk.Label(page.middle,text='旋律素材',style='Curve.Title.TLabel').pack(anchor='w',pady=(2,6))
     row=page.derive_row=ttk.Frame(page.middle,style='Curve.Panel.TFrame');row.pack(fill='x')
@@ -63,7 +64,7 @@ def build_page(page, parent, app, methods, emotions):
     page.cards.pack(fill='both',expand=True,pady=(6,0))
     page.right=ttk.Frame(page,style='Curve.Panel.TFrame',padding=8);page.right.grid(row=0,column=2,sticky='nsew')
     # Packed bottom first: the player always retains its own space.
-    page.footer=ttk.Frame(page.right,style='Curve.Panel.TFrame',height=134)
+    page.footer=ttk.Frame(page.right,style='Curve.Panel.TFrame',height=pixels(app.root,138))
     page.footer.pack(side='bottom',fill='x',pady=(6,0));page.footer.pack_propagate(False)
     page.stage_area=ttk.Frame(page.right,style='Curve.Panel.TFrame')
     page.stage_area.pack(side='bottom',fill='x')
@@ -85,7 +86,8 @@ def build_page(page, parent, app, methods, emotions):
     page.plus_button=IconButton(row,app,'plus','加一格',lambda:app.adjust_grid(1),tip='增加一个四拍格；一次撤销可恢复。')
     page.plus_button.pack(side='left',padx=2)
     # Legacy callable resize uses grid_count; there is no editable count field.
-    page.grid_entry,page.resize_button=page.plus_button,page.minus_button
+    page.grid_entry=ttk.Entry(row,textvariable=page.grid_count,style='Curve.TEntry')
+    page.resize_button=page.minus_button
     page.final_button=IconButton(row,app,'generate','生成方案',lambda:app.safe(app.generate_recommendations),style='Curve.Primary.TButton',label=True)
     page.final_button.pack(side='right')
     page.gap_panel=ttk.Frame(page.right,style='Curve.Panel.TFrame')
@@ -116,7 +118,7 @@ def build_chrome(app):
     root=app.root
     app.shell=ttk.Frame(root,style='Curve.TFrame',padding=8);app.shell.pack(fill='both',expand=True)
     app.shell.columnconfigure(0,weight=1);app.shell.rowconfigure(1,weight=1)
-    header=ttk.Frame(app.shell,style='Curve.TFrame',height=48)
+    header=ttk.Frame(app.shell,style='Curve.TFrame',height=pixels(root,48))
     header.grid(row=0,column=0,sticky='ew',pady=(0,8));header.pack_propagate(False)
     app.brand_button=IconButton(header,app,'blocks','EmoBlocks',lambda:None,style='Curve.Header.TButton')
     app.brand_button.pack(side='left')

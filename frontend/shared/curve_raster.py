@@ -4,7 +4,7 @@ import tkinter as tk
 
 
 def scale(root):
-    return max(.75,float(root.tk.call('tk','scaling'))/(4/3))
+    return max(1.,round(float(root.tk.call('tk','scaling'))/(4/3),2))
 
 
 def pixels(root,value):return max(1,round(value*scale(root)))
@@ -44,7 +44,7 @@ def surface_image(root,palette,role,state):
     normal=palette['accent'] if role=='Primary' and palette['bg']!='#1c1c1e' else palette['inset']
     fill=palette['selected'] if state=='pressed' and role!='Primary' else normal
     if state=='disabled':fill=palette['inset']
-    border=palette['accent'] if state in ('active','focus','selected') else palette['line']
+    border=palette['accent'] if role=='Primary' or state in ('active','focus','selected') else palette['line']
     if state=='pressed':border=palette['ink']
     size=pixels(root,44)
     def color(x,y):

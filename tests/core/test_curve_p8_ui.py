@@ -240,7 +240,7 @@ class CurveP8MappedTests(MappedUIFixture):
         self.app.refresh();self.root.update()
         self.assertNotEqual(self.app.page.cards.rows,rows)
         ident=self.controller._project['materials'][0]['id']
-        self.assertIn('changed',self.app.page.cards.rows[ident].winfo_children()[0].winfo_children()[0].cget('text'))
+        self.assertIn('changed',self.app.page.cards.rows[ident].winfo_children()[0].winfo_children()[0].curve_tooltip.text())
 
     def test_long_transport_name_is_compact_but_focus_displays_full_object(self):
         name='完整对象名称 '*40

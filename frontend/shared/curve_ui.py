@@ -114,7 +114,8 @@ class CurveApplication:
         self.state_data = self.controller.state()
         self.accepted_music = None
         root.title('EmoBlocks · 旋律与强度')
-        root.minsize(1020,700)
+        from curve_raster import pixels
+        root.minsize(pixels(root,1020),pixels(root,700))
         root.geometry('1280x800')
         self.source_filter_id = None
         self.details_expanded = False
@@ -435,6 +436,7 @@ class CurveApplication:
         self.bridge.refresh()
         self.connection.refresh()
         self.recommendation.refresh()
+        self.theme_button.set_icon('sun' if self.theme.name=='dark' else 'moon')
         self.page.final_button.configure(text='生成方案' if self.recommendation.available() else '尚未接通')
         self.page.final_button.state(['!disabled'] if self.recommendation.available() and self.has_generation_input() and not self.jobs else ['disabled'])
         sources = project['sources'] if project else []
@@ -575,6 +577,7 @@ class CurveApplication:
             page.history_panel.pack_forget();page.advanced_row.pack_forget()
             self.detail_row.pack(fill='x',before=page.stage_anchor,pady=(2,0))
         else:self.detail_row.pack_forget()
+        page.footer.pack_configure(pady=0)
         if empty:
             page.creation_row.pack_forget();page.memory_label.pack_forget()
             page.empty_workspace.place(x=0,y=0,relwidth=1,relheight=1);page.empty_workspace.lift()
@@ -583,8 +586,14 @@ class CurveApplication:
             for w in (page.all_materials_button,page.source_frame,page.source_notes,page.source_audition,page.source_reminder):w.pack_forget()
         else:
             page.empty_workspace.place_forget();page.timeline.empty_import.place_forget()
-            page.memory_label.pack(fill='x',before=page.timeline,pady=(2,0))
-            page.creation_row.pack(fill='x',before=page.memory_label)
+            preview=self.private_preview()
+            if preview and (preview.get('memory_info') or {}).get('state')=='BOUND':
+                # The actual protected badge remains on the canvas; avoid a duplicate
+                # bound-memory row while preserving pending-gap/blank explanations.
+                page.memory_label.pack_forget()
+            else:page.memory_label.pack(fill='x',before=page.timeline,pady=(2,0))
+            if self.private_preview() or self.recommendation.visible or any(j['kind']=='RECOMMENDATION' for j in self.jobs.values()):page.creation_row.pack_forget()
+            else:page.creation_row.pack(fill='x',before=page.memory_label)
             page.timeline.scrollbar.pack(fill='x')
             page.all_materials_button.pack(fill='x',pady=6)
             page.source_frame.pack(fill='both',expand=True)
@@ -592,8 +601,9 @@ class CurveApplication:
             page.source_reminder.pack(anchor='w',pady=8)
         page.timeline.canvas.configure(takefocus=not empty)
 
-    def preview_memory_description(self):
-        preview = self.private_preview()
+    def preview_memory_description(self,preview=None):
+        preview = self.private_preview() if preview is None else preview
+        if preview is None:return '候选视图已关闭。'
         info = preview['memory_info']
         if not info:return '候选记忆状态不可用。'
         if info['state']=='PENDING_GAP':return '候选记忆待落位 · 峰值处仍为空缺。'
@@ -847,7 +857,7 @@ class CurveApplication:
             if Path(asset['wav_path'])==path:
                 self.ready_assets.pop(key,None)
                 self.ready_file_digests.pop(key,None)
-                self.ready_contexts.pop(key,None)
+                getattr(self,'ready_contexts',{}).pop(key,None)
 
     def audition_profile(self):
         query = getattr(self.controller,'audition_renderer_profile',None)
@@ -878,6 +888,7 @@ class CurveApplication:
         return asset
 
     def _cache_asset(self, key, asset, expected_profile=None, context=None):
+        if not hasattr(self,'ready_contexts'):self.ready_contexts={}
         path = Path(asset['wav_path'])
         profile = self.audition_profile()
         if ((expected_profile is not None and asset.get('renderer_version')!=expected_profile)
@@ -966,14 +977,45 @@ class CurveApplication:
             self._discard_asset_path(path)
             self.tell('试听文件已移动或缺失，请重新准备。',True)
             return False
-        duration = self.player.play(path)
+        expected=(asset.get('files',{}).get('wav') or {}).get('sha256')
+        if expected is None and (context or {}).get('neutral'):
+            expected=self.ready_file_digests.get(context['key'],{}).get(str(path))
+        if expected is None:
+            expected=next((self.ready_file_digests.get(key,{}).get(str(path))
+                           for key,value in self.ready_assets.items() if value==asset),None)
+        try:
+            digest=self.file_digest(path)
+            if expected is not None and digest!=expected:
+                raise ValueError('播放文件字节已变化，请明确重新准备。')
+            duration=self._play_checked(path,expected or digest)
+        except (ValueError,OSError) as exc:
+            self._discard_asset_path(path)
+            self.tell(str(exc),True)
+            return False
         self.playing_target = dict(target=target,label=label,asset=copy.deepcopy(asset),context=copy.deepcopy(context) or {},
-            wav_digest=self.file_digest(path),segments=copy.deepcopy((context or {}).get('segments',[])),
+            wav_digest=expected or digest,segments=copy.deepcopy((context or {}).get('segments',[])),
             bpm=(context or {}).get('bpm'),mapping_reason=(context or {}).get('mapping_reason') or (None if context else '无可信音符映射；仅显示实际音频与时间。'))
         self.play_duration = duration
         self.seek.configure(to=duration)
         self.update_transport()
         return True
+
+    def _play_checked(self,path,expected,start=0.):
+        """Keep the existing device API; reject mutations while it opens/reads WAV."""
+        def stamp():
+            state=Path(path).stat()
+            return state.st_dev,state.st_ino,state.st_size,state.st_mtime_ns,state.st_ctime_ns
+        before=stamp()
+        if self.file_digest(path)!=expected or stamp()!=before:
+            raise ValueError('播放文件字节已变化，请明确重新准备。')
+        try:
+            duration=self.player.play(path,start=start)
+            if stamp()!=before or self.file_digest(path)!=expected or stamp()!=before:
+                raise ValueError('播放文件在读取期间变化，已停止；请明确重新准备。')
+            return duration
+        except Exception:
+            self.stop()
+            raise
 
     def play_selected(self):
         if not self.selected_target:
@@ -1011,7 +1053,7 @@ class CurveApplication:
             else:
                 was_paused = self.player.status()[1]=='paused'
                 self.validate_playing()
-                self.player.play(self.playing_target['asset']['wav_path'],start=max(0.,position))
+                self._play_checked(self.playing_target['asset']['wav_path'],self.playing_target['wav_digest'],start=max(0.,position))
                 if was_paused:self.player.pause()
 
     def validate_playing(self):
@@ -1051,10 +1093,16 @@ class CurveApplication:
         label = label[:limit]+('…' if len(label)>limit else '')
         prefix = {'playing':'播放中','paused':'已暂停','stopped':'已结束','closed':'已停止'}.get(mode,mode)
         asset = self.playing_target['asset'] if self.playing_target else None
-        durations = f' · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
+        durations = f'\n预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
         mode_label=('编配' if asset.get('mode')=='arranged' else '单旋律') if asset else ''
         side_label=('基础' if asset.get('kind')=='comparison' else '处理后' if asset.get('kind')=='final' else '') if asset else ''
-        self.transport_label.configure(text=self.compact(f'{prefix} · {playing[:9]}'+(f' · {mode_label} {side_label}' if asset else '')+f' · {position:.1f}/{self.play_duration:.1f}秒'+(f' · 预计正文{asset["body_seconds"]:.1f}秒 / 实际音频{asset["audio_seconds"]:.1f}秒' if asset else ''),width=self.page.right.winfo_width()-(180 if self.last_export else 28)),wraplength=0)
+        from tkinter import font as tkfont
+        width=max(90,self.transport_label.winfo_width())
+        measure=tkfont.Font(root=self.root,font=font()).measure
+        name=playing[:9];clock=f' · {position:.1f}/{self.play_duration:.1f}秒'
+        suffix=(f' · {mode_label} {side_label}' if asset else '')
+        while len(name)>1 and measure(prefix+' · '+name+clock+suffix)>width:name=name[:-1]
+        self.transport_label.configure(text=prefix+' · '+name+('…' if name!=playing else '')+clock+suffix+durations,wraplength=0)
         self.cancel_button.state(['!disabled'] if self.jobs else ['disabled'])
         self.pause_button.set_icon('play' if mode=='paused' else 'pause')
         self.pause_button.state(['!disabled'] if mode in ('playing','paused') else ['disabled'])
@@ -1313,7 +1361,8 @@ class CurveApplication:
                 self.export_receipt.configure(state='disabled')
                 self.export_summary.configure(text=f'{display_format} 已导出')
                 self.export_row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(1,0))
-                self.page.footer.configure(height=162)
+                from curve_raster import pixels
+                self.page.footer.configure(height=pixels(self.root,162))
                 self.show_detail(f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.tell('导出成功 · '+display_format+' · 完整位置见详情。')
                 return path
@@ -1354,6 +1403,7 @@ class CurveApplication:
         self.page.combo_panel.pack_forget()
         self.selected_target = self.selected_source_id = self.selected_material_id = self.selected_history_id = None
         self.ready_assets.clear()
+        self.ready_contexts.clear()
         self.ready_file_digests.clear()
         self.stop()
         self.refresh()

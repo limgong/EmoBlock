@@ -1,5 +1,6 @@
 """Mapped P7 Facade/ACK behavior. Fixture assets are not LMMS/audio evidence."""
 import copy
+import hashlib
 from pathlib import Path
 import threading
 import time
@@ -155,7 +156,7 @@ class RecommendationController(ConnectionController):
         return dict(schema='emoblocks.final-asset.v1',spec_rev=model.SPEC_REV,contract_rev=P7,
             id=f'{candidate_id}:{mode}:{kind}',version=1,candidate_ref=ref(candidate_id),
             score_ref=ref(f'{candidate_id}:{mode}:{kind}'),kind=kind,mode=mode,renderer_version='fixture-only',
-            files={ext:dict(path=str(self.wav),sha256='fixture-only',bytes=1) for ext in ('wav','mid','mmp')},
+            files={ext:dict(path=str(self.wav),sha256=hashlib.sha256(self.wav.read_bytes()).hexdigest(),bytes=self.wav.stat().st_size) for ext in ('wav','mid','mmp')},
             body_ticks=self._project['total_ticks'],body_seconds=4.,audio_seconds=4.5,
             tail_policy='fixture-only',asset_fingerprint='fixture-only')
 
@@ -704,8 +705,9 @@ class RecommendationMappedTests(MappedUIFixture):
                 self.assertIn('bound-A',self.app.detail_text.get())
                 self.assertNotIn('别的父桥',self.app.detail_text.get())
                 self.assertGreaterEqual(canvas.canvas.winfo_height(),160)
-                for button in (self.rec.calculate_button,self.rec.auto_button,self.rec.cancel_button,
-                               self.rec.confirm_button,self.rec.final_button,self.rec.comparison_button):
+                self.assertFalse(self.rec.calculate_button.winfo_ismapped())  # Edit length/generate row is hidden in private review.
+                for button in (self.rec.auto_button,self.rec.cancel_button,
+                               self.rec.confirm_button,self.rec.final_button,self.rec.comparison_button,self.rec.back_button):
                     self.assertTrue(button.winfo_ismapped())
                     self.assertGreaterEqual(button.winfo_height(),44)
                     self.assertGreaterEqual(button.winfo_rootx(),self.app.page.right.winfo_rootx())

@@ -95,19 +95,19 @@ class IconButton(ttk.Button):
         return 'break'
 
 
-class CardIconButton(tk.Canvas):
-    """Embedded card control paints its own icon, avoiding Aqua child-label clipping."""
+class CardIconButton(tk.Button):
+    """Real native Button fallback for an embedded card, with an explicit Tcl name."""
     def __init__(self,parent,app,icon,text,command):
-        import tkinter as tk
-        self.app,self.icon,self.text,self.command=app,icon,text,command
-        self.states=set();self.image_ref=None;self.surface_ref=None
-        self.size=pixels(app.root,44)
-        super().__init__(parent,width=self.size,height=self.size,highlightthickness=0,takefocus=True,bg=parent.cget('bg'))
-        self.bind('<Enter>',lambda _:self.state(['active']));self.bind('<Leave>',lambda _:self.state(['!active','!pressed']))
-        self.bind('<FocusIn>',lambda _:self.state(['focus']));self.bind('<FocusOut>',lambda _:self.state(['!focus']))
-        self.bind('<ButtonPress-1>',self.press);self.bind('<ButtonRelease-1>',self.release)
-        for event in ('<Return>','<space>'):self.bind(event,lambda _:self.activate())
-        self.bind('<Configure>',lambda _:self.refresh_icon())
+        self.app,self.icon=app,icon;self.states=set();self.image_ref=None
+        super().__init__(parent,text=text,command=command,compound='none',takefocus=True,
+                         relief='flat',borderwidth=0,highlightthickness=0,padx=0,pady=0)
+        self.bind('<Enter>',lambda _:self.state(['active']))
+        self.bind('<Leave>',lambda _:self.state(['!active','!pressed']))
+        self.bind('<FocusIn>',lambda _:self.state(['focus']))
+        self.bind('<FocusOut>',lambda _:self.state(['!focus']))
+        self.bind('<ButtonPress-1>',lambda _:self.state(['pressed']),add='+')
+        self.bind('<ButtonRelease-1>',lambda _:self.state(['!pressed']),add='+')
+        for event in ('<Return>','<space>'):self.bind(event,self.activate)
         root=app.root
         if not hasattr(root,'curve_icon_buttons'):root.curve_icon_buttons=weakref.WeakSet()
         root.curve_icon_buttons.add(self)
@@ -119,6 +119,7 @@ class CardIconButton(tk.Canvas):
             for change in changes:
                 if change.startswith('!'):self.states.discard(change[1:])
                 else:self.states.add(change)
+            self.configure(state='disabled' if 'disabled' in self.states else 'normal')
             self.refresh_icon()
         return tuple(self.states)
 
@@ -128,29 +129,18 @@ class CardIconButton(tk.Canvas):
         from curve_raster import surface_image
         p=dict(self.app.theme.colors);p['panel']=self.master.cget('bg')
         state=next((s for s in ('disabled','pressed','focus','active') if s in self.states),'normal')
+        key=(self.icon,p['panel'],self.app.theme.name,state,pixels(self.app.root,44))
         cache=getattr(self.app.root,'curve_card_controls',{})
-        key=(self.icon,p['panel'],self.app.theme.name,state,self.size)
         if key not in cache:
             ink=p['muted'] if state=='disabled' else p['ink']
             fill=p['selected'] if state=='pressed' else p['inset']
-            cache[key]=(surface_image(self.app.root,p,'Button',state),icon_image(self.app.root,self.icon,ink,fill))
-        self.surface_ref,self.image_ref=cache[key]
+            image=surface_image(self.app.root,p,'Button',state)
+            icon=icon_image(self.app.root,self.icon,ink,fill)
+            image.tk.call(str(image),'copy',str(icon),'-to',pixels(self.app.root,11),pixels(self.app.root,11))
+            cache[key]=image
+        self.image_ref=cache[key]
         while len(cache)>80:cache.pop(next(iter(cache)))
         self.app.root.curve_card_controls=cache
-        self.delete('all');w,h=self.winfo_width(),self.winfo_height()
-        self.create_image(w/2,h/2,image=self.surface_ref,tags='card-control-surface')
-        self.create_image(w/2,h/2,image=self.image_ref,tags='card-control-icon')
+        self.configure(image=self.image_ref,bg=p['panel'],activebackground=p['panel'],fg=p['ink'],disabledforeground=p['muted'])
 
-    def press(self,event):
-        if 'disabled' not in self.states:self.focus_set();self.state(['pressed'])
-        return 'break'
-
-    def release(self,event):
-        pressed='pressed' in self.states;self.state(['!pressed'])
-        if pressed and 0<=event.x<self.winfo_width() and 0<=event.y<self.winfo_height():self.invoke()
-        return 'break'
-
-    def invoke(self):
-        if 'disabled' not in self.states:return self.command()
-
-    def activate(self):self.invoke();return 'break'
+    def activate(self,event=None):self.invoke();return 'break'

@@ -146,7 +146,7 @@ class Tooltip:
         self.timer=self.widget.after(450,self.show)
 
     def show(self):
-        self.timer=None
+        self.hide()
         if not self.widget.winfo_exists() or not self.widget.winfo_ismapped():return
         text=self.text() if callable(self.text) else self.text
         if not text:return
@@ -172,5 +172,18 @@ class Tooltip:
 
 
 def hint(widget, text, show):
-    widget.curve_tooltip=Tooltip(widget,text)
-    for event in ('<Enter>','<FocusIn>'):widget.bind(event,lambda _,t=text:show(t() if callable(t) else t),add='+')
+    existing=getattr(widget,'curve_tooltip',None)
+    if existing is not None:
+        existing.hide()
+        existing.text=text
+        existing.show_detail=show
+        return existing
+    tooltip=widget.curve_tooltip=Tooltip(widget,text)
+    tooltip.show_detail=show
+    # A layout/theme remap can synthesize Enter under a stationary OS pointer.
+    # It may show the transient tooltip, but must not replace explicit selected details.
+    def detail(_):
+        value=tooltip.text() if callable(tooltip.text) else tooltip.text
+        tooltip.show_detail(value)
+    for event in ('<Motion>','<FocusIn>'):widget.bind(event,detail,add='+')
+    return tooltip

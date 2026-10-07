@@ -44,5 +44,7 @@ def note_segments(box, notes, start_tick, length_ticks, stroke=2):
 
 
 def draw_notes(canvas, box, notes, start_tick, length_ticks, ink=DATA_INK, stroke=2, tags=()):
+    from curve_raster import pixels
+    stroke=pixels(canvas.winfo_toplevel(),stroke)
     return [canvas.create_line(a,y,b,y,fill=ink,width=stroke,capstyle='round',tags=tags)
             for a,y,b,_,ident in note_segments(box,notes,start_tick,length_ticks,stroke)]

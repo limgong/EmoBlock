@@ -7,6 +7,7 @@ from curve_theme import font, hint, rounded
 from curve_visuals import TYPE_COLORS, TYPE_NAMES, DATA_INK, material_type, stable_number, draw_notes
 from curve_icons import CardIconButton
 from curve_scrollbar import TransientScrollbar
+from curve_raster import pixels
 
 
 class MaterialCards(ttk.Frame):
@@ -15,6 +16,8 @@ class MaterialCards(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent,style='Curve.Panel.TFrame')
         self.app = app
+        self.CARD_HEIGHT=pixels(app.root,96)
+        self.gap=pixels(app.root,8)
         self.expanded = set()
         self.rows = {}
         self.row_versions = {}
@@ -78,7 +81,7 @@ class MaterialCards(ttk.Frame):
 
     def render_rows(self):
         visible = list(self.visible_materials())
-        stride = self.CARD_HEIGHT+8
+        stride = self.CARD_HEIGHT+self.gap
         width = max(1,self.canvas.winfo_width())
         height = max(1,len(visible)*stride)
         self.canvas.itemconfigure(self.window,width=width,height=height)
@@ -121,7 +124,7 @@ class MaterialCards(ttk.Frame):
             card.place(x=left,y=index*stride+4,width=max(1,width-left-4),height=self.CARD_HEIGHT)
             self.rows[ident] = card
             content = tk.Frame(card,bg=surface)
-            window = card.create_window(8,3,anchor='nw',window=content,height=self.CARD_HEIGHT-6)
+            window = card.create_window(8,3,anchor='nw',window=content,height=self.CARD_HEIGHT-pixels(self.app.root,6))
             def background(event,canvas=card,window=window,fill=surface,selected=selected):
                 canvas.itemconfigure(window,width=max(1,event.width-16))
                 canvas.delete('surface')
@@ -131,7 +134,7 @@ class MaterialCards(ttk.Frame):
             card.bind('<Configure>',background)
             prefix = '子块 · ' if child else ''
             label = stable_number(material)+' · '+material['label']
-            title = tk.Canvas(content,height=28,width=1,bg=surface,highlightthickness=0,takefocus=True,cursor='hand2')
+            title = tk.Canvas(content,height=pixels(self.app.root,28),width=1,bg=surface,highlightthickness=0,takefocus=True,cursor='hand2')
             content.columnconfigure(0,weight=1)
             title.grid(row=0,column=0,sticky='ew',padx=(4,2))
             def shorten(event,widget=title,text=prefix+label):
@@ -140,29 +143,30 @@ class MaterialCards(ttk.Frame):
                 value=text
                 while len(value)>1 and measure(value+'…')>widget.winfo_width()-4:value=value[:-1]
                 widget.delete('all')
-                widget.create_text(1,14,anchor='w',text=value+('…' if value!=text else ''),fill=DATA_INK,font=font(12,True),tags='card-title')
-                if widget.focus_get()==widget:widget.create_rectangle(0,0,max(1,widget.winfo_width()-1),27,outline=self.app.theme.colors['accent'],width=1,tags='card-focus')
+                widget.create_text(1,widget.winfo_height()/2,anchor='w',text=value+('…' if value!=text else ''),fill=DATA_INK,font=font(12,True),tags='card-title')
+                if widget.focus_get()==widget:widget.create_rectangle(0,0,max(1,widget.winfo_width()-1),max(1,widget.winfo_height()-1),outline=self.app.theme.colors['accent'],width=1,tags='card-focus')
             title.bind('<Configure>',shorten);title.bind('<FocusIn>',shorten,add='+');title.bind('<FocusOut>',shorten,add='+')
             kind=TYPE_NAMES[category]+(' · 子块' if child else '')
-            info=tk.Canvas(content,height=24,width=1,bg=surface,highlightthickness=0)
+            info=tk.Canvas(content,height=pixels(self.app.root,24),width=1,bg=surface,highlightthickness=0)
             info.grid(row=1,column=0,sticky='ew',padx=4)
             def type_label(event,widget=info,text=f'{kind} · {material["length_ticks"]/480:g} 拍'):
-                widget.delete('all');widget.create_text(1,12,anchor='w',text=text,fill=DATA_INK,font=font(10),tags='card-type')
+                widget.delete('all');widget.create_text(1,widget.winfo_height()/2,anchor='w',text=text,fill=DATA_INK,font=font(10),tags='card-type')
             info.bind('<Configure>',type_label)
-            b=CardIconButton(content,self.app,'play','试听',
+            controls=tk.Frame(content,bg=surface);controls.grid(row=0,column=1,rowspan=3,sticky='ns',padx=2)
+            b=CardIconButton(controls,self.app,'play','试听',
                          command=lambda m=material:self.app.safe(lambda:self.app.audition_target('material',m['id'])))
-            b.grid(row=0,column=1,rowspan=2,sticky='ns',padx=2)
+            b.pack(side='top')
             hint(b,'明确试听此素材；准备完成后仅有效播放意图可开始。',self.app.show_detail)
-            thumb=tk.Canvas(content,height=28,width=80,bg=surface,highlightthickness=0)
+            thumb=tk.Canvas(content,height=pixels(self.app.root,28),width=80,bg=surface,highlightthickness=0)
             thumb.material_thumbnail=True
             thumb.grid(row=2,column=0,sticky='ew',padx=4,pady=0)
             def notes(event,c=thumb,m=material):
                 c.delete('all')
-                draw_notes(c,(2,2,event.width-2,26),m['notes'],0,m['length_ticks'],DATA_INK,tags='material-note')
+                draw_notes(c,(2,2,event.width-2,c.winfo_height()-2),m['notes'],0,m['length_ticks'],DATA_INK,tags='material-note')
             thumb.bind('<Configure>',notes)
             if expandable:
-                ttk.Button(content,text='收起' if ident in self.expanded else '展开',style='Curve.Compact.TButton',
-                           command=lambda i=ident:self.toggle(i)).grid(row=2,column=1,sticky='ns',padx=2)
+                ttk.Button(controls,text='收起' if ident in self.expanded else '展开',style='Curve.Compact.TButton',
+                           command=lambda i=ident:self.toggle(i)).pack(side='bottom')
             for widget in (card,title,info,thumb):
                 widget.bind('<ButtonPress-1>',lambda e,m=material,w=card:self.app.begin_material_drag(e,m,w))
                 widget.bind('<B1-Motion>',self.app.material_motion)

@@ -28,6 +28,7 @@ def playing_owner(app,canvas):
     if not playing or app.player.status()[1] not in ('playing','paused'):return None
     context=playing.get('context') or {}
     if context.get('neutral'):
+        if app.player.status()[0]*480*context['bpm']/60>=context['total_ticks']:return None
         if context['kind']!='placement' or context['input_key']!=app.input_key() or canvas.readonly:return None
         current=next((p for p in canvas.project['placements'] if p['id']==context['id']),None)
         return context['id'] if current==context['placement'] else None

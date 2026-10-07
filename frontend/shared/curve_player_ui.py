@@ -3,6 +3,7 @@ import audioop
 from collections import OrderedDict
 import hashlib
 import math
+import json
 from pathlib import Path
 import queue
 import threading
@@ -41,7 +42,10 @@ class Waveform(tk.Canvas):
     def dispose(self):self.alive=False;self.cache.clear();self.key=None
 
     def set_target(self,playing):
-        key=(playing['asset']['wav_path'],playing['wav_digest']) if playing else None
+        asset=(playing or {}).get('asset',{})
+        identity=json.dumps(dict(target=(playing or {}).get('target'),key=(playing or {}).get('context',{}).get('key'),
+            ref=asset.get('score_ref'),id=asset.get('id'),version=asset.get('version'),profile=asset.get('renderer_version'),mode=asset.get('mode'),side=asset.get('kind')),sort_keys=True)
+        key=(asset['wav_path'],playing['wav_digest'],identity) if asset.get('wav_path') and playing.get('wav_digest') else None
         if key==self.key:return
         self.key=key;self.pending=None;self.error=None;self.values=[]
         if key in self.cache:self.values=self.cache[key];self.cache.move_to_end(key)
@@ -113,6 +117,7 @@ def build_transport(app,footer):
     app.transport_label=ttk.Label(top,text='尚未播放',style='Curve.Panel.TLabel',takefocus=True)
     app.transport_label.grid(row=0,column=0,sticky='ew')
     hint(app.transport_label,app.transport_description,app.show_detail)
+    app.transport_label.bind('<Button-1>',lambda _:app.show_detail(app.transport_description()))
     app.player_version=tk.StringVar()
     app.version_selector=ttk.Combobox(top,textvariable=app.player_version,state='readonly',width=15,style='Curve.TCombobox',takefocus=True)
     app.version_selector.grid(row=0,column=1,sticky='e',ipady=pixels(app.root,7))
@@ -183,6 +188,7 @@ def update_navigation(app):
     if enabled:
         tick=app.player.status()[0]*480*playing['bpm']/60
         index=max((i for i,s in enumerate(rows) if s['start_tick']<=tick),default=0)
-        app.block_selector.current(index)
+        if playing.get('context',{}).get('total_ticks') is not None and tick>=playing['context']['total_ticks']:app.navigation.set('余音 · 正文结束')
+        else:app.block_selector.current(index)
     else:app.navigation.set('映射不可用')
     app.waveform.set_target(playing);app.waveform.drain();app.waveform.draw()

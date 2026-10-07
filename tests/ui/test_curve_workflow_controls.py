@@ -171,7 +171,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                 self.root.geometry(size);self.root.update()
                 for scroll in (0.,.35,1.):
                     # Invoke the same native canvas scroll command as the scrollbar.
-                    self.root.tk.call(timeline.scrollbar.cget('command'),'moveto',scroll)
+                    timeline.scrollbar.command('moveto',scroll)
                     self.root.update()
                     left,right=canvas.canvasx(0),canvas.canvasx(canvas.winfo_width())
                     boxes=timeline.boundary_label_boxes
