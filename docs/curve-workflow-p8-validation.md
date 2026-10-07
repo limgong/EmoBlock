@@ -118,3 +118,31 @@ D-AUDITION-OWNERSHIP已由lead公开导入/组合/放置及真实P5/P6 none服�
 新增D-RESTORE-ORDER：原P7收据local-auto已接受大工程127707456字节在本轮纯恢复失败，真实诊断仅同priority的segment归属受集合顺序影响。P7独立认证的accepted-current工程55970981字节在本轮正常load/save/reopen/capture-cancel通过（约7.63/6.68/7.32/6.75秒，进程累计峰值RSS约1.44GB）；不能把它替代大工程反例。兼容修复先纳入15.4独立契约，不改原件/不删除来源保护、不用新hash重签旧请求。
 
 第2轮TASK_ID=P8-MATRIX-AND-REPAIR-CONTRACT：MATRIX_VERDICT=PASS、CONTRACT_VERDICT=PASS，总PASS；HEAD=23c03815d7307c3f6393fb622f24295c0accc2d8、前后指纹ce0139373410498ef58554984eff341c41dc3fea7ce496da310bbe78c9adbd95，本轮现场重算一致。15节标FROZEN后安全同步原worktree，才派定向实现。服务runtime1与音乐native p7仍不变，输出profile和布局algorithm_version分别版本化。
+
+## P8定向实施与本机实证（等待最终独立复核）
+
+输出补充OUTPUT_CONTRACT_REV=curve-workflow-v2-r3-p8-output1、布局兼容补充LAYOUT_COMPAT_REV=curve-workflow-v2-r3-p8-layout1均沿用第2轮FROZEN。服务runtime1与各历史音乐native版本不改。本机实现阶段代码提交依次46a7c82、1d88e6c（集成算法0a02fa9）、ed7a039、a22bd4e、82eb99f、a29fe95、cb9c7db、14ac9ab；完整最终HEAD/指纹以仓库外freeze和最终收据为准，不在通过后改动此文档。
+
+已实现的后端修复：逐格式实际认证，MMP单独检查也验证采样；新curve-final-lmms-v2输出使用严格data:/samples/drums/ URI及官方内容固定基准；LMMS子进程使用本次私有config和已认证data根，前后重新认证，不改用户配置。旧curve-final-lmms-v1保持原绑定与合法相同内容副本规则，不自动迁移。Controller.history_output_state按明确所选模式返回三格式独立状态，缺一个不关闭其他有效格式。实际导出的临时完整副本须匹配登记SHA256才原子替换，源变更/复制失败保留原目标。
+
+中性素材试听升级curve-neutral-lmms-v2：组合的独立使用不合成长音，只有同一次真实演奏的连续原音符切片连接，保留首片力度；指纹对应实际发声。算法边界provider只新增布局版本识别，五类音乐规则未重写。
+
+旧curve-boundary-v1存档通过真实来源、最高优先级及全局无环顺序证明纯恢复，完整重放比对每个layout字段；不是忽略metadata或重签旧请求。新curve-boundary-v2-deterministic-layout采用冻结的确定性顺序。新推荐任务在私有运行上下文绑定该算法版本，迟到旧算法结果不能作为新任务应用；旧事实纯读取仍接受。该门禁落实15.4，不新增音乐schema或接口。
+
+本机专项9项通过，覆盖旧布局伪造/全局循环/跨进程hashseed、格式隔离、工厂内容与严格URI、缓存资产profile、源消失、同长度换源原目标保护、所选模式查询纯性、新任务旧布局结果拒绝。后端605项通过（542.607秒；多角色并发环境的实际耗时，不称流畅或性能预算）。前端集成后完整命令和独立验收另在最终记录中列出。早期失败日志保留，不能用它们或基线测试冒充最终通过。
+
+真实公開Controller链：原MIDI导入→固定3格/强度/情绪/放置→完整建议产生2套实际不同音乐，4份comparison/final LMMS连续渲染；另一模式再准备2份。实际MIDI每个note/channel/program/同tick先后/全轨tempo、meter独立解析，MMP实际音符与masterpitch、路由及资源核对，完整WAV PCM读取通过。确认使用同一Score Ref，重复确认不变、一次undo/redo完整恢复；保存61,679,551字节快照重开有效，两模式六格式在中文空格路径导出字节与各自源一致。此项为后端公开Facade，不替代窗口操作。
+
+真实Mac内置扬声器通过配对WavePlayer串行检查6份实际音频的播放、暂停、恢复、停止、重播；设备仅当前MacBook Air扬声器，未更改默认设备。设备流成功不是听感通过，耳机/蓝牙/外接未实测。
+
+音乐对照：18组正常样例及1个精确tick数据场景，63条真实阶段链、51次如实无第二套基础候选、无阶段失败。已找到bridge与连接同时选定且真实端点变化的案例，连接读取桥后末音84而非旧末音62；包含全窗手动bridge与NO_LEGAL_WINDOW。每组保留真实基础、bridge、连接、最终音符/来源/保护/原因；中间中性音色与力度一致，不变阶段共享相同音乐的真实渲染，最终两模式分别输出。精确1tick实际音符保留，输出明确OUTPUT_TIME_UNREPRESENTABLE，无量化，不授予音频就绪或应用资格。全部音频与审计清单位于本轮music-listening，听感仍NOT_TESTED。
+
+当前真实尾音策略未改：正文后固定1秒并沿用现有末尾fade。本轮已审计样例的原始dry PCM在该截点之后均静音，不能据此声称适合所有乐器/素材；最终fade后的零值不能单独证明没有截尾。人工尾音判断仍待反馈。
+
+外部软件：本机LMMS 1.3.0-alpha.2实际打开MMP并查看主旋律；QuickTime10.5实际打开7秒、44.1kHz、16bit立体声WAV。LMMS导入MIDI缺默认General MIDI音色库，未下载安装；音符文件独立解析与第三方音色/人工听感分开。MMP并非自包含工程，依赖目标LMMS工厂资源；本机URI解析及固定内容认证通过，Windows实际解析未测。首次交接脚本指定错误data根的失败诊断已保留；使用实际renderer-context的Contents/share/lmms根后通过，不放宽验证。
+
+127,707,456字节P7已接受存档的修复后纯load/save/reopen/capture-cancel自查通过，原摘要、音乐版本、保护及Ref不变；初测耗时约40–47秒、累计峰值RSS约2.66GB，列为性能限制，不称大工程编辑流畅。最终同机复测另存新的目录，保持128MiB及来源/深度预算，不删除审计以提速。
+
+未完成的人工作业保持独立NOT_TESTED：实体鼠标/双指触控板/键盘、主观音乐与尾音听感、Windows100/125/150%实机、不可用耳机/蓝牙/外接设备。只准备本地交接清单和脚本，不自动发送、上传或推送。最终可执行本机工作全部完成后，缺这些证据时只能P8_PARTIAL。
+
+算法交付的有界队列共80项，已串行完成全部实际输出；其中按实际音乐与模式复用已经认证的同谱文件，而不是重用旧候选或假音频。`music-listening/complete-queue/manifest.json`逐任务记录输入hash/用途与实际输出，19组包含18正常组及精确数据组；精确数据另列拒绝，不在80项无损渲染任务中。候选差异在实际pitch/onset/duration上比较，ID/seed/情绪标签或力度不算差异。18组首套最终双模式的36资产独立文件/PCM审计已通过；队列其余实际不同方案亦保存全谱及原始阶段关联，最终全部用途审计另存仓库外。

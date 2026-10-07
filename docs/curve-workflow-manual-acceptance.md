@@ -60,3 +60,20 @@ PASS | FAIL | NOT_TESTED | BLOCKED:
 短版交接先完成：一个完整建议试听确认保存导出、一个局部补全导出拒绝、键盘删除/撤销、双主题最小窗口、MMP目标资源和两套推荐人工对比。随后补全矩阵其余项；不能把短版通过写成全面通过。
 
 对照材料逐条绑定sample/group ID、candidate Ref、stage/plan版本、mode/asset_version、输入SHA、seed/参数、逻辑音符和实际起音账本、保护范围、处理原因、输出指纹。18个子场景是有界计划，不代表已全部生成。中间阶段同中性音色/力度，最终分别完整编配与仅主旋律；明确无变化阶段及原因。反馈须附真实播放文件、模式、时间点、听者和日期，不以WAV有效或设备流替代人耳结论。
+
+## 本轮已有材料与最短反馈
+
+本轮仓库外运行目录：EmoBlocks/dev-runs/curve-v2-p8-20261007-492036f5（本机用户Library/Application Support下）。
+
+- `music-listening/quick-listen/`：C1/C2各自comparison与final-arranged，约7秒；实际LMMS输出，manifest记录SHA/Score Ref。
+- `music-listening/manifest.json`及`complete-queue/manifest.json`：18组四阶段对照与最终arranged/melody_only，明确none/不变、局部未完成和精确tick拒绝。`music-algorithm/tests/p8-music-evidence/render-queue.json`为原始有界队列，实际执行结果另存，不把计划状态当成已渲染。
+- `lead-backend/tests/actual-repaired/ready.json`：新profile真实两套建议；`accepted-dual-mode.json`：确认、undo/redo、双模式准备与纯保存重开后的隔离工程。
+- `lead-backend/tests/actual-repaired/中文 导出/`：两模式WAV/MIDI/MMP，`dual-mode-smoke.json`绑定所选谱和源摘要。
+- `frontend/tests/p8-ui/`：双主题三尺寸、来源展开/折叠、状态及修复前后实际截图；性能before/after分别保存。
+- `handoff/README.md`、`check_resources.py`及manifest：本地partner清单/只读目标资源检查。不是发布包，不包含LMMS、环境或用户工程，不会自动发送。
+
+最短人工复核约5分钟（无需等待新渲染）：听C1/C2的comparison→final，分别记下动机、交接和尾音的具体时间点；打开ready工程副本，点击只选择，明确播放，暂停/恢复/停止；确认一次、撤销/重做、保存新快照重开。切换两主题并在1020×700检查关键按钮；实体滚动、删除/Command快捷键与Esc；反馈样例ID、模式、时间点和具体问题。需要检验完整生成入口时另走前面的全流程，并按实际渲染耗时等待，不使用预估时间代替执行记录。
+
+Windows材料必须与最终本地提交一致。先记录目标系统/软件版本；不要直接把Mac绝对路径的旧资产认作已定位：新MMP是data:/ URI且仍需目标工厂资源，旧v1工程/资产不自动迁移。复制样例后复核文件摘要，在目标LMMS实际打开；仅check_resources通过不足以确认应用真的解析了资源。现有已准备音频或资产路径丢失时，明确重新准备对应模式或使用清单内独立文件，不静默换位置。
+
+所有人工表格当前待真实反馈。真实背景模糊未实现；黑暗主题为静态Vibrancy风格适配；情绪数据色为已确认的例外。没有人耳反馈不能把连接自然、情绪表达或音乐质量写为PASS。
