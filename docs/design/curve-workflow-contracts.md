@@ -1146,3 +1146,71 @@ sources为上述全部逻辑notes、父notes及material_snapshots的notes/childr
 源读取文件范围补充：lead可在 `curve_melody._bridge_parent_table` 与其 parent_snapshots 键解析处加入p7 accepted_score源适配，保存真实旧FinalScore叶快照和Ref；只改源读取、父身份、真实现有快照解析，不改变旧P5构作音乐规则、算法版本或旧输入验证。算法worker仍仅curve_boundary_music与对应测试，公共入口/源适配由lead独占。
 
 验收：已接受p7工程→新推荐捕获→私有P4/5/6→最终score，保原真实音乐/桥锁与完整来源；捕获后立即编辑、撤销同内容与取消均不能用旧闭包绕过会话门禁；缺闭包/借另工程合法闭包/伪造旧Score重新计算hash均拒绝；保存重开不调用生成/渲染。新项目的source_facts=[]兼容原正常路径。只读评审与独立PASS后才能将本节标为FROZEN并实施新增捕获字段。
+
+
+## 15. P8定向验收修复补充（DRAFT）
+
+SPEC_REV=curve-workflow-v2-r3
+服务CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1保持。
+OUTPUT_CONTRACT_REV=curve-workflow-v2-r3-p8-output1
+LAYOUT_COMPAT_REV=curve-workflow-v2-r3-p8-layout1
+
+本节整合双方只读意见，独立PASS后才FROZEN。只修复已复现的输出用途门禁、中性试听身份、布局纯恢复与UI故障；不扩展作曲能力。音乐native p0/p23/p4/p5/p6/p7头、Project/FinalScore/AudioAsset字段不统一改版；仅输出profile及既有BoundaryRequest.algorithm_version分别版本化。旧保存/打开绝不重生成或偷偷升级。
+
+### 15.1 逐格式和逐模式的只读能力
+
+新增Controller.history_output_state(result_id,mode=None) -> 精确{result_id,mode,score_ref,asset_ref,renderer_profile,availability,errors}。availability和errors均精确wav/mid/mmp三键；每可用格式error=null，失败{code,message,details}。result_id必须真实已接受历史；未知ID SOURCE_UNAVAILABLE，非法mode INVALID_PARAMETERS。mode=None选择该历史接受mode而非当前编辑settings；显式arranged/melody_only只读取该candidate对应member，不跨mode回退。合法但未准备mode Ref/profile=null，各格式false，error=MODE_NOT_READY。legacy无P7资产则Ref/profile=null、mode=null，保持原逐格式文件规则；显式非null mode拒绝，不能暗中转换旧工程。
+
+查询不写Project/Bundle/素材/编号/保存状态/undo/staging/选择/player，不渲染；逐格式实时读取该资产的hash及独立实际格式认证，不缓存物理可用性。LOCAL有有效试听文件不等于正式导出资格；既有scope/can_export_final与export_history的TARGET_GAPS_UNRESOLVED门禁保持。旧history_items签名与默认接受mode的DTO保持兼容。前端只消费冻结查询与既有ID/mode播放导出服务，不自行解析乐谱/采样授权。
+
+validate_outputs(score,files,profile=<本次新输出v2>,required_formats=None)按所需mid/mmp分派，各自只读取该格式；required_formats=None明确全部可编码两格式，空集合/未知格式拒绝INVALID_PARAMETERS。validate_asset对files=False不stat任何文件，required_formats=None为wav/mid/mmp，空或未知拒绝；历史认证profile必须取asset.renderer_version。单WAV不触碰MIDI/MMP/资源，保P7完整PCM/时长/声道/有效声音门禁；单MIDI独立解析音符/力度/tempo/meter/channel/program同tick先后、模式/profile及资源清单结构，不读MMP/stock；单MMP独立解析结构/音符/绑定和真实资源，不读MIDI/WAV。任何一格式失效不取消其他已认证能力。
+
+export_history捕获选定result_id/mode/format，复制前对同一asset及格式独立重认证。atomic_export(source,target,protected,expected_sha256=None)增加末尾可选摘要（原三参数兼容）；新P7成品传asset.files[format].sha256，临时文件完整写入后在replace前核对其真实SHA，匹配既有源身份/大小/时间及目标别名门禁，防认证后换源或等长改内容；摘要不符不替换旧目标，只清理本次temp；不修改原输出、不覆盖受保护源、不因取消改变工程或播放。不静默更换路径。
+
+### 15.2 实际输出profile与资源内容基准
+
+保留curve-final-lmms-v1的原绑定/绝对stock或字节相同副本规则及旧metadata，不把旧对象解释为v2。新实际准备使用curve-final-lmms-v2；未知profile拒绝。新任务捕获当前期望profile于后端运行时job（非音乐schema），提交双侧comparison/final资产须同candidate/mode/asset_version/profile，且符合该任务期望。已有历史同mode双侧profile仍必须一致，但可保v1；显式重新准备mode才产生新asset_version及v2，不改旧Score/Asset/Ref，旧pair失败不被新pair半结果覆盖。
+
+v2每个鼓src精确data:/samples/drums/<drum>。只允许Score.layers真实使用的bassdrum01.ogg、snare01.ogg、hihat_closed01.ogg；不接受裸相对、其他scheme、编码别名、路径穿越、basename相同而路径不同。资源集合恰等于实际使用非空drum集合，唯一、按drum升序；无鼓=[]。MIDI text/MMP projectnotes首行同绑定JSON精确{score_fingerprint,mode,body_ticks,renderer_profile,resources}；resources每项精确{drum,src,sha256,bytes}，文件摘要继续包含于现有asset.files和asset_fingerprint。旧v1绑定只有score_fingerprint/mode/body_ticks，按原规则读取。
+
+v2资源内容的独立权威是本profile以下固定官方基准，而不是caller重签的清单或可替换同名文件：
+
+| drum | bytes | SHA256 |
+| --- | ---: | --- |
+| bassdrum01.ogg | 9922 | e8abcb4d593262f08e7f12cf1c6fdcc4b83fa27175d5461fef6bbc2d205307a7 |
+| snare01.ogg | 7215 | 64905d93d0941f3e02ef9f2fc7ee1e533b96308cc5c69eed3de27a1827e876a5 |
+| hihat_closed01.ogg | 5497 | 703f80c3eff4a6a4b817b1d086c6c5eddd7edda8a4ebf50cec662750b1d59e54 |
+
+本机安装资源及官方LMMS v1.2.2/v1.3.0-alpha.2各资源逐字节相同（运行目录factory-resource-reference.json）；基准来源为[LMMS官方1.2.2资源](https://github.com/LMMS/lmms/tree/v1.2.2/data/samples/drums)和[官方1.3.0-alpha.2资源](https://github.com/LMMS/lmms/tree/v1.3.0-alpha.2/data/samples/drums)。这只是内容匹配，不证明1.2或Windows实机运行。
+
+初次导出及物理MMP认证必须逐个读取完整stock字节与固定基准/文件内绑定清单同时相等，非空、缺失/错误内容明确OUTPUT_RESOURCE_UNAVAILABLE或OUTPUT_BINDING_MISMATCH。单MIDI只核对清单与固定基准及本文件音乐绑定，不要求stock仍可读。重写清单并重hash不能授权错误内容。旧v1资源认证不放宽或重签。
+
+resource root来自既有runtime_config.sample_path的实际定位，须Path.resolve后统一落在同一个<root>/samples/drums/<精确文件名>，完整字节匹配上述基准；不支持旧fallback的仅drums/name布局用于v2，不混不同root。允许既有显式EMOBLOCKS_LMMS_DATA定位的合法同字节复制资源，但不是任意root授权：仍需统一布局、resolve后包含性/链接不得逃逸及固定内容基准全部通过。无匹配基准安装明确拒绝该依赖，不放宽为同名文件或v1自动回退；无鼓的有效WAV/MIDI不因此失效。
+
+仅新v2真实渲染使用本次owned目录config.xml，经已确认CLI全局-c加载；父/用户设置不改。子进程环境局部LMMS_DATA_DIR设为上述已认证统一root（有鼓），无鼓移除ambient LMMS_DATA_DIR以使用安装默认资源；不写系统/全局环境。渲染前及结束后完整资源认证，变化使本次新pair失败。实际LMMS版本、owned cfg、root/子进程env及用户cfg前后摘要记录仓库外，不提交配置。Qt data:搜索规则参考[官方ConfigManager](https://github.com/LMMS/lmms/blob/v1.3.0-alpha.2/src/core/ConfigManager.cpp)；目标机器必须独立解析依赖和hash，MMP仍依赖外部LMMS资源，不能称自包含。
+
+### 15.3 中性素材试听的发声与缓存
+
+curve-neutral-lmms-v2只修复P7既有发声规则偏差：Source/block/phrase是一次演奏，kind=combination按真实children occurrence路径/累积offset分开，嵌套递归；新派生phrase自己是一演奏，旧组合父仅来源。用真实结构校验flattened notes与各leaf区间归属，不拆不透明ID猜路径；不完整/歧义归属拒绝，不能fallback合并全局同origin。不同实例保重新起音；同演奏连续原切片按相同origin/pitch/parent_emission/parent_duration、连续时刻与offset合并。依P7既有规则用首切片velocity，后切片velocity差异不另开演奏；不改逻辑音符或来源/保护。
+
+audition_fingerprint域emoblocks.audition.v2，内容为playable_notes实际发声事件的pitch/start_tick/duration_tick/velocity排序列表，及length_ticks/bpm/neutral tone/renderer_version；ID/名称不算音乐差异，但一长起音与二独立起音必须不同。旧v1文件/日志/fingerprint不重写，新渲染是新资产。现有素材试听数据接口及播放器契约保持。
+
+新增Controller.audition_renderer_profile()->str纯查询当前中性profile，不改工程不渲染。前端在对应任务成功ACK时缓存完整snapshot+bpm键，并记录已准备输出文件的私有字节摘要；_ready_asset机械比较当前profile、文件存在及注册摘要，profile不同、缺失/变化不当作新profile就绪，提示明确重新准备，不自动渲染/播放。缓存校验只是已认证资产身份检查，不由前端判音乐/资源规则。淘汰缓存不抢占已有明确在播对象，不删生成文件；状态/dirty/undo不变。
+
+### 15.4 历史布局纯恢复与新布局确定性
+
+P7真实local-auto大工程纯重开复现，diagnostic仅[2160,2400)segment的同priority=1 connection/placement归属不同，notes/ledger等相同。原retained set直接遍历加max(priority)首项选择依进程hashseed变动。
+
+新BoundaryRequest.algorithm_version=curve-boundary-v2-deterministic-layout，native schema/contract_rev仍原p7。精确仅retained source-performance集合的迭代顺序改为升序(0 if row.stage in {bridge,connection} else 1, performance_id)，bridge/connection同一覆盖层类；performance_id按字符串升序。其他raw构造顺序、placements0/retained1/current READY bridge2/current connections3/blank4原priority、max首项与span合并保持。无真实唯一row或未知ownership拒绝，不猜ID。五种边界音乐手段/预算未变；provider只兼容新请求版本识别。
+
+旧curve-boundary-v1按原音乐事实解释，不升级存储字段。纯认证首先解析原P4/P5/P6实际来源/锁/结果及accepted registry；候选rows/材料/原范围/全部原断点都来自真实输入。将存储合并segment在真实断点上切成原子区间作证明，不从存储span发明断点/候选/priority。只允许重排retained priority1集合；选中者必须是真实最高priority候选，若有多个retained最高候选，添加选中节点先于其他节点的约束。跨所有区间的同一个全局有向图必须无环；其他priority/固定raw顺序严格原样。
+
+按performance_id稳定拓扑排序得到一个一致witness，再完整执行原layout推导、owner/material/phrase/key/emotion/intensity/segment ID及合并；全Layout每字段和原layout/request指纹完全相等才接受。循环、额外/漏掉/拆开span、虚假owner、跨priority选择、任何notes/ledger/保护/留白/空缺/总长差异都拒绝。不是忽略metadata、仅信hash、逐段任选或重新作曲，也不随机试seed/枚举排列。仅v1走历史证明；v2严格唯一确定性重建，不得fallback。
+
+make_request新增末尾可选algorithm_version，仅内部历史重建使用v1；正常新capture/default v2，未知算法拒绝。现有整请求指纹包含该值，旧token/undo同内容仍按会话版本失效。既有native Ref/Score/Asset/审计不改，不复活后台线程。证明用单图、去重边、确定性拓扑；显式执行预算max_nodes=8192/max_cells=16384/max_edges=1000000，超额SOURCE_CLOSURE_INVALID，保原工程/原文件；不提升128MiB文件或深度预算，不删审计/来源。
+
+### 15.5 文件归属与验收
+
+lead独占curve_final.py、curve_final_render.py、curve_workflow.py、curve_recommendations.py、export_safe.py及其行为测试（确需新job profile门禁）、相应后端测试、设计/验收文档；不改story_engine音乐规则。music只curve_audition.py/test_curve_services.py中性归属和身份、curve_boundary_music.py/test_curve_boundary_music.py请求识别及仓库外固定音乐对照材料；不改公共schema/主流程。frontend仅shared Curve相关UI/Canvas/主题及其UI测试和必要配对适配检查，消费新纯查询、机械缓存profile/字节检查、修复已复现job启动busy泄漏；短标记/视觉问题先实景再定向修复，不加新工作流。
+
+必须行为覆盖：逐格式资源/PCM/MIDI实际门禁与独立可用、跨mode正反例、旧v1绝对/合法副本与v2严格URI/固定官方内容、漏/多/重复资源/重签错误内容/profile双侧不匹配、cfg未改用户与前后资源重查、旧新纯恢复；组合/嵌套/重复独立起音、连续phrase同演奏tie/后velocity首片、新试听fingerprint/缓存profile/file变化不抢播；历史v1两种一致排序可重建/全局环与伪造metadata拒绝、新v2跨hashseed完整字节一致、真实127707456字节档案纯load/save/reopen保持音乐/保护/旧header/ref；已接受继续推荐/应用、undo/redo/重开；故障Thread.start与回调释放busy，工程与播放保留。允许故障用temp注入，真实音乐/设备/人手/Win证据分别记录。

@@ -112,3 +112,7 @@ P8_READY要求必需实证齐全；P8_PARTIAL用于可做工作完成但实机/�
 算法只读评审的MUS-01–09配方已接入矩阵：18个有限可试听子场景，各最多3个固定seed尝试；另设不足10tick的精确数据检查及六普通旋律/六情绪、五连接/五边界、记忆完整支撑和失败审计检查。不能为凑出差异强行启用bridge/连接；没有变化记录none及原因。真实同时有bridge与连接且端点不同的案例仍需有限搜索，找不到保持具体覆盖缺项，不伪造。
 
 D-AUDITION-OWNERSHIP已由lead公开导入/组合/放置及真实P5/P6 none服务复现：3840tick长音分成两个独立1920tick组合子实例，中性试听合成1起音，真实Final布局保留2起音。需修复试听发声归属，并以版本化试听输出身份记录真正发声事件；不更改FinalScore音乐规则。文件有效、设备流成功与人工音乐反馈仍分别记录。
+
+第1轮矩阵独立FAIL已核对身份、HEAD和211文件完整前后指纹相等：d06bd80de230c8e3112bc7e50c030fa27cdea1bbb00c207b27dbc0ba9a3d1ca5。具体修正为70父项的155独立证据叶、VIS12和Windows36独立参数叶；每叶拥有ID/category/required/status/executor/time/env/inputfp/head/evidence/actual/inheritance。父项只有全部required叶PASS才PASS，任一FAIL优先FAIL，否则BLOCKED或NOT_TESTED；不会以设备/程序化Tk替代人手/听感。第1轮JSON已封存，轮数不重置。
+
+新增D-RESTORE-ORDER：原P7收据local-auto已接受大工程127707456字节在本轮纯恢复失败，真实诊断仅同priority的segment归属受集合顺序影响。P7独立认证的accepted-current工程55970981字节在本轮正常load/save/reopen/capture-cancel通过（约7.63/6.68/7.32/6.75秒，进程累计峰值RSS约1.44GB）；不能把它替代大工程反例。兼容修复先纳入15.4独立契约，不改原件/不删除来源保护、不用新hash重签旧请求。
