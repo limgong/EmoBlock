@@ -337,7 +337,10 @@ def validate_asset(asset, score, candidate_ref=None, files=True, required_format
     physical=requested if files else set()
     for key,row in asset['files'].items():
         m.shape(row,'path sha256 bytes');m.text(row['path']);m.ident(row['sha256']);m.integer(row['bytes'],1)
-        if key in physical and _file(row['path'])!=row: m.reject('试听或输出文件已移动或改变，请重新计算。','OUTPUT_FILE_UNAVAILABLE')
+        if key in physical:
+            try:actual_file=_file(row['path'])
+            except OSError:m.reject('试听或输出文件已移动或无法读取，请重新准备。','OUTPUT_FILE_UNAVAILABLE')
+            if actual_file!=row:m.reject('试听或输出文件已移动或改变，请重新计算。','OUTPUT_FILE_UNAVAILABLE')
     if 'wav' in physical:
         with wave.open(asset['files']['wav']['path'],'rb') as stream:
             if stream.getnchannels() not in (1,2) or stream.getsampwidth()!=2 or abs(stream.getnframes()/stream.getframerate()-asset['audio_seconds'])>1/stream.getframerate() or abs(asset['audio_seconds']-asset['body_seconds']-1)>1/stream.getframerate():
