@@ -215,7 +215,9 @@ class CurveCanvas(ttk.Frame):
             coords.extend((self.x(tick), self.y(self.level(tick))))
         coords.extend((self.x(total),self.y(self.level(total))))
         if coords:
-            c.create_line(*coords,fill=p['muted'],width=2,tags='strength')
+            if self.app.theme.name=='dark':
+                c.create_line(*coords,fill=EMOTION_INK,width=pixels(self.app.root,4),tags=('strength','strength-outline'))
+            c.create_line(*coords,fill=p['muted'],width=pixels(self.app.root,2),tags=('strength','strength-line'))
         memory = self.memory_overlay()
         for placement in self.project['placements']:
             a,b = self.x(placement['start_tick']), self.x(placement['start_tick']+placement['length_ticks'])
@@ -339,6 +341,11 @@ class CurveCanvas(ttk.Frame):
         c = self.canvas
         left,right = c.canvasx(0)+4,c.canvasx(c.winfo_width())-4
         placed = [box for box,_ in self.range_badges+self.number_badges]
+        for tag in ('bridge-label','manual-bridge-label','accepted-bridge'):
+            for item in c.find_withtag(tag):
+                if c.type(item)=='text':
+                    box = c.bbox(item)
+                    if box is not None:placed.append(box)
         self.boundary_label_boxes = {}
         for ident,(label,link) in self.boundary_labels.items():
             x = (self.boundary_boxes[ident][0]+self.boundary_boxes[ident][2])/2

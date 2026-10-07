@@ -12,12 +12,41 @@ from unittest.mock import patch
 import wave
 import test_curve_p7_ui as p7
 from test_curve_ui import MappedUIFixture
+from curve_canvas import CurveCanvas
 import curve_player_ui as player_ui
 
 
 class InlineThread:
     def __init__(self,target,**kwargs):self.target=target
     def start(self):self.target()
+
+
+class BoundaryAvoidanceTests(unittest.TestCase):
+    def test_measured_bridge_text_avoids_boundaries_without_moving_exact_lines(self):
+        # Actual R3 minimum-window bboxes, without a Tk/display dependency.
+        for tag in ('bridge-label','manual-bridge-label','accepted-bridge'):
+            with self.subTest(tag=tag):
+                boxes={1:[203,50,230,67],2:[234,50,261,67],3:[218,56,292,72]}
+                states={};links={}
+                def move(item,dx,dy):
+                    box=boxes[item];boxes[item]=[box[0]+dx,box[1]+dy,box[2]+dx,box[3]+dy]
+                canvas=SimpleNamespace(canvasx=lambda x:x,winfo_width=lambda:400,
+                    find_withtag=lambda value:(3,) if value==tag else (),type=lambda item:'text',
+                    bbox=lambda item:boxes[item],move=move,
+                    itemconfigure=lambda item,**kw:states.update({item:kw}),
+                    coords=lambda item,*xy:links.update({item:xy}))
+                exact={'first':(196,43,204,300),'second':(227,43,235,300)}
+                timeline=SimpleNamespace(canvas=canvas,range_badges=[],number_badges=[],
+                    boundary_labels={'first':(1,10),'second':(2,20)},boundary_boxes=copy.deepcopy(exact))
+                CurveCanvas.layout_boundary_labels(timeline)
+                placed=list(timeline.boundary_label_boxes.values())+[boxes[3]]
+                for i,a in enumerate(placed):
+                    for b in placed[i+1:]:
+                        self.assertFalse(max(a[0],b[0])<min(a[2],b[2]) and
+                                         max(a[1],b[1])<min(a[3],b[3]))
+                self.assertEqual(timeline.boundary_boxes,exact)
+                self.assertEqual(boxes[3],[218,56,292,72])
+                self.assertEqual(links[10][:2],(200,43));self.assertEqual(links[20][:2],(231,43))
 
 
 class WaveformAuthenticationTests(unittest.TestCase):
@@ -169,7 +198,88 @@ class VisualPlaybackTests(unittest.TestCase):
         return dict(schema='emoblocks.ui-playback.v1',target=dict(kind='recommendation',id=ident,side=kind,mode=mode),
             asset=asset,score_ref=copy.deepcopy(asset['score_ref']),bpm=project['bpm'],total_ticks=project['total_ticks'],
             notes=copy.deepcopy(candidate['preview']['notes']),segments=[dict(start_tick=0,end_tick=project['total_ticks'],
-                kind='placement',owner_ref=p7.ref(project['placements'][0]['id']))],mapping_available=True,mapping_reason=None)
+            kind='placement',owner_ref=p7.ref(project['placements'][0]['id']))],mapping_available=True,mapping_reason=None)
+
+    def test_mapped_ready_bridge_and_boundary_labels_clear_at_small_window_and_scroll(self):
+        self.ready()
+        preview=self.controller.rec['candidates'][0]['preview']
+        preview['project']['intensity_points']=[dict(tick=p['tick'],level=.75)
+                                               for p in preview['project']['intensity_points']]
+        region=preview['bridge_overlays'][0]['range']
+        template=copy.deepcopy(preview['boundary_overlays'][0])
+        ticks=[region['start_tick'],region['start_tick']+180,region['end_tick'],preview['project']['total_ticks']]
+        preview['boundary_overlays']=[dict(template,id='measured-boundary-'+str(i),tick=tick)
+                                      for i,tick in enumerate(ticks)]
+        self.select();self.root.update()
+        before=self.music_state();captured=copy.deepcopy(self.rec.preview);selected=self.rec.selected_id
+        timeline=self.app.page.timeline;canvas=timeline.canvas
+        inspected=0
+        for theme in ('light','dark'):
+            if self.app.theme.name!=theme:self.app.toggle_theme()
+            for size in ('1020x700','1280x800','1440x900'):
+                self.root.geometry(size);self.app.source_user_collapsed=False
+                self.app.layout_sources();self.app.refresh();self.root.update()
+                self.assertTrue(canvas.winfo_ismapped())
+                for scroll in (0.,.25,1.):
+                    timeline.scrollbar.command('moveto',scroll);self.root.update()
+                    bridge_text=[canvas.bbox(i) for i in canvas.find_withtag('bridge-label')
+                                 if canvas.type(i)=='text']
+                    self.assertTrue(bridge_text)
+                    left,right=canvas.canvasx(0),canvas.canvasx(canvas.winfo_width())
+                    for ident,box in timeline.boundary_label_boxes.items():
+                        self.assertGreaterEqual(box[0],left+4);self.assertLessEqual(box[2],right-4)
+                        for other in bridge_text:
+                            self.assertFalse(max(box[0],other[0])<min(box[2],other[2]) and
+                                             max(box[1],other[1])<min(box[3],other[3]))
+                        x,y=(box[0]+box[2])//2,(box[1]+box[3])//2
+                        lx,ly=round(x-left),round(y-canvas.canvasy(0))
+                        coords=dict(x=lx,y=ly,rootx=canvas.winfo_rootx()+lx,rooty=canvas.winfo_rooty()+ly)
+                        with patch.object(self.rec,'describe_overlay',return_value='exact boundary detail') as describe:
+                            canvas.event_generate('<ButtonPress-1>',**coords)
+                            canvas.event_generate('<ButtonRelease-1>',**coords);self.root.update()
+                        self.assertEqual(describe.call_args.args[0]['id'],ident)
+                        inspected+=1
+                    lines=[canvas.coords(i)[0] for i in canvas.find_withtag('final-boundary') if canvas.type(i)=='line']
+                    self.assertEqual(lines,[timeline.x(o['tick']) for o in captured['boundary_overlays']])
+                    self.assertEqual(captured,self.rec.preview);self.assertEqual(before,self.music_state())
+                    self.assertEqual(selected,self.rec.selected_id)
+        self.assertGreater(inspected,0)
+
+    def test_mapped_strength_stroke_keeps_exact_curve_visible_across_block_and_canvas(self):
+        timeline=self.app.page.timeline;canvas=timeline.canvas
+        timeline.set_mode('arrange');self.root.update()
+        before=self.music_state();points=copy.deepcopy(timeline.project['intensity_points'])
+        def contrast(a,b):
+            def luminance(color):
+                rgb=[v/65535 for v in canvas.winfo_rgb(color)]
+                return sum((v/12.92 if v<=.04045 else ((v+.055)/1.055)**2.4)*weight
+                           for v,weight in zip(rgb,(.2126,.7152,.0722)))
+            a,b=sorted((luminance(a),luminance(b)))
+            return (b+.05)/(a+.05)
+        for theme in ('light','dark'):
+            if self.app.theme.name!=theme:self.app.toggle_theme()
+            self.root.geometry('1020x700');self.app.refresh();self.root.update()
+            curve=canvas.find_withtag('strength-line');self.assertEqual(len(curve),1)
+            coords=canvas.coords(curve[0]);strokes=canvas.find_withtag('strength')
+            self.assertTrue(timeline.boxes)
+            # Both strokes describe one curve, with exactly the same samples.
+            for item in strokes:self.assertEqual(canvas.coords(item),coords)
+            if theme=='dark':
+                outline=canvas.find_withtag('strength-outline');self.assertEqual(len(outline),1)
+                self.assertGreater(float(canvas.itemcget(outline[0],'width')),float(canvas.itemcget(curve[0],'width')))
+                self.assertLess(canvas.find_all().index(outline[0]),canvas.find_all().index(curve[0]))
+            else:self.assertFalse(canvas.find_withtag('strength-outline'))
+            surfaces={canvas.cget('background')}
+            crossing=False
+            for item in canvas.find_all():
+                if canvas.type(item)!='polygon':continue
+                box=canvas.bbox(item)
+                if any(box[0]<=x<=box[2] and box[1]<=y<=box[3] for x,y in zip(coords[::2],coords[1::2])):
+                    surfaces.add(canvas.itemcget(item,'fill'));crossing=True
+            self.assertTrue(crossing)
+            for surface in surfaces:
+                self.assertGreaterEqual(max(contrast(canvas.itemcget(item,'fill'),surface) for item in strokes),3.)
+            self.assertEqual(points,timeline.project['intensity_points']);self.assertEqual(before,self.music_state())
 
     def test_exact_final_view_only_comparison_mode_and_changed_notes_do_not_highlight(self):
         self.ready();self.select()
