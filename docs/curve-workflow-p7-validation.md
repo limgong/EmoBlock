@@ -94,3 +94,17 @@ F2：音乐轨插入速度事件、音符改到鼓通道仍通过。修复核全
 最终源码复跑：`scripts/test.py --backend-only` 584 PASS（63.290秒）；`scripts/test.py` 892 PASS（222.360秒）；`scripts/check_frontends.py` PASS；工作区及BASE到HEAD的`git diff --check` PASS。14项输出/保护专项3.430秒PASS；18个真实LMMS归档资产在最终校验器上再次PASS，记录见仓库外`P7-R2-final-*.log`、`p7-r2-output-gates-final.log`与`r2-final-actual-assets.log`。此前复跑后又增加程序起始时间校验，以上是该最后修改之后的结果。
 
 两worker保持空闲且无未交付改动，正常merge同步本次冻结HEAD并检查真实源码导入和完整文件内容一致，不重置或覆盖。下一轮为独立实现ROUND2/5，契约累计ROUND3/5；ROUND1明确FAIL保持不变。最终身份、受检HEAD、完整前后指纹及独立结论只写仓库外P7-final-receipt.json，检查期间不再修改本目录。
+
+## 独立ROUND2 FAIL与ROUND3修复
+
+R2受检HEAD=55b32e61639e053329bcb02e3c8424e95b04e63f，209文件前后指纹74f38a1220824ba0eb3bd044519b20b3cb6b6641670668eee235f6e17f3010cc。lead核对任务身份、完整manifest及现场代码完全匹配后结束冻结。verifier独立892完整/584后端、纯保存恢复、六份真实资产、Tk41项通过，R1原始PCM/通道/速度问题关闭，但明确FAIL同tick的音色事件顺序。低音program=33排在首次起音之后，即使两者均tick 0，也不能证明起音使用正确音色。
+
+本地修复a513b21按轨道实际事件顺序维护已生效音色，逐个实际起音核对；新的公开finish反例更新文件/资产摘要后仍必须拒绝，失败恢复保留music/saved/undo/history并退出busy。不是只检查program的绝对tick。
+
+追加自查在临时目录复现MMP的masterpitch=12仍被认证为未移调原谱。修复cc2c5f4独立核对现有输出器的固定主参数、mute/solo、乐器pitch/base/routing、振荡器/包络、采样方向、关闭的效果、循环、pattern/note控制及禁止额外自动化/插件结构。13种参数或结构篡改均被拒绝，合法旋律/鼓输出和18份真实LMMS归档资产继续通过。只加强认证，不修改编码器、音乐算法、公共API或工程格式；不是声称已经人工听过这些故障。
+
+## ROUND3最终代码自查与冻结
+
+全部上述修复之后复跑：`scripts/test.py --backend-only` 586 PASS（66.317秒）；`scripts/test.py` 894 PASS（223.593秒）；`scripts/check_frontends.py` PASS；工作区及BASE到HEAD的`git diff --check` PASS。16项输出/保护专项2.819秒PASS；18份真实归档资产再次PASS。最新日志为仓库外`P7-R3-final-*`；早先`P7-R3-*`是MMP修复前的记录，不混用。
+
+两worker空闲、干净且无未交付源码，正常同步后复核完整文件字节和各自真实Python导入。进入独立实现ROUND3/5；契约仍累计ROUND3/5，R1/R2失败记录完整保留。受检HEAD、前后完整指纹及最终PASS仍以仓库外review/收据为准；检查期间本目录冻结。P8未启动，人工、截图及Windows待验边界不变。
