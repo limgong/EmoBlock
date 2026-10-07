@@ -284,26 +284,27 @@ class RecommendationTransactionTests(unittest.TestCase):
         self.assertEqual(controller.history(),[])
 
     def test_public_finish_rejects_missing_or_wrong_drum_resource(self):
-        import engine,xml.etree.ElementTree as ET
+        import engine,hashlib
         for mutation in ('missing','wrong_content'):
             controller=complete();controller.edit('set_intensity',points=[dict(tick=0,level=.75),dict(tick=controller.project['total_ticks'],level=.75)])
             controller.edit('set_emotion',placement_ids=['use1'],emotion='crisis')
-            before=controller.project;undo=copy.deepcopy(controller.session._undo);saved=controller.state()['is_saved'];cap=controller.capture_recommendations();renderer=simulated_render(self.tmp.name)
-            resources=Path(self.tmp.name)/mutation;resources.mkdir();touched=[]
-            def sample_path(_,name):
-                path=resources/name;path.write_bytes(b'known test resource:'+name.encode());return path
-            def damaged(score,candidate_ref,version=1,should_cancel=None,on_progress=None):
-                asset=renderer(score,candidate_ref,version,should_cancel,on_progress);path=Path(asset['files']['mmp']['path']);xml=ET.parse(path);sample=xml.find('.//audiofileprocessor')
-                if sample is not None:
-                    replacement=resources/'different'/Path(sample.get('src')).name;replacement.parent.mkdir(exist_ok=True)
-                    if mutation=='wrong_content':replacement.write_bytes(b'wrong resource')
-                    sample.set('src',str(replacement));xml.write(path);asset['files']['mmp']=audio._file(path);asset['asset_fingerprint']=audio.asset_fingerprint(asset);asset['id']=asset['asset_fingerprint'];touched.append(asset)
-                return asset
-            with patch.object(engine,'sample_path',side_effect=sample_path),patch.object(audio,'render',side_effect=damaged):
-                out=rec.prepare_recommendations(cap['request']);self.assertTrue(out['candidates']);self.assertTrue(touched)
+            before=controller.project;undo=copy.deepcopy(controller.session._undo);saved=controller.state()['is_saved'];cap=controller.capture_recommendations()
+            resources=Path(self.tmp.name)/mutation/'factory'/'samples'/'drums';resources.mkdir(parents=True)
+            authority={}
+            for name in audio.STOCK_RESOURCES:
+                data=b'known test resource:'+name.encode();(resources/name).write_bytes(data)
+                authority[name]=(len(data),hashlib.sha256(data).hexdigest())
+            with patch.object(audio,'STOCK_RESOURCES',authority),patch.object(engine,'sample_path',side_effect=lambda _,name:resources/name):
+                out=rec.prepare_recommendations(cap['request']);self.assertTrue(out['candidates'])
+                score=rec.resolve(rec.index_facts(out['facts']),out['candidates'][0]['final_score_ref'])
+                drum=next(layer['drum'] for layer in score['layers'] if layer['drum'])
+                if mutation=='missing':(resources/drum).unlink()
+                else:(resources/drum).write_bytes(b'wrong resource')
                 with self.assertRaises(m.ProjectError) as error:controller.finish_recommendations(cap['token'],out)
                 self.assertEqual(error.exception.code,'OUTPUT_RESOURCE_UNAVAILABLE' if mutation=='missing' else 'OUTPUT_BINDING_MISMATCH')
-                for asset in touched:audio.validate_asset(asset,rec.resolve(rec.index_facts(out['facts']),asset['score_ref']),required_formats=('wav',))
+                for candidate in out['candidates']:
+                    for asset in candidate['assets'].values():
+                        audio.validate_asset(asset,rec.resolve(rec.index_facts(out['facts']),asset['score_ref']),required_formats=('wav',))
             controller.fail_recommendations(cap['token'],dict(code=error.exception.code,message='test recovery',details={}))
             self.assertEqual(controller.recommendation_state()['status'],'FAILED');self.assertFalse(controller._jobs)
             self.assertEqual(controller.project,before);self.assertEqual(controller.session._undo,undo);self.assertEqual(controller.state()['is_saved'],saved);self.assertEqual(controller.history(),[])
