@@ -5,6 +5,8 @@ belong to curve_bridges/Controller. No rendering, project edits or P6 calls.
 """
 import copy
 import math
+import bisect
+import collections
 
 import curve_emotion as emotion
 import curve_melody as melody
@@ -13,6 +15,7 @@ import intensity_curve
 
 CONTRACT_REV = 'curve-workflow-v2-r3-p5'
 ALGORITHM_VERSION = 'curve-bridge-v1'
+GLOBAL_ALGORITHM = 'curve-bridge-global-v2'
 REQUEST_FIELDS = ('schema spec_rev contract_rev request_id snapshot_id session_id edit_revision '
     'input_contract_rev input_fingerprint input_project input_kind completion_ref base_project '
     'base_fingerprint resolved_ranges remaining_gaps base_notes protection_summary blank_regions '
@@ -98,8 +101,9 @@ def _writable_regions(request):
 
 def _validate_request(request):
     m.canonical(request); m.shape(request, REQUEST_FIELDS)
-    if (request['schema'], request['spec_rev'], request['contract_rev'], request['algorithm_version']) != (
-            'emoblocks.bridge-request.v1', m.SPEC_REV, CONTRACT_REV, ALGORITHM_VERSION):
+    if ((request['schema'], request['spec_rev'], request['contract_rev']) != (
+            'emoblocks.bridge-request.v1', m.SPEC_REV, CONTRACT_REV)
+            or request['algorithm_version'] not in (ALGORITHM_VERSION, GLOBAL_ALGORITHM)):
         _fail('PLAN_VERSION_MISMATCH', '桥请求处理版本不匹配。')
     for key in ('request_id', 'snapshot_id', 'session_id', 'plan_id'):
         m.ident(request[key])
@@ -262,6 +266,8 @@ def _joint_conditions(windows):
 
 def decide(request, should_cancel=None, on_progress=None):
     """Finite evaluation, global conflict resolution, then joint endpoints."""
+    if request['algorithm_version'] == GLOBAL_ALGORITHM:
+        return _decide_global(request, should_cancel, on_progress)
     _validate_request(request); _check(should_cancel)
     _progress(on_progress, 1, 'BRIDGE_DECISION', '比较完整基础排布与可写桥窗口。')
     assessments = []; tested = 0; termination = 'EXHAUSTED'; candidates = []
@@ -410,7 +416,10 @@ def _validate_plan(request, plan):
         _fail('INVALID_CANDIDATE', '冻结窗口超过请求预算。')
     if any(w['end_tick']-w['start_tick'] > request['parameters']['max_window_blocks']*melody.BAR for w in plan['windows']):
         _fail('INVALID_CANDIDATE', '冻结窗口长度超过请求明确预算。')
-    m.shape(plan['search'], 'tested_windows termination')
+    if request['algorithm_version'] == GLOBAL_ALGORITHM:
+        validate_search(request, plan)
+    else:
+        m.shape(plan['search'], 'tested_windows termination')
     m.integer(plan['search']['tested_windows'], 0, request['parameters']['max_window_tests'])
     m.ident(plan['search']['termination']); m.objects(plan['reasons']); m.objects(plan['assessments'])
     _validate_windows(request, plan['windows'], plan['joint_boundary_conditions'])
@@ -611,3 +620,211 @@ def generate(request, locked_plan, should_cancel=None, on_progress=None, on_resu
     return dict(schema='emoblocks.bridge-raw-outcome.v1', spec_rev=m.SPEC_REV, contract_rev=CONTRACT_REV,
         request_fingerprint=_request_hash(request), plan_id=plan['id'], plan_version=plan['version'],
         status=terminal, results=results, error=terminal_error)
+
+
+# Global-v2 positioning only. All composition/emotion functions above remain v1.
+def _select_global(assessments, max_windows, should_cancel=None):
+    """Exact-last interval DP. Separate strict/equal-end predecessor queries.
+
+    At most K*M*log(M); impossible exact-count states never become zero. Scores
+    are integers so adjacent costs and deterministic ties have exact semantics.
+    """
+    items=sorted((a for a in assessments if a.get('benefit') is not None and a['benefit']>.03),
+                 key=lambda a:(a['range']['end_tick'],a['range']['start_tick']))
+    ends=[a['range']['end_tick'] for a in items]
+    def rank(state):
+        score,rs=state
+        return (-score,len(rs),sum(b-a for a,b in rs),rs)
+    best=(0,());previous=None
+    for k in range(1,min(max_windows,len(items))+1):
+        if previous is not None:
+            prefixes=[];current=None;equal={}
+            for item,state in zip(items,previous):
+                if state is not None:
+                    current=state if current is None else min(current,state,key=rank)
+                    end=item['range']['end_tick']
+                    equal[end]=state if end not in equal else min(equal[end],state,key=rank)
+                prefixes.append(current)
+        row=[]
+        for i,item in enumerate(items):
+            _check(should_cancel);a,b=_pair(item['range']);score=round(item['benefit']*100000000)
+            if k==1:state=(score,((a,b),))
+            else:
+                options=[];index=bisect.bisect_left(ends,a)-1
+                strict=prefixes[index] if index>=0 else None
+                if strict is not None:options.append((strict[0]+score,strict[1]+((a,b),)))
+                adjacent=equal.get(a)
+                if adjacent is not None:options.append((adjacent[0]+score-35000000,adjacent[1]+((a,b),)))
+                state=min(options,key=rank) if options else None
+            row.append(state)
+            if state is not None:best=min(best,state,key=rank)
+        previous=row
+    return [_range(a,b) for a,b in best[1]]
+
+
+def _regions(total):
+    count=min(8,total)
+    return [_range(i*total//count,(i+1)*total//count) for i in range(count)]
+
+
+def _fair_queue(request, analysis, should_cancel=None):
+    import curve_phrase_analysis as phrase
+    points=[b['tick'] for b in analysis['boundaries']];writable=_writable_regions(request)
+    params=request['parameters'];universe=[]
+    for i,a in enumerate(points):
+        _check(should_cancel)
+        region=next((r for r in writable if r['start_tick']<=a<r['end_tick']),None)
+        if region is None:continue
+        for b in points[i+1:]:
+            blocks=math.ceil((b-a)/melody.BAR)
+            if blocks>params['max_window_blocks'] or b>region['end_tick']:break
+            if blocks<2:continue
+            universe.append((a,b))
+            if len(universe)>phrase.LIMITS['candidates']:_fail('SEARCH_LIMIT','Candidate range universe exceeds fixed budget.')
+    regions=_regions(analysis['total_ticks']);representatives=[]
+    for r in regions:
+        _check(should_cancel)
+        choices=[u for u in universe if r['start_tick']<=u[0]<r['end_tick']]
+        if choices:representatives.append(min(choices,key=lambda u:(abs(2*u[0]-r['start_tick']-r['end_tick']),u[1]-u[0],*u)))
+    boundaries=[b['tick'] for b in analysis['boundaries'] if 0<b['tick']<analysis['total_ticks'] and b['confidence']>=.60]
+    subsets=collections.deque([boundaries])
+    while subsets:
+        _check(should_cancel);ticks=subsets.popleft()
+        if not ticks:continue
+        mid=(len(ticks)-1)//2;tick=ticks[mid]
+        choices=[u for u in universe if u[0]<=tick<=u[1]]
+        if choices:representatives.append(min(choices,key=lambda u:(u[1]-u[0],abs(u[0]+u[1]-2*tick),*u)))
+        subsets.append(ticks[:mid]);subsets.append(ticks[mid+1:])
+    seed=list(dict.fromkeys(representatives));seen=set(seed)
+    confidence={b['tick']:b['confidence'] for b in analysis['boundaries']}
+    phrases={p['id']:p for p in analysis['phrases']};returns={}
+    for r in analysis['motif_relations']:
+        if r['relation']=='return':
+            tick=phrases[r['right_phrase_id']]['start_tick']
+            returns[tick]=max(returns.get(tick,0),min(r['contour_similarity'],r['rhythm_similarity']))
+    def order(u):
+        a,b=u;priority=confidence[a]+confidence[b]+returns.get(b,0)-.01*math.ceil((b-a)/melody.BAR)
+        return (-priority,b-a,a,b)
+    queue=seed+sorted((u for u in universe if u not in seen),key=order)
+    _check(should_cancel)
+    return queue,len(seed),regions,boundaries
+
+
+def _global_assessment(request, region, analysis, keys):
+    import curve_phrase_analysis as phrase
+    if not _legal(request,region):
+        return dict(range=copy.deepcopy(region),baseline_score=None,bridge_score=None,benefit=None,
+                    reasons=[_warning('UNWRITABLE_WINDOW','Actual full support/rest/protection prevents rewriting.')])
+    # Measure actual local notes directly. No obsolete placement tonal inference
+    # is invoked for an accepted score, even as a discarded intermediate value.
+    notes=[n for n in request['base_notes'] if m.intersects(_support(n),region)]
+    leaps=[abs(x['pitch']-y['pitch']) for x,y in zip(notes,notes[1:])]
+    roughness=sum(max(0,v-7)/17 for v in leaps)/max(1,len(leaps))
+    durations=[n['duration_tick'] for n in notes]
+    rhythm=sum(abs(math.log2(y/x)) for x,y in zip(durations,durations[1:]))/max(1,len(durations)-1)
+    before=[n for n in request['base_notes'] if _support(n)['end_tick']<=region['start_tick']]
+    after=[n for n in request['base_notes'] if n['start_tick']>=region['end_tick']]
+    edges=([abs(before[-1]['pitch']-notes[0]['pitch'])] if before else [])+([abs(notes[-1]['pitch']-after[0]['pitch'])] if after else [])
+    edge=sum(max(0,v-7)/17 for v in edges)/max(1,len(edges))
+    features=dict(interval_roughness=roughness,boundary_leaps=edge,rhythm_contrast=rhythm)
+    row=dict(range=copy.deepcopy(region),features=features,
+             reasons=[_warning('MUSICAL_COMPARISON','Actual intervals, rhythm, parent tonality and rewrite cost; predicted only.')])
+    contexts=[keys[n['id']] for n in notes]
+    changes=sum((a['tonic'],a['mode'])!=(b['tonic'],b['mode']) for a,b in zip(contexts,contexts[1:]))/max(1,len(contexts)-1)
+    global_features=phrase.window_features(analysis,region)
+    points=[dict(time=p['tick'],level=p['level']) for p in request['base_project']['intensity_points']]
+    features.update(key_changes=changes,intensity_trend=intensity_curve.evaluate(points,region['end_tick'])-intensity_curve.evaluate(points,region['start_tick']),
+                    **{'global':global_features,'analysis_fingerprint':analysis['analysis_fingerprint']})
+    cost=(.65*features['interval_roughness']+.08*features['rhythm_contrast']+.15*changes)*sum(n['duration_tick'] for n in notes)/melody.BAR+.25*features['boundary_leaps']
+    rewrite=.13+.01*math.ceil((region['end_tick']-region['start_tick'])/melody.BAR)
+    gain=global_features['global_gain']
+    row.update(baseline_score=round(1-cost,8),bridge_score=round(1-(.2*cost+rewrite-gain),8),benefit=round(.8*cost-rewrite+gain,8))
+    row['reasons']+=copy.deepcopy(global_features['reason_codes'])
+    return row
+
+
+def _coverage(regions,boundaries,queue,assessments,termination):
+    legal=[a['range'] for a in assessments if a['benefit'] is not None]
+    evaluated=[r for r in regions if any(r['start_tick']<=a['start_tick']<r['end_tick'] for a in legal)]
+    visited=[t for t in boundaries if any(a['start_tick']<=t<=a['end_tick'] for a in legal)]
+    return dict(regions=regions,evaluated_regions=evaluated,unevaluated_regions=[r for r in regions if r not in evaluated],
+                evaluated_boundaries=visited,unevaluated_boundaries=[t for t in boundaries if t not in visited],
+                generated_candidates=len(queue),selection_method='weighted-interval-dp-on-evaluated-candidates',
+                coverage_complete=termination=='EXHAUSTED' and len(assessments)==len(queue))
+
+
+def _global_windows(request,ranges,keys):
+    windows=_contexts(request,ranges)
+    for window in windows:
+        first=next(n for n in request['base_notes'] if m.intersects(_support(n),window))
+        window['context']['key_context']=copy.deepcopy(keys[first['id']])
+    return windows
+
+
+def _global_reasons(windows,termination,assessments):
+    incomplete=termination in ('REGION_BUDGET','WINDOW_BUDGET')
+    if termination=='POLICY_NONE':code='POLICY_NONE'
+    elif windows:code='SELECTED'
+    elif incomplete:code='SEARCH_INCOMPLETE'
+    elif not any(a['benefit'] is not None for a in assessments):code='NO_WRITABLE_WINDOW'
+    else:code='NO_PREDICTED_GAIN'
+    result=[_warning(code,'Bounded prediction from actual whole-score music; not generated quality.')]
+    if windows and incomplete:result.append(_warning('SEARCH_INCOMPLETE','Selected only among evaluated ranges; full universe not exhausted.'))
+    return result
+
+
+def _decide_global(request,should_cancel,on_progress):
+    import curve_phrase_analysis as phrase
+    _check(should_cancel);phrase._preflight(request);_validate_request(request)
+    _progress(on_progress,1,'BRIDGE_DECISION','Analyzing actual whole-score parents, phrases and trajectory.')
+    assessments=[];analysis=None;keys={};queue=[]
+    if request['parameters']['policy']=='none':
+        termination='POLICY_NONE';regions=_regions(request['base_project']['total_ticks']);boundaries=[]
+    else:
+        analysis=phrase.analyze(request,should_cancel);keys=phrase.note_keys(request)
+        queue,seed_count,regions,boundaries=_fair_queue(request,analysis,should_cancel)
+        for a,b in queue[:request['parameters']['max_window_tests']]:
+            _check(should_cancel)
+            assessments.append(_global_assessment(request,_range(a,b),analysis,keys))
+        tested=len(assessments)
+        termination=('EXHAUSTED' if tested==len(queue) else 'REGION_BUDGET' if tested<seed_count else 'WINDOW_BUDGET')
+    ranges=_select_global(assessments,request['parameters']['max_windows'],should_cancel)
+    windows=_global_windows(request,ranges,keys);_check(should_cancel)
+    _progress(on_progress,2,'BRIDGE_DECISION','Finite comparison complete; backend must atomically lock all ranges.')
+    return dict(schema='emoblocks.bridge-proposal.v1',spec_rev=m.SPEC_REV,contract_rev=CONTRACT_REV,
+                request_fingerprint=_request_hash(request),decision='selected' if windows else 'none',windows=windows,
+                reasons=_global_reasons(windows,termination,assessments),assessments=assessments,
+                joint_boundary_conditions=_joint_conditions(windows),search=dict(tested_windows=len(assessments),termination=termination,
+                    analysis=analysis,coverage=_coverage(regions,boundaries,queue,assessments,termination)))
+
+
+def validate_search(request,proposal):
+    """Pure global-v2 authentication for Proposal or Plan. Never calls providers.
+
+    Rebuilds factual arithmetic only; does not issue a new decision, repair the
+    supplied object, evaluate unbudgeted music, or generate notes. Public backend
+    still authenticates header/session/locks independently.
+    """
+    import curve_phrase_analysis as phrase
+    phrase._preflight(request);_validate_request(request)
+    if request['algorithm_version']!=GLOBAL_ALGORITHM:_fail('PLAN_VERSION_MISMATCH','Global search proof requires global-v2.')
+    search=proposal['search'];m.shape(search,'tested_windows termination analysis coverage');m.canonical(search)
+    m.integer(search['tested_windows'],0,request['parameters']['max_window_tests'])
+    if request['parameters']['policy']=='none':
+        if search['analysis'] is not None:_fail('INVALID_ANALYSIS','Policy none cannot publish an analysis.')
+        queue=[];regions=_regions(request['base_project']['total_ticks']);boundaries=[];expected=[];termination='POLICY_NONE';keys={}
+    else:
+        phrase.validate(request,search['analysis']);analysis=search['analysis'];keys=phrase.note_keys(request)
+        queue,seed_count,regions,boundaries=_fair_queue(request,analysis)
+        tested=min(len(queue),request['parameters']['max_window_tests'])
+        expected=[_global_assessment(request,_range(a,b),analysis,keys) for a,b in queue[:tested]]
+        termination=('EXHAUSTED' if tested==len(queue) else 'REGION_BUDGET' if tested<seed_count else 'WINDOW_BUDGET')
+    if (m.canonical(proposal['assessments'])!=m.canonical(expected) or search['tested_windows']!=len(expected)
+            or search['termination']!=termination or m.canonical(search['coverage'])!=m.canonical(_coverage(regions,boundaries,queue,expected,termination))):
+        _fail('INVALID_SEARCH','Assessment arithmetic/queue prefix/coverage does not match actual bounded search.')
+    ranges=_select_global(expected,request['parameters']['max_windows'])
+    windows=_global_windows(request,ranges,keys)
+    if (m.canonical(proposal['windows'])!=m.canonical(windows) or proposal['decision']!=('selected' if windows else 'none')
+            or m.canonical(proposal['joint_boundary_conditions'])!=m.canonical(_joint_conditions(windows))
+            or m.canonical(proposal['reasons'])!=m.canonical(_global_reasons(windows,termination,expected))):
+        _fail('INVALID_SEARCH','Stored selection/joints do not prove the adjacent-cost optimum on evaluated candidates.')

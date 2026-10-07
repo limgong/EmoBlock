@@ -496,3 +496,183 @@ class BridgeMusicTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GlobalBridgeTests(unittest.TestCase):
+    def test_adjacent_cost_dp_keeps_distinct_end_states(self):
+        rows=[dict(range=dict(start_tick=a,end_tick=b),benefit=g) for a,b,g in [(0,3840,.5),(1920,5760,.6),(5760,9600,.5)]]
+        expected=[dict(start_tick=0,end_tick=3840),dict(start_tick=5760,end_tick=9600)]
+        self.assertEqual(expected,bridge._select_global(rows,2))
+        self.assertEqual(expected,bridge._select_global(list(reversed(rows)),2))
+
+    def test_dp_matches_independent_exhaustive_proof_including_ties(self):
+        import itertools
+        import random
+        rng=random.Random(31)
+        for case in range(25):
+            rows=[]
+            for a,b in rng.sample([(a,b) for a in range(0,8) for b in range(a+1,9)],8):
+                rows.append(dict(range=dict(start_tick=a*120,end_tick=b*120),benefit=rng.choice([.04,.1,.35,.5,.6])))
+            maximum=3;legal=[(0,())]
+            for count in range(1,maximum+1):
+                for subset in itertools.combinations(rows,count):
+                    ordered=sorted(subset,key=lambda v:v['range']['start_tick']);rs=tuple((v['range']['start_tick'],v['range']['end_tick']) for v in ordered)
+                    if any(a[1]>b[0] for a,b in zip(rs,rs[1:])):continue
+                    score=sum(round(v['benefit']*100000000) for v in ordered)-35000000*sum(a[1]==b[0] for a,b in zip(rs,rs[1:]))
+                    legal.append((score,rs))
+            _,expected=min(legal,key=lambda v:(-v[0],len(v[1]),sum(b-a for a,b in v[1]),v[1]))
+            self.assertEqual([dict(start_tick=a,end_tick=b) for a,b in expected],bridge._select_global(rows,maximum),case)
+
+    def test_fair_budget_reaches_later_regions_with_honest_incomplete(self):
+        import curve_phrase_analysis as analysis
+        from test_curve_phrase_analysis import global_request
+        for blocks in (8,16):
+            req=global_request(fixture(blocks));facts=analysis.analyze(req)
+            queue,seed_count,regions,boundaries=bridge._fair_queue(req,facts)
+            proposal=bridge.decide(req);coverage=proposal['search']['coverage']
+            expected=[r for r in regions if any(r['start_tick']<=a<r['end_tick'] for a,b in queue)]
+            self.assertEqual(expected,coverage['evaluated_regions'])
+            self.assertGreater(coverage['evaluated_regions'][-1]['start_tick'],req['base_project']['total_ticks']//2)
+            self.assertEqual(128,proposal['search']['tested_windows']);self.assertFalse(coverage['coverage_complete'])
+            self.assertEqual('WINDOW_BUDGET',proposal['search']['termination'])
+            analysis.validate_search(req,proposal)
+        req=global_request(fixture(8,rough=False),dict(max_window_tests=1))
+        proposal=bridge.decide(req)
+        self.assertEqual('none',proposal['decision']);self.assertEqual('REGION_BUDGET',proposal['search']['termination'])
+        self.assertEqual('SEARCH_INCOMPLETE',proposal['reasons'][0]['code'])
+
+    def test_policy_none_no_analysis_and_all_protected_complete_none(self):
+        import curve_phrase_analysis as analysis
+        from test_curve_phrase_analysis import global_request,far_theme
+        req=global_request(fixture(),dict(policy='none'))
+        with patch.object(analysis,'analyze',side_effect=AssertionError('policy none must not analyze')):
+            proposal=bridge.decide(req);analysis.validate_search(req,proposal)
+        self.assertIsNone(proposal['search']['analysis']);self.assertFalse(proposal['search']['coverage']['coverage_complete'])
+        self.assertEqual('POLICY_NONE',proposal['search']['termination']);self.assertEqual([],proposal['assessments'])
+        p=far_theme();a,z=7680,11520
+        lock=dict(id='middle',kind='manual',owner_id='middle',placement_id=None,component_path=[],start_tick=a,end_tick=z,
+                  status='CONTENT_READY',origin='manual',plan_id=None,plan_version=None,input_fingerprint=m.fingerprint(p),
+                  notes=[n for n in m.current_notes(p) if a<=n['start_tick']<z],structure_fingerprint=None,blank_mask=[])
+        lock['structure_fingerprint']=m.structure_fingerprint(lock);p['protections'].append(lock)
+        req=global_request(p);proposal=bridge.decide(req);analysis.validate_search(req,proposal)
+        self.assertEqual('NO_WRITABLE_WINDOW',proposal['reasons'][0]['code'])
+        self.assertTrue(proposal['search']['coverage']['coverage_complete']);self.assertEqual(0,proposal['search']['tested_windows'])
+        self.assertEqual([],proposal['search']['coverage']['evaluated_regions'])
+
+    def test_search_limit_and_cancel_do_not_claim_none(self):
+        import curve_phrase_analysis as analysis
+        from test_curve_phrase_analysis import global_request
+        req=global_request(fixture(8));original=copy.deepcopy(req)
+        with patch.dict(analysis.LIMITS,candidates=4),self.assertRaises(m.ProjectError) as error:bridge.decide(req)
+        self.assertEqual('SEARCH_LIMIT',error.exception.code)
+        for limit in (0,12,30):
+            calls=iter([False]*limit+[True])
+            with self.assertRaises(m.ProjectError) as error:bridge.decide(req,lambda:next(calls,True))
+            self.assertEqual('CANCELLED',error.exception.code)
+        self.assertEqual(original,req)
+
+    def test_queue_coverage_score_and_dp_forgery_rejected_purely(self):
+        import curve_phrase_analysis as analysis
+        from test_curve_phrase_analysis import global_request
+        req=global_request(fixture(8));proposal=bridge.decide(req)
+        mutations=[lambda p:p['search']['coverage'].update(coverage_complete=True),
+                   lambda p:p['search'].update(tested_windows=127),
+                   lambda p:p['search']['coverage']['evaluated_regions'].pop(),
+                   lambda p:p['assessments'].reverse(),
+                   lambda p:p['assessments'][0].update(benefit=1.),
+                   lambda p:p['windows'].clear()]
+        for mutate in mutations:
+            bad=copy.deepcopy(proposal);mutate(bad)
+            with self.subTest(mutation=mutate),self.assertRaises(m.ProjectError):analysis.validate_search(req,bad)
+        bad=copy.deepcopy(proposal);bad['search'].pop('analysis')
+        with self.assertRaises(m.ProjectError):analysis.validate_search(req,bad)
+        with patch.object(bridge,'decide',side_effect=AssertionError('no decide')),\
+             patch.object(bridge,'generate',side_effect=AssertionError('no generate')),\
+             patch.object(analysis,'analyze',side_effect=AssertionError('no analyze')):
+            analysis.validate_search(req,proposal)
+
+    def test_generation_version_remains_v1_for_global_planner(self):
+        import curve_phrase_analysis as analysis
+        from test_curve_phrase_analysis import global_request
+        req=global_request(fixture(4),dict(max_window_tests=2048))
+        proposal=bridge.decide(req);self.assertEqual('selected',proposal['decision'])
+        plan=locked_plan(req,proposal['windows'],proposal['joint_boundary_conditions'])
+        for field in ('reasons','assessments','search'):plan[field]=copy.deepcopy(proposal[field])
+        rehash(plan);before=copy.deepcopy(plan)
+        outcome=bridge.generate(req,plan);self.assertEqual('SUCCEEDED',outcome['status'],outcome)
+        for result in outcome['results']:
+            self.assertEqual('curve-bridge-v1',result['base_material']['generation']['algorithm_version'])
+            self.assertEqual('curve-bridge-v1',result['material']['generation']['algorithm_version'])
+        self.assertEqual(before,plan)
+        legacy=copy.deepcopy(req);legacy['algorithm_version']=bridge.ALGORITHM_VERSION
+        other=locked_plan(legacy,plan['windows'],plan['joint_boundary_conditions'])
+        replay=bridge.generate(legacy,other)
+        self.assertEqual([music(r) for r in outcome['results']],[music(r) for r in replay['results']])
+        bad=copy.deepcopy(req);bad['algorithm_version']='unknown'
+        with self.assertRaises(m.ProjectError):bridge.decide(bad)
+        bad=copy.deepcopy(plan);bad['search']={'tested_windows':0,'termination':'EXHAUSTED'};rehash(bad)
+        with self.assertRaises(m.ProjectError):bridge.generate(req,bad)
+
+    def test_long_phrase_has_legal_interior_and_preserves_blank_mask(self):
+        from test_curve_phrase_analysis import global_request
+        p=fixture(8);material=copy.deepcopy(p['materials'][0]);material.update(id='long',length_ticks=p['total_ticks'],notes=copy.deepcopy(m.current_notes(p)))
+        p['materials'].append(material);place=copy.deepcopy(p['placements'][0]);place.update(material_id='long',base_snapshot=copy.deepcopy(material),length_ticks=p['total_ticks']);p['placements']=[place]
+        req=global_request(p,dict(max_window_tests=2048));proposal=bridge.decide(req)
+        self.assertTrue(any(a['range'] and 0<a['range']['start_tick']<a['range']['end_tick']<p['total_ticks'] and a['benefit'] is not None for a in proposal['assessments']))
+        p=fixture(3,tail=240);req=global_request(p,dict(max_window_tests=2048));original=copy.deepcopy(req)
+        proposal=bridge.decide(req)
+        for w in proposal['windows']:self.assertEqual(bridge._mask(p,w),w['blank_mask'])
+        self.assertEqual(original,req)
+
+    def test_global_full_note_guards_blank_and_existing_bridge_are_independent(self):
+        from test_curve_phrase_analysis import global_request,far_theme
+        import curve_phrase_analysis as analysis
+        p=far_theme();lock=p['protections'][0]
+        # Each independently authenticated manual layer remains unavailable.
+        lock['start_tick']=6000;lock['end_tick']=7680
+        lock['notes']=[n for n in m.current_notes(p) if 6000<=n['start_tick']<7680]
+        lock['structure_fingerprint']=m.structure_fingerprint(lock)
+        req=global_request(p);proposal=bridge.decide(req);analysis.validate_search(req,proposal)
+        for window in proposal['windows']:
+            self.assertTrue(bridge._legal(req,window))
+            self.assertFalse(any(m.intersects(window,bridge._support(n)) for v in p['protections'] for n in v['notes']))
+        # Existing manual bridge material retains its ready content; policy none
+        # returns no new windows and never clears the bridge lock.
+        from test_curve_workflow import manual_bridge
+        p=manual_bridge();p['blank_regions']=[dict(id='left',start_tick=0,end_tick=1920,reason='blank'),
+            dict(id='right',start_tick=3840,end_tick=p['total_ticks'],reason='blank')]
+        req=global_request(p,dict(policy='none'));before=copy.deepcopy(req)
+        proposal=bridge.decide(req);analysis.validate_search(req,proposal)
+        self.assertEqual('none',proposal['decision']);self.assertEqual(before,req)
+        self.assertEqual(1,len(req['base_project']['protections']))
+
+
+    def test_global_managed_memory_cross_onset_support_and_partial_gap(self):
+        import curve_memory
+        import curve_phrase_analysis as analysis
+        from test_curve_phrase_analysis import global_request
+        p=fixture(4);whole=copy.deepcopy(p['materials'][0]);whole.update(id='whole',length_ticks=7680)
+        whole['notes']=[dict(n,id='whole:'+str(i)) for i,n in enumerate(m.current_notes(p))]
+        whole['notes']=[n for n in whole['notes'] if not 1680<=n['start_tick']<=1920]
+        whole['notes'].append(dict(copy.deepcopy(p['materials'][0]['notes'][0]),id='long',start_tick=1800,duration_tick=300))
+        whole['notes'].sort(key=lambda n:n['start_tick'])
+        p['materials'].append(whole);p['placements']=[dict(id='whole-use',material_id='whole',base_snapshot=whole,start_tick=0,length_ticks=7680,emotion='calm',emotion_variant=None)]
+        p['intensity_points']=[dict(tick=0,level=.2),dict(tick=1920,level=1.),dict(tick=7680,level=.1)]
+        p['protections']=[curve_memory.expected_protection(p)];m.validate(p)
+        req=global_request(p,dict(max_window_tests=2048));proposal=bridge.decide(req);analysis.validate_search(req,proposal)
+        support=dict(start_tick=1800,end_tick=2100)
+        self.assertTrue(any(r['start_tick']==1800 for r in req['protection_summary']['ranges']))
+        self.assertTrue(all(not m.intersects(w,support) for w in proposal['windows']))
+        self.assertTrue(all(b['tick'] not in range(1801,2100) for b in proposal['search']['analysis']['boundaries']))
+        # Real P4 single-gap completion preserves the other gap and resolved set.
+        from test_curve_candidates import fixture as gap_fixture,prepared,proposal as gap_proposal
+        import curve_candidates as candidates
+        controller=gap_fixture();project=controller.project
+        completion=candidates.make_request(project,controller.gap_items()[0]['id'])
+        candidate=prepared(completion,[gap_proposal(completion)])['candidates'][0]
+        ref=dict(attempt_id=completion['request_id'],candidate_id=candidate['id'],request=completion,candidate=candidate)
+        import curve_bridges as public
+        req=public.make_request(project,ref,algorithm_version=public.GLOBAL_ALGORITHM)
+        proposal=bridge.decide(req);analysis.validate_search(req,proposal)
+        self.assertEqual([(0,3360)],[(r['start_tick'],r['end_tick']) for r in req['resolved_ranges']])
+        self.assertTrue(all(any(r['start_tick']<=w['start_tick']<w['end_tick']<=r['end_tick'] for r in req['resolved_ranges']) for w in proposal['windows']))
