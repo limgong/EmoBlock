@@ -68,6 +68,8 @@ class PlaybackFactsTests(unittest.TestCase):
 
     def test_modes_and_missing_file_cannot_borrow_another_asset(self):
         with self.assertRaises(model.ProjectError):
+            self.controller.recommendation_playback(self.candidate['id'], mode='')
+        with self.assertRaises(model.ProjectError):
             self.controller.recommendation_playback(self.candidate['id'], mode='arranged')
         with self.assertRaises(model.ProjectError):
             self.controller.recommendation_playback(self.candidate['id'], kind='unknown')

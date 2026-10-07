@@ -546,7 +546,9 @@ class RecommendationFacade:
         intentionally absent from the lookup.
         """
         attempt, candidate = self._candidate(candidate_id)
-        mode = mode or attempt['recommendation']['request']['mode']
+        mode = attempt['recommendation']['request']['mode'] if mode is None else mode
+        if mode not in ('arranged', 'melody_only'):
+            m.reject('请选择有效的播放模式。', 'INVALID_PARAMETERS')
         asset = self.recommendation_asset(candidate_id, kind, mode)
         member = candidate['modes'][mode]
         score = resolve(self._bundle['final_facts'], member[kind + '_score_ref'], 'final_score')
@@ -714,7 +716,7 @@ class RecommendationFacade:
         """Keep historical playback independent of current editing/selection."""
         row = next((r for r in self._bundle['results'] if r.get('id') == result_id), None)
         if row and 'candidate_id' in row:
-            value = self.recommendation_playback(row['candidate_id'], 'final', mode or row['mode'])
+            value = self.recommendation_playback(row['candidate_id'], 'final', row['mode'] if mode is None else mode)
             value['target'] = dict(kind='history', id=result_id, side='final', mode=value['target']['mode'])
             return value
         if mode is not None:
