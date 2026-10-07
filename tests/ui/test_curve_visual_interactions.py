@@ -183,6 +183,49 @@ class VisualInteractionTests(MappedUIFixture):
         self.assertGreaterEqual(bar.thumb[1],24)
         bar.destroy();self.assertIsNone(bar.timer)
 
+    def test_scrollbar_hide_focus_drag_real_timer_and_destroy_keep_timer_ownership(self):
+        bar=self.app.page.cards.scrollbar;before=copy.deepcopy(self.controller.state())
+        playing=copy.deepcopy(self.app.playing_target);calls=list(self.app.player.calls)
+        registered=set();real_after=bar.after
+        def record(ms,func=None,*args):
+            ident=real_after(ms,func,*args)
+            if func is not None:registered.add(ident)
+            return ident
+        def pending():return registered.intersection(self.root.tk.call('after','info'))
+        with patch.object(bar,'after',side_effect=record):
+            bar.reveal();first=bar.timer
+            self.assertIn(first,pending())
+            bar.hide()
+            self.assertIsNone(bar.timer);self.assertFalse(bar.visible)
+            self.assertNotIn(first,pending())
+            bar.focus_force();self.root.update();self.assertTrue(bar.focused)
+            for _ in range(3):
+                previous=bar.timer;bar.hide()
+                self.assertTrue(bar.visible);self.assertIsNotNone(bar.timer)
+                self.assertNotIn(previous,pending());self.assertEqual(pending(),{bar.timer})
+            self.app.theme_button.focus_force();self.root.update();bar.hide()
+            self.assertFalse(bar.focused);self.assertFalse(pending())
+            bar.press(self.event(bar,bar.winfo_width()//2,10));self.root.update()
+            self.assertTrue(bar.dragging)
+            for _ in range(3):
+                previous=bar.timer;bar.hide()
+                self.assertTrue(bar.visible);self.assertNotIn(previous,pending())
+                self.assertEqual(pending(),{bar.timer})
+            bar.release();self.app.theme_button.focus_force();self.root.update();bar.hide()
+            self.assertFalse(bar.dragging);self.assertFalse(bar.focused);self.assertFalse(pending())
+            # Exercise the actual 900ms Tcl callback, not a shortened/mocked timer.
+            bar.leave();timer=bar.timer
+            self.assertIn(timer,pending())
+            deadline=time.monotonic()+2
+            while bar.timer is not None and time.monotonic()<deadline:
+                self.root.update();time.sleep(.01)
+            self.assertIsNone(bar.timer);self.assertFalse(bar.visible);self.assertFalse(pending())
+            bar.focus();bar.hide();self.assertEqual(pending(),{bar.timer})
+            bar.destroy()
+            self.assertIsNone(bar.timer);self.assertFalse(pending())
+        self.assertEqual(before,self.controller.state());self.assertEqual(playing,self.app.playing_target)
+        self.assertEqual(calls,self.app.player.calls)
+
     def test_neutral_capture_bpm_navigation_hash_and_modified_same_id(self):
         self.app.prepare_target('material','block');self.finish_jobs();self.app.play_target('material','block')
         playing=copy.deepcopy(self.app.playing_target);context=playing['context'];before=self.controller.state()

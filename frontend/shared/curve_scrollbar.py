@@ -54,6 +54,7 @@ class TransientScrollbar(tk.Canvas):
         self.draw()
 
     def hide(self):
+        if self.timer is not None:self.after_cancel(self.timer)
         self.timer=None
         if self.dragging or self.focused:self.timer=self.after(900,self.hide)
         else:self.visible=False;self.draw()
