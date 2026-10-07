@@ -3,7 +3,7 @@
 SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1
 RUN_ID=curve-v2-p8-20261007-492036f5
-状态：DRAFT，样例清单由本轮实际产物补齐。不得把此操作表当成执行记录。
+状态：本地人工验收操作表；真实音乐与截图索引已准备，人工/Windows反馈待填写。不得把此操作表当成执行记录。
 
 ## 安全开始
 
@@ -59,13 +59,14 @@ PASS | FAIL | NOT_TESTED | BLOCKED:
 
 短版交接先完成：一个完整建议试听确认保存导出、一个局部补全导出拒绝、键盘删除/撤销、双主题最小窗口、MMP目标资源和两套推荐人工对比。随后补全矩阵其余项；不能把短版通过写成全面通过。
 
-对照材料逐条绑定sample/group ID、candidate Ref、stage/plan版本、mode/asset_version、输入SHA、seed/参数、逻辑音符和实际起音账本、保护范围、处理原因、输出指纹。18个子场景是有界计划，不代表已全部生成。中间阶段同中性音色/力度，最终分别完整编配与仅主旋律；明确无变化阶段及原因。反馈须附真实播放文件、模式、时间点、听者和日期，不以WAV有效或设备流替代人耳结论。
+对照材料逐条绑定sample/group ID、candidate Ref、stage/plan版本、mode/asset_version、输入SHA、seed/参数、逻辑音符和实际起音账本、保护范围、处理原因、输出指纹。18组有界样例的实际输出已完成；80任务的28中性诊断与52最终谱资产分别记账，不能把它们当成已试听推荐或所有可能保护组合的实测。中间阶段同中性音色/力度，最终分别完整编配与仅主旋律；明确无变化阶段及原因。反馈须附真实播放文件、模式、时间点、听者和日期，不以WAV有效或设备流替代人耳结论。
 
 ## 本轮已有材料与最短反馈
 
 本轮仓库外运行目录：EmoBlocks/dev-runs/curve-v2-p8-20261007-492036f5（本机用户Library/Application Support下）。
 
 - `music-listening/quick-listen/`：C1/C2各自comparison与final-arranged，约7秒；实际LMMS输出，manifest记录SHA/Score Ref。
+- `music-algorithm/tests/actual-evidence-check/listening-index.md`与修正后补充索引：逐组实际调性/强度、音符和输出位置，包含未自动选出处理的具体限制。
 - `music-listening/manifest.json`及`complete-queue/manifest.json`：18组四阶段对照与最终arranged/melody_only，明确none/不变、局部未完成和精确tick拒绝。`music-algorithm/tests/p8-music-evidence/render-queue.json`为原始有界队列，实际执行结果另存，不把计划状态当成已渲染。
 - `lead-backend/tests/actual-repaired/ready.json`：新profile真实两套建议；`accepted-dual-mode.json`：确认、undo/redo、双模式准备与纯保存重开后的隔离工程。
 - `lead-backend/tests/actual-repaired/中文 导出/`：两模式WAV/MIDI/MMP，`dual-mode-smoke.json`绑定所选谱和源摘要。
@@ -77,3 +78,14 @@ PASS | FAIL | NOT_TESTED | BLOCKED:
 Windows材料必须与最终本地提交一致。先记录目标系统/软件版本；不要直接把Mac绝对路径的旧资产认作已定位：新MMP是data:/ URI且仍需目标工厂资源，旧v1工程/资产不自动迁移。复制样例后复核文件摘要，在目标LMMS实际打开；仅check_resources通过不足以确认应用真的解析了资源。现有已准备音频或资产路径丢失时，明确重新准备对应模式或使用清单内独立文件，不静默换位置。
 
 所有人工表格当前待真实反馈。真实背景模糊未实现；黑暗主题为静态Vibrancy风格适配；情绪数据色为已确认的例外。没有人耳反馈不能把连接自然、情绪表达或音乐质量写为PASS。
+
+已知外部软件限制：本机LMMS1.3.0-alpha.2将实际导出MID导入空白工程后，原生保存副本有27/133音符时值缩短10tick；原MID与FinalScore完全一致，直接导出的MMP亦一致。该版本LMMS继续编辑请优先MMP，不为适配导入器移动或量化原谱。目标MIDI软件应记录实际时值，不能仅凭“能打开”填PASS。本机LMMS没有默认GM音色库，MIDI合成器试听受阻；已有WAV和直接MMP能力不受此影响，不需要为本次验收下载安装。
+
+
+## 最终材料补充与已知兼容问题
+
+本轮完整源码自查938项通过；自动测试与程序化窗口事件不替代人手操作。12张双主题/三尺寸/来源状态图及1280×800谱线修正前后图均来自实际窗口。音乐材料最终索引为music-algorithm/tests/actual-evidence-check/post-metadata-correction/listening-index.md；80项队列包含28项中性阶段诊断和52项最终乐谱资产，36项首套资产是后者子集。
+
+LMMS 1.3.0-alpha.2实际导入本轮MIDI后，27/133音符时值减少10tick；源MIDI仍与FinalScore一致。该目标版本继续编辑优先打开直接导出的MMP。MMP不是自包含工程：在partner机器运行交接目录check_resources.py核对实际资源内容，不能仅凭同名文件认定正确。Windows的MIDI导入行为、路径解析与声卡仍需本机记录；不调整原谱来补偿未定位的第三方导入问题。
+
+建议最短人工反馈：先试听quick-listen中的同一候选基础/处理后（各约7秒），记录样例ID、模式、秒数和具体感受；再做一次拖入→Backspace删除→撤销、触控板横纵滚动后的命中、原生下拉和播放暂停；Windows另在100/125/150%重复最小窗口并打开MMP检查资源。填写表格后保留原始记录，不把“能出声”写成音乐自然通过。上述步骤不要求安装新软件、改变默认设备或上传文件。
