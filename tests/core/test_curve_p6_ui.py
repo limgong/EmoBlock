@@ -512,7 +512,22 @@ class CurveP6Tests(MappedUIFixture):
         self.run_connection();before=self.unchanged();self.app.connection.toggle_preview();self.root.update()
         a,t,b,d=canvas.connection_boxes['connection-0']
         canvas.press(self.event(canvas.canvas,(a+b)/2-canvas.canvas.canvasx(0),t+4));self.assertEqual(canvas.selected_connection_id,'connection-0')
-        for key in ('<BackSpace>','<Delete>'):canvas.canvas.event_generate(key)
+        # Canvas focus may not have settled after mapping. Consume each
+        # synthetic key in this preview, before restoring the editable bookmark.
+        canvas.canvas.focus_force();self.root.update()
+        self.assertEqual(self.root.focus_get(),canvas.canvas)
+        received=[];tag='P6ReadonlyKeys'+str(id(canvas));tags=canvas.canvas.bindtags()
+        canvas.canvas.bindtags((tag,)+tags)
+        for key in ('<BackSpace>','<Delete>'):
+            self.root.bind_class(tag,key,lambda e:received.append((e.keysym,canvas.readonly,self.app.editable)))
+        def remove_key_observer():
+            canvas.canvas.bindtags(tags)
+            for key in ('<BackSpace>','<Delete>'):self.root.unbind_class(tag,key)
+        self.addCleanup(remove_key_observer)
+        for key in ('<BackSpace>','<Delete>'):
+            canvas.canvas.event_generate(key,when='tail');self.root.update()
+        self.assertEqual([key for key,_,_ in received],['BackSpace','Delete'])
+        self.assertTrue(all(readonly and not editable for _,readonly,editable in received))
         canvas.set_mode('trace');self.app.set_emotion('hope');self.app.import_file('blocked.mid')
         material=self.app.resolve('material','material:0')
         selected=self.app.selected_target
