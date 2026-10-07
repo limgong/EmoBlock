@@ -91,7 +91,7 @@ class OutputGateTests(unittest.TestCase):
             self.assertTrue(controller.finish_recommendations(captured['token'],out))
             candidate=out['candidates'][0];controller.apply_recommendation(candidate['id'])
             result=controller.history_items()[0];before=copy.deepcopy(controller.project)
-            undo=copy.deepcopy(controller.session._undo);saved=controller.state()['is_saved'];staging=controller.staging_dirty
+            undo=copy.deepcopy(controller.session._undo);saved=controller.state()['is_saved'];staging=controller.state()['staging_dirty']
             state=controller.history_output_state(result['id'])
             self.assertTrue(all(state['availability'].values()))
             self.assertEqual(state['score_ref'],result['score_ref'])
@@ -106,7 +106,7 @@ class OutputGateTests(unittest.TestCase):
             destination=Path(directory)/'中文 文件.mid';controller.export_history(result['id'],'mid',destination)
             self.assertEqual(destination.read_bytes(),Path(candidate['assets']['final']['files']['mid']['path']).read_bytes())
             self.assertEqual(controller.project,before);self.assertEqual(controller.session._undo,undo)
-            self.assertEqual(controller.state()['is_saved'],saved);self.assertEqual(controller.staging_dirty,staging)
+            self.assertEqual(controller.state()['is_saved'],saved);self.assertEqual(controller.state()['staging_dirty'],staging)
 
     def test_new_capture_cannot_accept_old_profile_even_when_bytes_are_valid(self):
         with tempfile.TemporaryDirectory() as directory:
