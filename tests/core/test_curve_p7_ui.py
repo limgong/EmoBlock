@@ -31,6 +31,8 @@ class RecommendationController(ConnectionController):
     def __init__(self, wav):
         super().__init__()
         self.wav = wav
+        self.wav_sha256=hashlib.sha256(wav.read_bytes()).hexdigest()
+        self.wav_bytes=wav.stat().st_size
         self.rec_sequence = 0
         self.mode_sequence = 0
         self.audits = {}
@@ -156,7 +158,7 @@ class RecommendationController(ConnectionController):
         return dict(schema='emoblocks.final-asset.v1',spec_rev=model.SPEC_REV,contract_rev=P7,
             id=f'{candidate_id}:{mode}:{kind}',version=1,candidate_ref=ref(candidate_id),
             score_ref=ref(f'{candidate_id}:{mode}:{kind}'),kind=kind,mode=mode,renderer_version='fixture-only',
-            files={ext:dict(path=str(self.wav),sha256=hashlib.sha256(self.wav.read_bytes()).hexdigest(),bytes=self.wav.stat().st_size) for ext in ('wav','mid','mmp')},
+            files={ext:dict(path=str(self.wav),sha256=self.wav_sha256,bytes=self.wav_bytes) for ext in ('wav','mid','mmp')},
             body_ticks=self._project['total_ticks'],body_seconds=4.,audio_seconds=4.5,
             tail_policy='fixture-only',asset_fingerprint='fixture-only')
 

@@ -328,7 +328,9 @@ class CurveApplication:
         if not placement or self.private_preview():
             self.page.emotion_panel.pack_forget()
             return
-        self.page.emotion_panel.pack(fill='x',before=self.page.memory_label,pady=(4,0))
+        # Timeline stays packed through review/return; the duplicate memory summary
+        # is conditional and cannot serve as a lifecycle-stable pack anchor.
+        self.page.emotion_panel.pack(fill='x',before=self.page.timeline,pady=(4,0))
         self.page.emotion_title.configure(text='情绪')
         for emotion,button in self.page.emotion_buttons.items():
             button.configure(style='Curve.Primary.TButton' if placement['emotion']==emotion else 'Curve.TButton')
@@ -545,7 +547,7 @@ class CurveApplication:
         else:page.derive_row.pack_forget()
         gap=self.selected_gap()
         if gap and not empty and not self.private_preview() and not self.jobs:
-            page.gap_panel.pack(fill='x',before=page.memory_label)
+            page.gap_panel.pack(fill='x',before=page.timeline)
             page.gap_label.configure(text=f'空缺 · 第{gap["start_tick"]/480+1:g}拍 · {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
         else:page.gap_panel.pack_forget()
         if self.advanced and not empty:
