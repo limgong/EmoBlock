@@ -121,6 +121,7 @@ class GlobalBridgeServiceTests(unittest.TestCase):
         from test_curve_final import simulated_render
         controller = complete()
         before = controller.project
+        history = copy.deepcopy((controller.session._undo, controller.session._redo))
         captured = controller.capture_recommendations(mode='melody_only')
         with tempfile.TemporaryDirectory() as folder, \
              patch.object(final_audio, 'render', side_effect=simulated_render(folder)), \
@@ -135,9 +136,10 @@ class GlobalBridgeServiceTests(unittest.TestCase):
             candidate = outcome['candidates'][0]
             asset = controller.recommendation_asset(candidate['id'])
             self.assertEqual(controller.project, before)
-            self.assertFalse(controller.session._undo)
+            self.assertEqual((controller.session._undo, controller.session._redo), history)
             accepted = controller.apply_recommendation(candidate['id'],
                 confirmation_ref=controller.confirmation_ref(candidate['id']))
+            self.assertEqual(len(controller.session._undo), len(history[0]) + 1)
             self.assertEqual(controller.history_asset(accepted['receipt']['result_id'])['score_ref'],
                              asset['score_ref'])
             after = controller.project

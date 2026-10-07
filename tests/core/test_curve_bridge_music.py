@@ -423,7 +423,7 @@ class BridgeMusicTests(unittest.TestCase):
         import curve_workflow as workflow
         import curve_store
         import curve_memory
-        controller=workflow.Controller(fixture(4));cap=controller.capture_bridge();req=cap['request'];token=cap['token']
+        controller=workflow.Controller(fixture(4));cap=controller.capture_bridge(algorithm_version=bridge.ALGORITHM_VERSION);req=cap['request'];token=cap['token']
         regions=[dict(start_tick=0,end_tick=3840),dict(start_tick=3840,end_tick=7680)]
         proposal=bridge.decide(req)
         proposal['windows']=[window(req,r['start_tick'],r['end_tick'],str(i),[regions[1-i]]) for i,r in enumerate(regions)]
