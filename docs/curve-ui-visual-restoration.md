@@ -35,7 +35,7 @@ BASE_SHA=03f2191d586970da0e8fa7a4d597aa905cb39867
 
 ## 集成与缺陷修复
 
-代码提交 `762cc7a5c4f6f19c6de53db6a760adf17eb8a213` 包含 frontend 四份本地交付；19 个前端源码及测试文件的 SHA256 与 frontend `afcf8c2134974d9da066c5057aca684dff68b1eb` 完全一致，详见仓库外 `integration/final-source-match.json`。集成对应关系：
+初次代码提交 `762cc7a5c4f6f19c6de53db6a760adf17eb8a213` 包含 frontend 四份交付；ROUND2 再集成两项定向修复至 `69488ee`，全部产品／测试字节与 frontend `75f5f833df82bd2660a270c0510b9543091bc986` 完全一致，19份 manifest见 `integration/final-source-match-r2.json`。集成对应关系：
 
 | frontend 提交 | 集成提交 | 内容 |
 |---|---|---|
@@ -43,10 +43,16 @@ BASE_SHA=03f2191d586970da0e8fa7a4d597aa905cb39867
 | 8ed6591 | 0269884 | 音频与只读快照绑定、生命周期、实际 WAV 字节身份和打开过程中变化拒绝 |
 | b7cd446 | 5ab9369 | 候选退出／重入使用稳定布局锚点，不丢条件操作行 |
 | afcf8c2 | 762cc7a | 最小窗口选中积木及空缺操作并入工具栏，保留44px目标和至少320px画布 |
+| e43bb4d | 64bb3d5 | 波形只解析同一份摘要认证的私有字节快照；有界分块与1MiB内存阈值，兼容公开波形调用 |
+| 75f5f83 | 69488ee | 显式隐藏时先取消滚动条拥有的待触发定时器，避免销毁后遗留回调 |
 
 实际截图曾复现选中积木时 1020×700 画布只有277px。修复保留六种情绪操作、留白／生成此处／全部空缺入口，删除重复的 BOUND 摘要；真实记忆标记、待落位、主动留白和错误仍直接显示。修复测试覆盖两主题、来源展开／收起、积木与真实空缺、三种记忆状态及错误；不把 geometry 结果当作视觉截图。
 
 播放字节替换故障使用临时 WAV 复现。修复同时核对捕获的 SHA256 与打开前后文件身份；音频在认证后或打开／读取过程中变化时停止并拒绝，不能继续冠以旧乐谱身份。两个平台播放器源码与既有防杂音实现保持不变。
+
+独立 UI3 ROUND1 在 `245ff5f` / `90f5cfddf82bc514769ab65929c16ac10d20a44fed72f72b6f67a0fb414ea581` 检查前后完全一致，但结论 FAIL：另开路径读取PCM、再打开文件算摘要时，替换／恢复文件反例缓存了错误波形。原资产峰值0.0305，错误显示0.6104；普通1020测试通过并未覆盖该竞态。收据 `verifier/implementation-r1-review.json` 保留。
+
+ROUND2 使用同一份有界复制、摘要认证的私有快照解析波形，跨8/16/24/32位PCM及大分块保持实际整数RMS。临时大文件溢出至本任务临时目录并随作用域关闭。回归在旧实现失败、新实现通过；原16个测试方法正文未改。生命周期追踪又复现当前细滚动条提前hide丢失timer句柄，单行取消修复后无Curve遗留回调。完整日志仍有已独立复现的旧兼容页 `preview_ui.hide_history_scroll` 提示：该模块与旧测试未修改，正式 `run.py` 仍进入Curve，不能把这一诊断藏掉或宣称已关闭。
 
 ## 自动与运行证据
 
@@ -55,7 +61,8 @@ BASE_SHA=03f2191d586970da0e8fa7a4d597aa905cb39867
 | 检查 | 实际结果 | 仓库外日志／证据 |
 |---|---|---|
 | `scripts/test.py --backend-only` | 集成代码643项通过，78.102秒 | integration/logs/backend-final.log |
-| `scripts/test.py` | frontend最终提交1020项通过，227.625秒；全部产品／测试字节与集成相同 | frontend/tests/full-final-selected-toolbar.log；integration/final-source-match.json |
+| `scripts/test.py` | ROUND2最终组合1029项通过，224.036秒；保留单独复现的旧兼容页提示，当前Curve回调已关闭 | frontend/tests/ui3-r2-waveform/full-combined.log；integration/final-source-match-r2.json |
+| 波形／清理专项 | 25项通过，8.756秒；替换／恢复、摘要拒绝、PCM宽度、缓存／销毁及900ms真实定时器 | frontend/tests/ui3-r2-waveform/targeted-cleanup-combined.log |
 | 选中积木／空缺与布局行为专项 | 60项通过，33.493秒 | frontend/tests/selected-gap-minimum-fixed-setup.log |
 | 只读播放与正式预览服务 | 7项行为测试通过 | integration/logs/playback-tests-r4.log |
 | `scripts/check_frontends.py` | 共享源码、配对平台契约、无Tk后端隔离通过 | integration/logs/check-frontends-final.log |
@@ -69,7 +76,9 @@ lead 串行独占 Tk、LMMS 与输出设备；通过映射后的真实导入、�
 
 运行覆盖：MIDI/MMP 导入不自动铺画布、音符与短尾保留、卡片选择不播、明确试听、拖入及Esc取消、一次撤销、拒绝截断、真实局部空缺选择、全局完整方案管线、重复生成限制、候选选择不播放、不自动采用、明确播放、暂停／定位／继续／块导航／停止、两编配模式、采用后一次撤销／重做、保存重开及同一选定版本的三格式导出。
 
-实际新 LMMS 连续渲染、设备流与完整 PCM 核验：77项全部通过，165.112秒；最终报告 `integration/new-pipeline-smoke/attempt-857096e4/report.json`，外部汇总 `integration/public-pipeline-final-receipt.json`。实际 WAV 308700帧、44100Hz、2声道、7.0秒（正文6秒，含尾音另计），峰值0.300995、诊断削波样本0。设备使用系统现有默认输出，未改默认设备或开启麦克风；流打开和文件有效不等于人耳听感通过。失败的外部验收脚本修正记录保留，包括原生按钮缺少 Enter 事件、未获键盘焦点的 Esc、错误假定候选自动选择和 Waveform 变量覆盖 wave 模块。这些脚本错误不能用来修改已确认的选择／播放语义。
+实际新 LMMS 连续渲染、设备流与完整 PCM 核验：77项全部通过，165.112秒；最终报告 `integration/new-pipeline-smoke/attempt-857096e4/report.json`，外部汇总 `integration/public-pipeline-final-receipt.json`。实际 WAV 308700帧、44100Hz、2声道、7.0秒（正文6秒，含尾音另计），峰值0.300995、诊断削波样本0。完整77项流程的源版本为762cc7a；之后没有修改后端管线、音乐处理、平台播放器或相关输入／采用／导出接线。修复后 `69488ee` 另外通过25项真实映射播放器检查，16.802秒，报告 `integration/postfix-player-smoke/attempt-9ad61742/report.json`：重新打开本轮实际成品，波形与认证PCM一致，暂停／定位／块导航／继续／停止，主题不修改音乐，MIDI/MMP/WAV均对应当前明确历史版本及界面播放模式。新窗口的UI模式可与上次采用模式不同；检查使用该模式对应的保存谱面变体，不能拿默认getter的另一模式冒充播放对象。前一外部检查误假定默认模式的失败报告保留；产品代码没有为它修改。
+
+设备使用系统现有默认输出，未改默认设备或开启麦克风；流打开和文件有效不等于人耳听感通过。失败的外部验收脚本修正记录保留，包括原生按钮缺少 Enter 事件、未获键盘焦点的 Esc、错误假定候选自动选择和 Waveform 变量覆盖 wave 模块。这些脚本错误不能用来修改已确认的选择／播放语义。
 
 ## 真实图像与限制
 
