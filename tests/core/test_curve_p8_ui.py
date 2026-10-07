@@ -333,3 +333,85 @@ class CurveP8MappedTests(MappedUIFixture):
                 self.assertIn('记忆',self.app.detail_text.get())
                 self.assertEqual(self.invariant(),before)
                 timeline.set_project(self.controller.project,memory_info=info)
+
+
+class CurveP8NativeCloseTests(unittest.TestCase):
+    """Real mapped Aqua/TkDND + Facade; no render or device playback in this suite."""
+    def setUp(self):
+        import os
+        import sys
+        if sys.platform != 'darwin' or not curve_ui.ui_platform.NATIVE_CHROME:
+            self.skipTest('Actual Aqua/TkDND close needs the macOS adapter and desktop')
+        self.tmp = tempfile.TemporaryDirectory(prefix='curve-native-close-')
+        self.addCleanup(self.tmp.cleanup)
+        self.environment = patch.dict(os.environ, {'EMOBLOCKS_DATA_DIR': self.tmp.name})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        self.root = curve_ui.ui_platform.create_root()
+        self.addCleanup(self.destroy_root)
+        if not hasattr(self.root, 'drop_target_register'):
+            self.skipTest('Existing TkDND dependency is not available; not an actual DND check')
+        self.errors = []
+        self.root.report_callback_exception = lambda *exc: self.errors.append(exc)
+        self.controller = curve_workflow.Controller(fixture())
+        self.app = curve_ui.CurveApplication(self.root, self.controller)
+        self.root.geometry('1020x700+20+40')
+        self.root.update()
+        self.assertIsNotNone(self.app.file_drop)
+        self.assertTrue(self.root.winfo_ismapped())
+
+    def destroy_root(self):
+        if hasattr(self, 'app') and not self.app.closed:
+            self.app.close()
+        else:
+            try:self.root.destroy()
+            except tk.TclError:pass
+
+    def test_real_public_close_autosaves_destroys_root_and_repeated_teardown_is_safe(self):
+        before = copy.deepcopy(self.controller.project)
+        drop = self.app.file_drop
+        callback = Mock(wraps=drop.callback)
+        drop.callback = callback
+        self.assertTrue(self.app.close())
+        self.assertTrue(self.app.closed)
+        self.assertTrue(drop.closed)
+        self.assertEqual(self.controller.project, before)
+        saved = sorted(Path(self.tmp.name).rglob('*.json'))
+        self.assertTrue(saved)
+        self.assertTrue(self.app.close())
+        drop.close()
+        self.assertEqual(sorted(Path(self.tmp.name).rglob('*.json')), saved)
+        self.assertEqual(drop.drop(SimpleNamespace(data='late input.mid')), 'refuse_drop')
+        callback.assert_not_called()
+        self.assertFalse(self.errors)
+        try:
+            exists = self.root.winfo_exists()
+        except tk.TclError as exc:
+            self.assertIn('application has been destroyed', str(exc))
+            exists = False
+        self.assertFalse(exists)
+
+    def test_autosave_failure_keeps_real_window_drop_bindings_and_player_target_alive(self):
+        drop = self.app.file_drop
+        bindings = (self.root.bind('<<Drop>>'), self.root.bind('<<DropTargetTypes>>'))
+        target = dict(label='tracked playback', target=('material', 'block'), asset={})
+        self.app.playing_target = copy.deepcopy(target)
+        before = copy.deepcopy(self.controller.state())
+        with patch.object(self.controller, 'autosave_if_needed', side_effect=OSError('owned autosave failure')), \
+             patch.object(self.app.player, 'close', wraps=self.app.player.close) as close_player:
+            self.assertFalse(self.app.close())
+            close_player.assert_not_called()
+        self.root.update()
+        self.assertFalse(self.app.closed)
+        self.assertFalse(drop.closed)
+        self.assertTrue(self.root.winfo_ismapped())
+        self.assertEqual((self.root.bind('<<Drop>>'), self.root.bind('<<DropTargetTypes>>')), bindings)
+        self.assertEqual(self.controller.state(), before)
+        self.assertEqual(self.app.playing_target, target)
+        self.assertIn('owned autosave failure', self.app.status_text.get())
+        # The same live target still accepts a callback; no import/render is invoked.
+        with patch.object(drop, 'callback') as callback:
+            self.assertEqual(drop.drop(SimpleNamespace(data='{source with spaces.mid}')), 'copy')
+            callback.assert_called_once_with(['source with spaces.mid'])
+        self.assertTrue(self.app.close())
+        self.assertFalse(self.errors)

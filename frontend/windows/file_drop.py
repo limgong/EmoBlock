@@ -36,7 +36,7 @@ class FileDrop:
                     buffer=ctypes.create_unicode_buffer(length+1)
                     self.shell.DragQueryFileW(wparam,i,buffer,length+1);paths.append(buffer.value)
             finally:self.shell.DragFinish(wparam)
-            try:self.root.after(0,lambda:self.callback(paths))
+            try:self.root.after(0,lambda:None if self.closed else self.callback(paths))
             except Exception:pass
             return 0
         return self.user.CallWindowProcW(self.old,hwnd,message,wparam,lparam)

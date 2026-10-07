@@ -1244,6 +1244,7 @@ class CurveApplication:
         self.timer = self.root.after(80,self.tick)
 
     def close(self):
+        if self.closed:return True
         if self.jobs:
             self.tell('请先明确取消当前任务，再关闭窗口。')
             return False

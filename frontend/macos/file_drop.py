@@ -1,4 +1,7 @@
 """Finder drops through TkDND, using the shared import callback."""
+import tkinter as tk
+
+
 class FileDrop:
     def __init__(self,root,callback):
         try:
@@ -9,10 +12,17 @@ class FileDrop:
         root.drop_target_register(DND_FILES)
         self.binding=root.dnd_bind('<<Drop>>',self.drop)
     def drop(self,event):
+        if self.closed:return 'refuse_drop'
         self.callback(list(self.root.tk.splitlist(event.data)))
         return 'copy'
     def close(self):
         if not self.closed:
             self.closed=True
             self.root.unbind('<<Drop>>',self.binding)
-            self.root.drop_target_unregister()
+            try:
+                self.root.drop_target_unregister()
+            except tk.TclError as exc:
+                # TkDND 2.9.5's Aqua unregister branch is explicitly unimplemented.
+                # Remove its remaining logical target binding before root destruction.
+                if str(exc)!='todo' or self.root.tk.call('tk','windowingsystem')!='aqua':raise
+                self.root.unbind('<<DropTargetTypes>>')
