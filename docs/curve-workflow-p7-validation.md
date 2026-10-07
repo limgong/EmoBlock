@@ -108,3 +108,15 @@ R2受检HEAD=55b32e61639e053329bcb02e3c8424e95b04e63f，209文件前后指纹74f
 全部上述修复之后复跑：`scripts/test.py --backend-only` 586 PASS（66.317秒）；`scripts/test.py` 894 PASS（223.593秒）；`scripts/check_frontends.py` PASS；工作区及BASE到HEAD的`git diff --check` PASS。16项输出/保护专项2.819秒PASS；18份真实归档资产再次PASS。最新日志为仓库外`P7-R3-final-*`；早先`P7-R3-*`是MMP修复前的记录，不混用。
 
 两worker空闲、干净且无未交付源码，正常同步后复核完整文件字节和各自真实Python导入。进入独立实现ROUND3/5；契约仍累计ROUND3/5，R1/R2失败记录完整保留。受检HEAD、前后完整指纹及最终PASS仍以仓库外review/收据为准；检查期间本目录冻结。P8未启动，人工、截图及Windows待验边界不变。
+
+## 独立ROUND3 FAIL与ROUND4采样认证
+
+R3受检HEAD=e024a94bea75ba5a8a469c077360cbc04c2a190c，209文件前后指纹b337a414055641bb2e473723160a1de4bd8d042e9f71c2d2bb51cf26ff64ee3e；任务、完整manifest与lead现场代码一致。独立894完整/586后端、纯恢复、真实资产、Tk41项通过，前两轮缺口已关闭，但明确FAIL：MMP鼓采样仅比较basename，不存在的同名路径仍可进入READY。
+
+修复9a83f4a：物理结果认证解析实际绝对采样路径，依据现有后端runtime/encoder的计划资源，核对可读、非空、相同字节长度和SHA256。缺失或无关同名文件拒绝；安装资源和相同内容的绝对路径副本允许。只读取资源，不改写/安装/打包LMMS资源。缺少当前计划资源返回OUTPUT_RESOURCE_UNAVAILABLE，提示恢复采样后重新准备；内容不符返回OUTPUT_BINDING_MISMATCH。MMP仍依赖外部资源，不宣称自包含。
+
+新增直接认证与公开finish两项行为测试，覆盖缺失、错误内容、合法安装/副本；公开失败恢复保留工程、保存状态、undo和历史并清除busy。测试均用临时资源，不删除用户或LMMS文件。保留原鼓/旋律正例，仅让临时资源解析在编码和认证期间保持一致。WAV-only物理认证不读取MMP采样，已有音频保持独立可用；纯保存恢复使用files=False，不因采样缺失重新生成音乐或启动线程。
+
+最终修复后：`scripts/test.py --backend-only` 588 PASS（65.235秒）；`scripts/test.py` 896 PASS（222.512秒）；`scripts/check_frontends.py`和工作区/BASE到HEAD的`git diff --check` PASS。18项输出/保护专项4.524秒PASS，18份真实归档资产再次PASS，最新记录为仓库外`P7-R4-*`。
+
+正常同步干净worker并核对字节/实际导入后进入独立实现ROUND4/5；契约仍累计ROUND3/5，R1–R3原FAIL完整保留。检查期间目录冻结；最终review/收据记录精确受检HEAD和前后指纹，不将自查或idle/done作为PASS。P8及人工/Windows待验范围保持不变。Mac手动流程的可打开工程是RUN_DIR下`lead-backend/tests/actual-p7/audition-ready.json`，素材/音频另在同隔离目录，复核时另存新快照，不覆盖原夹具。
