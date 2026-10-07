@@ -148,7 +148,7 @@ class CurvePage(ttk.Frame):
         source = next((s for s in (self.app.state_data['project'] or {}).get('sources',[])
                        if s['id']==self.app.selected_source_id),None)
         if not source:
-            c.create_text(12,35,anchor='w',text='未导入来源',fill=p['muted'],font=font(9))
+            c.create_text(12,35,anchor='w',text='选择来源查看概览',fill=p['muted'],font=font(9))
             return
         width = max(100,c.winfo_width())-16
         height = max(40,c.winfo_height())
