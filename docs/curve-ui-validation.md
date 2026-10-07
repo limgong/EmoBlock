@@ -2,7 +2,7 @@
 
 RUN_ID=curve-ui-20261007-af9a6bd3
 BASE_SHA=36ae1476bd5c08df17ae3e33d50e25983dbc9014
-状态：UI3第1轮FAIL已完成定向修复，等待第2轮独立检查。用户明确解锁后，最新源码的60张真实窗口图已补齐；下文锁屏缺项描述为历史过程，不再代表最终图数量。当前仍不预先宣称UI_TECHNICAL_READY。
+状态：UI3第1、2轮独立FAIL均已完成定向修复，准备第3轮独立检查（最多5轮，不重置）。最新版60张真实Mac窗口图绑定frontend a9fd206；之前的锁屏缺项仅为历史过程。当前不预先宣称UI_TECHNICAL_READY。
 
 ## 范围和基线
 
@@ -75,3 +75,19 @@ verifier UI3-R1在62444e1/1ef5b2f4指纹上独立958测试PASS，但明确FAIL�
 本轮新真实完整LMMS和设备流证据仍为lead-backend/tests/new-pipeline；修复改的是UI状态，未重新作曲来伪造更多音频。人工视觉审美、物理Mac操作、Windows三个缩放、人工音乐听感与外设音频依旧PENDING；P8历史PARTIAL与两项既知限制未改写。最终收据写仓库外，不为标记PASS改冻结目录。
 
 最新版生成取消入口另由frontend真实窗口复测10项PASS：v4原图及新增图均可见“取消”，实际坐标点击先登记CANCEL_REQUESTED再收拢到CANCELLED，busy退出，工程/saved/undo/播放器不变。该疑点未复现，不改代码；收据frontend/tests/UI3-R1-cancel-check/report.json。最终交付UI3-R1-fix-delivery.json为READY_FOR_REVIEW，源码3680ad5，旧BLOCKED交付另存不覆盖。
+
+## UI3第2轮发现与第3轮冻结前材料
+
+verifier UI3-R2在79e02c3及222文件指纹d2b6e180d080e7f4493b75ea3c74d1e812a26dad28c3b470938336b35aa09894上独立964测试PASS，前后代码与71项附件摘要不变；明确FAIL仅UI3-R2-F1：实际候选1920/2100tick的“边界”标签重叠11逻辑像素。第一轮返回编辑缺陷、失败/成功采用及undo-redo已独立关闭，未发现音乐范围改变。实际收据verifier/tests/UI3-R2-review.json保留。
+
+frontend a9fd206集成1a5f36a：根据真实Canvas文字bbox在可见视口安放标签，与其它范围提示避让；空间不足换行，边缘收拢，字体不缩小。细连接线保原tick关联，垂直边界线及真实音乐/保护坐标不移动；滚动后更新显示与点击bbox，点标签仍打开其原边界详情。只修改curve_canvas.py与行为测试，不改公共后端、schema、算法或适配器。
+
+worker完整965项PASS163.946秒、53专项PASS17.731秒、check_frontends与diff PASS。测试覆盖密集32个子拍邻边界、1920/2100、首末边界、双主题/三尺寸/滚动后的实际窗口点击，保selection、播放、工程/undo/saved与音乐范围。正式Controller及历史真实READY候选225检查、18场景通过，返回/失败采用/成功采用/一次undo-redo无回归；失败采用明确注入，不能称后台真实故障。
+
+frontend/tests/UI3-R2-final-matrix和UI3-R2-final-image-index.json保最新版60张OS窗口截图，源码a9fd206与集成逐文件摘要一致，所有可见边界标签bbox不重叠，最小Canvas控件331逻辑像素。实际深色1020相邻框由[202,50,229,67]/[218,50,245,67]变为[203,50,230,67]/[234,50,261,67]。生成布局仍使用实际主入口RECOMMENDATION加受控等待，不冒充新增音乐渲染；本轮修复无新设备播放或作曲。旧图/失败证据不覆盖。负责人已查看最新版原分辨率暗色最小候选和明亮1280编辑图。
+
+集成目录正式check_frontends、完整scripts/test.py及diff日志在lead-backend/tests/UI3-R3-*；独立第3轮检查结论只能以仓库外冻结收据为准，不在受检目录写入“通过”。所有此前Mac实体/Windows实机/人工听感欠项与P8限制保留。
+
+集成首次965项执行有一项未复现失败：P3子像素命中测试末尾记录意外set_intensity调用（UI3-R3-full.log）；原失败完整保留。正确配置自身源码后，同一测试不改代码连续5次通过（UI3-R3-p3-hit-probe-v2.log）；初次单独运行遗漏bootstrap的ImportError也保留，不算产品失败或通过。完整重跑及独立审查需如实核对，不能删除失败或降低断言。
+
+集成完整重跑965项PASS164.087秒（lead-backend/tests/UI3-R3-full-v2.log），paired frontend check PASS、dirty及BASE-to-HEAD diff PASS；源码未因第一次自测失败而修改。最终第3轮verifier仍需独立核验偶发记录及全范围，不能把本段自测当PASS。
