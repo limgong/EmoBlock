@@ -42,9 +42,11 @@ class CurveThemeTests(MappedUIFixture):
         calls=list(self.app.player.calls)
         for width,height in ((1020,700),(1280,800),(1440,900)):
             self.root.geometry(f'{width}x{height}');self.root.update()
-            self.assertEqual(bool(self.app.page.source_panel.winfo_manager()),width>=1150)
+            self.assertEqual(bool(self.app.page.source_panel.winfo_manager()),width>=1180)
             self.assertGreater(self.app.page.timeline.canvas.winfo_width(),380)
-            for button in (self.app.play_button,self.app.prepare_button,self.app.cancel_button,
+            # Preparation is now part of one explicit audition; cancellation is
+            # conditional on an active job. Check the persistent transport here.
+            for button in (self.app.play_button,self.app.pause_button,self.app.stop_button,
                            self.app.page.final_button,self.app.page.derive_button,self.app.page.resize_button):
                 self.assertTrue(button.winfo_ismapped())
                 self.assertGreaterEqual(button.winfo_height(),40)

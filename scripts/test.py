@@ -11,11 +11,14 @@ parser=argparse.ArgumentParser();parser.add_argument('--backend-only',action='st
 parser.add_argument('--platform',choices=('windows','macos'),help='Select adapters; does not emulate that OS')
 args=parser.parse_args()
 configure(args.platform)
-for folder in ('core','step1','step2','platform'):
+TEST_FOLDERS = ('core','step1','step2','platform','ui')
+for folder in TEST_FOLDERS:
     sys.path.insert(0,str(ROOT/'tests'/folder))
 from runtime_config import ASSETS
 suite=unittest.TestSuite();loader=unittest.TestLoader()
-for folder in ('core','step1','step2','platform'):
+for folder in TEST_FOLDERS:
+    if args.backend_only and folder == 'ui':
+        continue
     for path in sorted((ROOT/'tests'/folder).glob('test_*.py')):
         if args.backend_only:
             tree=ast.parse(path.read_text(encoding='utf-8-sig'))
