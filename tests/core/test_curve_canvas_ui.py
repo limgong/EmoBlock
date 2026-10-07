@@ -32,8 +32,10 @@ class CurveCanvasTests(MappedUIFixture):
         self.app.refresh()
         for sequence in ui_platform.DELETE_SHORTCUT_EVENTS:
             with self.subTest(sequence=sequence):
+                self.root.update()  # Read settled mapped geometry after undo/selection layout changes.
                 a,t,b,d = canvas.boxes[first]
                 click = self.event(canvas.canvas, int(a+20), int((t+d)/2))
+                self.assertTrue(canvas.contains_root(click.x_root,click.y_root))
                 canvas.press(click); canvas.release(click)
                 undo_count = len(self.controller._undo)
                 self.canvas_key(sequence)

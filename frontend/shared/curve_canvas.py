@@ -31,6 +31,8 @@ class CurveCanvas(ttk.Frame):
         self.accepted_music = None
         self.boundary_boxes = {}
         self.accepted_bridge_boxes = {}
+        self.range_badges = []
+        self.range_badge_targets = {}
         self.bridge_boxes = {}
         self.connection_boxes = {}
         self.selected_bridge_id = None
@@ -151,6 +153,8 @@ class CurveCanvas(ttk.Frame):
         self.connection_boxes = {}
         self.boundary_boxes = {}
         self.accepted_bridge_boxes = {}
+        self.range_badges = []
+        self.range_badge_targets = {}
         if self.project is None:
             c.configure(scrollregion=(0,0,max(1,c.winfo_width()),max(1,c.winfo_height())))
             c.create_text(24,80,anchor='nw',text='旧工程只读 · 请选择已有成品试听或导出',fill=p['muted'],font=font())
@@ -251,6 +255,10 @@ class CurveCanvas(ttk.Frame):
                 if box[2]-box[0]>70:
                     self.canvas.create_text(box[0]+4,center-14,anchor='w',text='Bridge · 保护/只读',
                         fill=p['ink'],font=font(10),tags='accepted-bridge')
+                else:
+                    state = '音乐已就绪/保护' if protection['status']=='CONTENT_READY' else '范围已保护，音乐尚未就绪'
+                    self.range_badge(box,'Bridge',p['ink'],'accepted-bridge',1,
+                        f'已接受Bridge · {state} · {start}–{end} tick · 后续算法不得覆盖。')
         # The displayed note marks come exclusively from this authenticated layout.
         notes = music['notes']
         if notes:
@@ -302,8 +310,23 @@ class CurveCanvas(ttk.Frame):
         return info,protection
 
     def draw_bridges(self):
-        if self.bridge_preview is None:return
         colors = self.app.theme.colors
+        if self.bridge_preview is None:
+            for protection in self.project['protections']:
+                if protection['kind']!='bridge' or protection['origin']!='manual':continue
+                a,b = self.x(protection['start_tick']),self.x(protection['end_tick'])
+                center = self.y(self.level((protection['start_tick']+protection['end_tick'])/2))
+                box = (a,center-28,b,center+28)
+                self.canvas.create_rectangle(*box,outline=colors['ink'],width=1,
+                    dash=() if protection['status']=='CONTENT_READY' else (3,3),tags='manual-bridge-range')
+                state = '音乐已就绪/保护' if protection['status']=='CONTENT_READY' else '范围已保护，音乐尚未就绪'
+                detail = (f'手动Bridge · {state} · {protection["start_tick"]}–{protection["end_tick"]} tick\n'
+                          '保护表示后续算法不得覆盖；用户仍可编辑。')
+                if b-a>=70:
+                    self.canvas.create_text(a+4,center-17,anchor='w',text='Bridge · 保护',
+                        fill=EMOTION_INK,font=font(10,True),tags='manual-bridge-label')
+                else:self.range_badge(box,'Bridge',colors['ink'],'manual-bridge-label',1,detail)
+            return
         for overlay in self.bridge_preview['overlays']:
             region = overlay['range']
             a,b = self.x(region['start_tick']),self.x(region['end_tick'])
@@ -326,6 +349,8 @@ class CurveCanvas(ttk.Frame):
                 if material:
                     self.canvas.create_text(a+4,center+10,anchor='w',text=material['label'][:limit],
                                             fill=colors['ink'],font=font(10),tags='bridge-label')
+            else:self.range_badge(box,'Bridge',ink,'bridge-label',1,self.app.describe_bridge_overlay(overlay),
+                ('bridge',overlay['id']))
 
     def hit_bridge(self, x, y):
         for ident,(a,t,b,d) in reversed(list(self.bridge_boxes.items())):
@@ -363,6 +388,8 @@ class CurveCanvas(ttk.Frame):
                             self.x(note['start_tick']+note['duration_tick']),y,fill=p['ink'],width=1,tags='connection-note')
             elif b-a>=18:
                 self.canvas.create_text((a+b)/2,center,text='连',fill=ink,font=font(10),tags='connection-label')
+            else:self.range_badge(box,'连',ink,'connection-label',2,self.app.describe_connection_overlay(overlay),
+                ('connection',overlay['id']))
 
     def hit_connection(self, x, y):
         for ident,(a,t,b,d) in reversed(list(self.connection_boxes.items())):
@@ -382,13 +409,44 @@ class CurveCanvas(ttk.Frame):
         self.canvas.create_rectangle(a,box[1]-3,b,box[3]+3,outline=p['ink'],width=1,
                                      dash=() if protection else (3,3),tags='memory-range')
         label = ('记忆' if protection else '记忆目标') if b-a>=70 else '忆'
-        self.canvas.create_text(a+4,box[1]+3,anchor='nw',text=label,
-                                fill=EMOTION_INK,font=font(10,True),tags='memory-label')
+        if b-a>=18:
+            self.canvas.create_text(a+4,box[1]+3,anchor='nw',text=label,
+                                    fill=EMOTION_INK,font=font(10,True),tags='memory-label')
+        else:self.range_badge((a,box[1],b,box[3]),'忆',p['ink'],'memory-label',0,
+            self.app.preview_memory_description() if self.readonly else self.app.memory_description())
         if protection:
             for note in protection['notes']:
                 self.canvas.create_line(self.x(note['start_tick']),box[3]+7,
                                         self.x(note['start_tick']+note['duration_tick']),box[3]+7,
                                         fill=p['ink'],dash=(3,3),tags='memory-support')
+
+    def range_badge(self, box, text, ink, tag, lane, detail, target=None):
+        """Readable callout for a narrow exact range; never enlarge musical geometry."""
+        c = self.canvas
+        a,top,b,bottom = box
+        left,right = c.canvasx(0),c.canvasx(c.winfo_width())
+        if b<left or a>right:return
+        x = max(left+4,min((a+b)/2+6,right-56))
+        y = 44+lane*22
+        label = c.create_text(x+3,y+2,anchor='nw',text=text,fill=ink,font=font(9,True),tags=tag)
+        l,t,r,d = c.bbox(label)
+        badge = (l-3,t-2,r+3,d+2)
+        c.create_line((a+b)/2,top,(a+b)/2,y+8,x,y+8,fill=ink,width=1,tags=tag)
+        surface = c.create_rectangle(*badge,fill=self.app.theme.colors['panel'],outline=ink,width=1,tags=tag)
+        c.tag_raise(label,surface)
+        self.range_badges.append((badge,detail))
+        if target:self.range_badge_targets[badge] = target
+
+    def badge_detail(self, x, y, select=False):
+        for (a,t,b,d),detail in reversed(self.range_badges):
+            if a<=x<=b and t<=y<=d:
+                target = self.range_badge_targets.get((a,t,b,d))
+                if select and target:
+                    self.selected_bridge_id = target[1] if target[0]=='bridge' else None
+                    self.selected_connection_id = target[1] if target[0]=='connection' else None
+                self.app.show_detail(detail)
+                return True
+        return False
 
     def hover(self, event):
         if not self.project or self.drag or self.intensity_draft:return
@@ -397,6 +455,7 @@ class CurveCanvas(ttk.Frame):
         if any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
             self.app.show_detail('强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
             return
+        if self.badge_detail(x,y):return
         if self.final_detail(x,y):return
         bridge_id = self.hit_bridge(x,y)
         connection_id = self.hit_connection(x,y)
@@ -445,6 +504,9 @@ class CurveCanvas(ttk.Frame):
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
         if self.readonly:
+            if self.badge_detail(x,y,select=True):
+                self.draw()
+                return
             if self.final_detail(x,y):return
             bridge_id = self.hit_bridge(x,y)
             connection_id = self.hit_connection(x,y)
@@ -472,6 +534,7 @@ class CurveCanvas(ttk.Frame):
         if self.app.can_edit('intensity_edit') and (self.mode=='trace' or point_index is not None):
             self.begin_intensity(event,point_index if self.mode=='points' else None)
             return
+        if self.badge_detail(x,y):return
         if self.final_detail(x,y):return
         ident = self.hit(x,y)
         if ident:self.selected_id = ident

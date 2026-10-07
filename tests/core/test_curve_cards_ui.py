@@ -1,10 +1,68 @@
 """Phrase children, real cross-widget drag/drop, and inline combination commits."""
 import copy
 import tkinter as tk
-from test_curve_ui import MappedUIFixture
+from unittest.mock import Mock
+from test_curve_ui import MappedUIFixture, fixture
 
 
 class CurveCardsTests(MappedUIFixture):
+    def test_large_library_mounts_viewport_and_hits_first_last_real_coordinates(self):
+        self.controller._project=fixture(extra=198)
+        self.app.refresh();self.root.update();cards=self.app.page.cards
+        self.assertEqual(len(list(cards.visible_materials())),200)
+        self.assertLess(len(cards.rows),12)
+        before=copy.deepcopy(self.controller.state())
+        for fraction,ident in ((0,'phrase'),(1,'extra197')):
+            cards.canvas.yview_moveto(fraction);self.root.update()
+            row=cards.rows[ident]
+            y=max(cards.canvas.winfo_rooty()+1,row.winfo_rooty()+10)
+            hit=cards.at_root(row.winfo_rootx()+10,y)
+            self.assertEqual(hit,(ident,'left'))
+            cards.select(self.app.resolve('material',ident));self.root.update()
+            self.assertEqual(self.app.selected_material_id,ident)
+            self.assertLess(len(cards.rows),12)
+        self.assertEqual(self.controller.state(),before)
+        self.assertFalse(self.app.player.calls)
+
+    def test_same_id_changed_snapshot_selection_theme_and_scroll_rebind(self):
+        cards=self.app.page.cards
+        material=self.app.resolve('material','block')
+        old=cards.rows['block']
+        self.app.select_target('material','block');self.root.update()
+        selected=cards.rows['block'];self.assertIsNot(old,selected)
+        # Immutable full DTO comparison, including provenance fields, not just ID/name.
+        self.controller._project['materials'][4]['provenance']['ui_fixture_revision']=2
+        self.app.refresh();self.root.update();fresh=cards.rows['block']
+        self.assertIsNot(selected,fresh)
+        event=self.event(fresh,18,18)
+        capture=Mock()
+        self.app.begin_material_drag=capture
+        fresh.event_generate('<ButtonPress-1>',x=18,y=18);self.root.update()
+        self.assertEqual(capture.call_args.args[1]['provenance']['ui_fixture_revision'],2)
+        view=cards.canvas.yview()[0]
+        self.app.toggle_theme();self.root.update()
+        self.assertIsNot(fresh,cards.rows['block'])
+        self.assertAlmostEqual(cards.canvas.yview()[0],view,places=5)
+        self.assertEqual(self.app.selected_material_id,'block')
+
+    def test_dragged_card_survives_viewport_scroll_until_cancel(self):
+        self.controller._project=fixture(extra=198)
+        self.app.refresh();self.root.update();cards=self.app.page.cards
+        for use_title in (False,True):
+            cards.canvas.yview_moveto(0);self.root.update()
+            card=cards.rows['phrase']
+            widget=card.winfo_children()[0].winfo_children()[0] if use_title else card
+            start=self.event(widget,18,18)
+            self.app.begin_material_drag(start,self.app.resolve('material','phrase'),card)
+            self.app.material_motion(self.event(widget,40,40))
+            cards.canvas.yview_moveto(1);self.root.update()
+            self.assertIs(cards.rows['phrase'],card)
+            self.assertTrue(widget.winfo_exists())
+            self.assertEqual(self.root.grab_current(),widget)
+            self.app.cancel_interaction();cards.render();self.root.update()
+            self.assertNotIn('phrase',cards.rows)
+            self.assertIsNone(self.root.grab_current())
+
     def test_phrase_expands_equal_cards_and_child_remains_independent(self):
         cards=self.app.page.cards
         self.assertIsInstance(cards.canvas,tk.Canvas)

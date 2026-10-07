@@ -258,6 +258,15 @@ class RecommendationController(ConnectionController):
         self.assets_called.append((ident,'history',mode))
         return self.asset(ident,'final',mode)
 
+    def history_output_state(self, result_id, mode=None):
+        self.main()
+        item = next(h for h in self.histories if h['id']==result_id)
+        availability = copy.deepcopy(item['availability'])
+        return dict(result_id=result_id,mode=mode,score_ref=item.get('score_ref'),asset_ref=None,
+            renderer_profile=None,availability=availability,
+            errors={f:None if available else dict(code='OUTPUT_FILE_UNAVAILABLE',message='fixture unavailable',details={})
+                    for f,available in availability.items()})
+
     def export_history(self, ident, format_, destination, mode=None):
         self.main()
         self.calls.append(('export',(ident,format_,destination,mode)))
@@ -798,7 +807,8 @@ class RecommendationMappedTests(MappedUIFixture):
         self.assertEqual(before,self.music_state())
 
     def test_stage_switch_restores_bookmark_and_is_mutually_exclusive(self):
-        self.ready();canvas=self.app.page.timeline;canvas.canvas.xview_moveto(.2)
+        self.controller.edit('resize',grid_count=64)
+        self.ready();self.root.update();canvas=self.app.page.timeline;canvas.canvas.xview_moveto(.2)
         scroll=canvas.canvas.xview()[0];self.select()
         for stage in ('Bridge','连接','补全','完整建议'):
             self.app.show_curve_stage(stage);self.root.update()

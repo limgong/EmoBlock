@@ -117,7 +117,7 @@ class RecommendationUI:
         return candidate['modes'].get(self.mode_key(), {}) if candidate else {}
 
     def active_job(self):
-        return next((j for j in self.app.jobs.values() if j['kind'] in ('RECOMMENDATION','RECOMMENDATION_MODE')), None)
+        return next((j for j in self.app.jobs.values() if j.get('kind') in ('RECOMMENDATION','RECOMMENDATION_MODE')), None)
 
     def status_text(self):
         text = dict(IDLE='尚未计算完整建议', RUNNING='完整建议计算中', READY='完整建议已准备',
@@ -204,7 +204,8 @@ class RecommendationUI:
 
     def mode_changed(self, event=None):
         self.app.refresh()
-        self.app.show_detail(self.description())
+        item = self.app.resolve('history',self.app.selected_history_id)
+        self.app.show_detail(self.app.history_output_description(item) if item else self.description())
 
     def restore_view(self):
         self.preview = None

@@ -55,7 +55,7 @@ class Theme:
             foreground = p['onaccent'] if 'Primary' in name_ else p['ink']
             if name=='dark' and 'Primary' in name_:
                 background,foreground = p['inset'],p['ink']
-            s.configure(name_, background=background, foreground=foreground, padding=(10,8),
+            s.configure(name_, background=background, foreground=foreground, padding=(10,8), width=0,
                         borderwidth=1, bordercolor=p['accent'] if 'Primary' in name_ else p['line'], font=font())
             s.map(name_, background=[('active', background)],
                   foreground=[('disabled', p['muted'])], bordercolor=[('focus', p['accent'])])
