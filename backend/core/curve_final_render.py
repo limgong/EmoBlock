@@ -258,7 +258,9 @@ def validate_outputs(score, files, profile=None, required_formats=None):
     try:
         if 'mid' in formats:_validate_midi(score,files,profile)
         if 'mmp' in formats:_validate_mmp(score,files,profile)
-    except (OSError,ValueError,ET.ParseError,EOFError) as exc:
+    except m.ProjectError:
+        raise
+    except (OSError,ValueError,ET.ParseError,EOFError):
         m.reject('输出文件无法读取或格式损坏，请重新准备所选版本。','OUTPUT_FILE_UNAVAILABLE')
 
 
