@@ -537,6 +537,38 @@ class RecommendationFacade:
         member=candidate['modes'][mode];asset=member['assets'][kind];score=resolve(self._bundle['final_facts'],member[kind+'_score_ref'],'final_score')
         audio.validate_asset(asset,score,dict(id=candidate_id,version=1,fingerprint=candidate_id),required_formats=('wav',));return copy.deepcopy(asset)
 
+    @m.validated_operation
+    def recommendation_playback(self, candidate_id, kind='final', mode=None):
+        """Detached, authenticated music facts for this exact audible object.
+
+        This is a read-only view of persisted facts, not playback permission or
+        an invitation to compose. The editor and default candidate preview are
+        intentionally absent from the lookup.
+        """
+        attempt, candidate = self._candidate(candidate_id)
+        mode = mode or attempt['recommendation']['request']['mode']
+        asset = self.recommendation_asset(candidate_id, kind, mode)
+        member = candidate['modes'][mode]
+        score = resolve(self._bundle['final_facts'], member[kind + '_score_ref'], 'final_score')
+        request = resolve(self._bundle['final_facts'], score['boundary_request_ref'], 'boundary_request')
+        plan = resolve(self._bundle['final_facts'], score['boundary_plan_ref'], 'boundary_plan')
+        final.validate_final_score(request, plan, score)
+        segments = final._segments(request, kind)
+        if kind == 'comparison':
+            base = request['actual_layout']['base_project']
+            for segment in segments:
+                originals = base['blank_regions'] if segment['kind'] == 'blank' else base['placements']
+                matching = [row for row in originals if row['start_tick'] == segment['start_tick']
+                            and row.get('end_tick', row['start_tick'] + row.get('length_ticks', 0))
+                            == segment['end_tick']]
+                if len(matching) != 1:
+                    m.reject('原始拼接缺少唯一的已捕获区段。', 'SOURCE_CLOSURE_INVALID')
+                segment['id'] = matching[0]['id']
+        return copy.deepcopy(dict(schema='emoblocks.ui-playback.v1',
+            target=dict(kind='recommendation', id=candidate_id, side=kind, mode=mode),
+            asset=asset, score_ref=final.ref(score), bpm=score['bpm'], total_ticks=score['total_ticks'],
+            notes=score['notes'], segments=segments, mapping_available=True, mapping_reason=None))
+
     def confirmation_ref(self,candidate_id,mode=None):
         attempt,candidate=self._candidate(candidate_id)
         if not self._apply_authorized(attempt):m.reject('编辑或会话已改变，请重新计算。','STALE_SNAPSHOT')
@@ -677,3 +709,18 @@ class RecommendationFacade:
         item=next((r for r in self.history_items() if r['id']==result_id),None)
         if item is None or not item['availability']['wav']:m.reject('此历史音频已不可用。','SOURCE_UNAVAILABLE')
         return dict(wav_path=item['paths']['wav'],body_seconds=item['body_seconds'],audio_seconds=item['audio_seconds'],fingerprint=result_id)
+
+    def history_playback(self, result_id, mode=None):
+        """Keep historical playback independent of current editing/selection."""
+        row = next((r for r in self._bundle['results'] if r.get('id') == result_id), None)
+        if row and 'candidate_id' in row:
+            value = self.recommendation_playback(row['candidate_id'], 'final', mode or row['mode'])
+            value['target'] = dict(kind='history', id=result_id, side='final', mode=value['target']['mode'])
+            return value
+        if mode is not None:
+            m.reject('旧工程历史不支持切换编配模式。', 'INVALID_PARAMETERS')
+        asset = self.history_asset(result_id)
+        return dict(schema='emoblocks.ui-playback.v1',
+            target=dict(kind='history', id=result_id, side='final', mode=None), asset=asset,
+            score_ref=None, bpm=None, total_ticks=None, notes=None, segments=[], mapping_available=False,
+            mapping_reason='此历史音频没有经过认证的分块映射；仍可试听、定位和逐格式导出。')

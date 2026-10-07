@@ -162,6 +162,17 @@ class Controller(RecommendationFacade):
             self._untouched_new = False
         return changed
 
+    def preview_edit(self, action, **args):
+        """Check the real transaction on a copy without granting commit rights."""
+        try:
+            self._editable()
+            before = self.session.project
+            after = model.edit(before, action, recompute=self.session._recompute, **args)
+            return dict(allowed=True, changed=after != before, error=None)
+        except model.ProjectError as exc:
+            return dict(allowed=False, changed=False,
+                        error=dict(code=exc.code, message=str(exc), details={}))
+
     def undo(self):
         self._editable()
         changed = self.session.undo()
