@@ -66,6 +66,20 @@ def _numeric_xml(element, expected, names=()):
     if not valid:m.reject('LMMS播放参数与所选乐谱不符。','OUTPUT_BINDING_MISMATCH')
 
 
+def _sample_resource(source, drum):
+    """Allow installed resources and byte-identical copies, never name-only matches."""
+    import engine
+    try:
+        actual=Path(source);expected=Path(engine.sample_path(engine.LMMS,drum))
+        if not actual.is_absolute() or not actual.is_file() or not expected.is_file():
+            raise FileNotFoundError('Unavailable planned drum resource')
+        actual_file=_file(actual);expected_file=_file(expected)
+    except (OSError,ValueError,RuntimeError):
+        m.reject('鼓采样不可读，请恢复 LMMS 采样资源后重新准备。','OUTPUT_RESOURCE_UNAVAILABLE')
+    if not actual_file['bytes'] or (actual_file['sha256'],actual_file['bytes'])!=(expected_file['sha256'],expected_file['bytes']):
+        m.reject('鼓采样内容与所选音色不符，请恢复原采样后重新准备。','OUTPUT_BINDING_MISMATCH')
+
+
 def validate_outputs(score, files):
     """Read actual encoded notes, not just the exporter's manifest."""
     import mido
@@ -132,6 +146,7 @@ def validate_outputs(score, files):
             m.reject('LMMS包含未规划的乐器结构。','OUTPUT_BINDING_MISMATCH')
         if drum:
             if Path(track.find('.//audiofileprocessor').get('src')).name!=layer['drum']:m.reject('LMMS鼓采样不符。','OUTPUT_BINDING_MISMATCH')
+            _sample_resource(plugin[0].get('src'),layer['drum'])
             _numeric_xml(plugin[0],dict(amp=100,interp=1,sframe=0,eframe=1,lframe=0,reversed=0),('src',))
             if len(plugin[0]):m.reject('LMMS包含未规划的采样控制。','OUTPUT_BINDING_MISMATCH')
         else:
