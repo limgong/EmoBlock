@@ -9,6 +9,7 @@ import curve_memory as memory
 
 REV = 'curve-workflow-v2-r3-p5'
 ALGORITHM = 'curve-bridge-v1'
+GLOBAL_ALGORITHM = 'curve-bridge-global-v2'
 DEFAULTS = dict(policy='auto', max_windows=2, max_window_blocks=8, max_window_tests=128, max_notes=512)
 LIMITS = dict(max_windows=8, max_window_blocks=32, max_window_tests=2048, max_notes=4096)
 REQUEST_FIELDS = ('schema spec_rev contract_rev request_id snapshot_id session_id edit_revision input_contract_rev '
@@ -133,7 +134,10 @@ def inherited_locks(request):
 
 
 @guard
-def make_request(project, completion_ref=None, token=None, seed=31, values=None, plan_id=None, plan_version=1):
+def make_request(project, completion_ref=None, token=None, seed=31, values=None, plan_id=None, plan_version=1,
+                 *, algorithm_version=ALGORITHM):
+    if algorithm_version not in (ALGORITHM, GLOBAL_ALGORITHM):
+        m.reject('Unsupported bridge analysis version.', 'UNSUPPORTED_VERSION')
     m.validate(project); m.integer(seed, 0, 2**32-1); m.integer(plan_version, 1)
     if completion_ref is not None:
         m.shape(completion_ref, 'attempt_id candidate_id request candidate')
@@ -163,7 +167,7 @@ def make_request(project, completion_ref=None, token=None, seed=31, values=None,
         protection_summary=dict(fingerprint=m.protection_summary(base['protections']),
             ranges=[dict(start_tick=a, end_tick=b) for a, b in memory.protected_ranges(base['protections'])]),
         blank_regions=copy.deepcopy(base['blank_regions']), plan_id=m.uid() if plan_id is None else plan_id,
-        plan_version=plan_version, seed=seed, algorithm_version=ALGORITHM, parameters=parameters(values))
+        plan_version=plan_version, seed=seed, algorithm_version=algorithm_version, parameters=parameters(values))
     m.ident(request['plan_id']); inherited_locks(request)
     return request
 
@@ -171,10 +175,11 @@ def make_request(project, completion_ref=None, token=None, seed=31, values=None,
 @guard
 def validate_request(request):
     m.canonical(request); m.shape(request, REQUEST_FIELDS); version(request, 'emoblocks.bridge-request.v1')
-    if request['algorithm_version'] != ALGORITHM: m.reject('桥接算法版本不受支持。', 'UNSUPPORTED_VERSION')
+    if request['algorithm_version'] not in (ALGORITHM, GLOBAL_ALGORITHM): m.reject('桥接算法版本不受支持。', 'UNSUPPORTED_VERSION')
     token = {k: request[k] for k in ('request_id', 'snapshot_id', 'session_id', 'edit_revision', 'input_fingerprint')}
     expected = make_request(request['input_project'], request['completion_ref'], token, request['seed'],
-                            request['parameters'], request['plan_id'], request['plan_version'])
+                            request['parameters'], request['plan_id'], request['plan_version'],
+                            algorithm_version=request['algorithm_version'])
     if request != expected: m.reject('桥接请求与真实输入、基础候选或保护不一致。', 'STALE_SNAPSHOT')
 
 
