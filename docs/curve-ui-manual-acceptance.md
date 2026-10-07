@@ -24,8 +24,10 @@
 
 ## 当前可用材料和剩余条件
 
-本轮仓库外目录为EmoBlocks/dev-runs/curve-ui-20261007-af9a6bd3。frontend/tests/delivery.json是实施索引；before-light/dark-1020/1280与ui1-light/dark-1020/1280为真实阶段前后图，最终UI2图片仍待实际解锁。matrix-geometry只有Tk坐标/实际样式，不能填视觉PASS。
+本轮仓库外目录为EmoBlocks/dev-runs/curve-ui-20261007-af9a6bd3。frontend/tests/delivery.json是实施索引；before-light/dark-1020/1280与ui1-light/dark-1020/1280为真实阶段前后图，此前最终图片曾受锁屏阻塞；用户解锁后的UI3-R1-final-v4-matrix已有最新源码60张实际图（两主题/三尺寸/两来源状态/五工作流状态）。旧geometry和锁屏失败保留，仅代表当时执行，不替代截图。
 
 actual-controls/report.json含新真实组合试听音频与受控迟到结果证据；actual-recommendation-v2/report.json含已有P8真实资产的候选/成品播放和同谱采用/保存/输出；lead-backend/tests/new-pipeline保留本轮新完整主入口结果。先由实际索引核对播放对象、模式及文件摘要，再填写听感表，不把文件有效写成自然衔接。
 
 最短补验：手动解锁Mac后双主题最小窗口查看三栏/单画布/右底播放器，卡片只选→试听、stop后无迟到抢播、控件hover/键盘focus；再一次组合取消、采用后undo-redo、保存重开和所选版本WAV。Windowspartner另按三缩放做删除/Ctrl/滚动与资源实际打开；人耳反馈写同候选两侧及时间位置。文件均本地，不自动发送或上传。
+
+修复复核要点：返回编辑及成功采用后编排/控制点/手绘重新可达，失败采用仍在审阅；空工程创作区以导入为主，无原来源但有音符快照仍可编辑；生成中仅阶段/耗时/取消/详情，完成再显示候选选择及对比/采用。无需用用户真实工程做故障测试。

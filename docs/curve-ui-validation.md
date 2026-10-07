@@ -2,7 +2,7 @@
 
 RUN_ID=curve-ui-20261007-af9a6bd3
 BASE_SHA=36ae1476bd5c08df17ae3e33d50e25983dbc9014
-状态：代码已集成，集成自查通过；等待UI3独立检查。最终真实截图仍因Mac锁屏BLOCKED，不宣称UI_TECHNICAL_READY。
+状态：UI3第1轮FAIL已完成定向修复，等待第2轮独立检查。用户明确解锁后，最新源码的60张真实窗口图已补齐；下文锁屏缺项描述为历史过程，不再代表最终图数量。当前仍不预先宣称UI_TECHNICAL_READY。
 
 ## 范围和基线
 
@@ -54,10 +54,24 @@ frontend：198专项及原938完整通过（135.395秒）、新UI专项23通过�
 
 提交后60组真实Facade/Tk映射矩阵（2主题×3尺寸×2来源状态×5状态）几何通过、最小Canvas控件331px，实际样式/Canvas颜色对比度最低5.33:1；位于frontend/tests/matrix-geometry-final。GEOMETRY_ONLY明确path=None，不是截图、不代表物理输入。改造前与UI1共8张实际截图来源与摘要保留，但不能代表最终UI2。
 
-## 必需阻塞与待验
+## 历史截图阻塞与持续待验
 
 最终60张真实窗口截图仍因实际IOConsoleLocked/CGSSessionScreenIsLocked=Yes无法取得，窗口与区域捕获原失败证据保留。用户需手动解锁后才能补拍；不自行解锁、改变权限或电源。必需视觉缺项意味着本轮当前只能BLOCKED，不能把自动958PASS、程序化矩阵或设备流替代技术完成门禁。
 
 Mac实体触控板/鼠标/键盘、Windows100/125/150%与目标资源解析、人工视觉/音乐听感均PENDING/NOT_TESTED。P8第三方LMMS MIDI导入时值FAIL与大工程性能限制不改写。全部音频/截图/副本/日志/代码指纹/角色映射外置，本轮收据在仓库外，不为填入PASS修改冻结代码，不发布/推送/进入新功能阶段。
 
 新增主入口实际完整链在集成HEAD51093cd执行，总耗时115.402秒，保存结果含2套真实不同音乐候选、19条真实阶段事件；主按钮与选择均不播/不应用，明确最终试听及完整PCM、同谱采用、一次undo-redo、保存重开、选定历史WAV均通过（15项）。每候选Bridge_LOCKED均在Bridge_GENERATION之前，连接在其之后。音频是本轮新实际LMMS，不是P8音频复用；设备播放非听感PASS。
+
+## UI3第1轮发现、修复与第2轮材料
+
+verifier UI3-R1在62444e1/1ef5b2f4指纹上独立958测试PASS，但明确FAIL：返回编辑后recommendation.visible未退出，编排/控制点/手绘仍隐藏；原音乐和输入文件未改变。收据及前后指纹保留verifier/tests/UI3-R1-review.json。frontend 3511697集成a770aec，将显式返回及采用成功接到已有编辑视图，失败采用保只读；一般restore_view语义不变。补映射返回后工具/动作、候选重开、失败采用不切换、幂等/一次undo和原文件不变检查。
+
+负责人真实图审查另外发现空工程控件过多、加载后导入提示过期、FULL/CURRENT内部码外露，以及生成中仍显示disabled候选审阅行。frontend 4d05cfd集成31281eb：空工程保导入、隐藏不适用工具；空notes/纯休止无生成请求，保无source音符快照可编辑；加载提示按事实显示，简短候选/历史标签中文化、原码留详情。frontend 3680ad5集成132f080：活动RECOMMENDATION隐藏审阅行、结束恢复，真实phase中文/耗时直显，原state.message放详情；不改RECOMMENDATION_MODE播放意图或音乐门禁。
+
+修复最新版完整964项PASS151.103秒、11专项PASS5.873秒、check_frontends与diff PASS。真实Controller的隔离READY工程61检查覆盖两主题/窗口尺寸返回与适用动作、候选/缓存保留、失败/成功采用、幂等、一次undo-redo、保存结果重开；原始探针前置错误另存，不删失败日志。最后仅生成显示修正不改上述事务。
+
+用户回复“已解锁”后，经实际CG session未锁定核对，最终UI3-R1-final-v4-matrix报告60张真实Mac窗口捕获成功：两主题×1020×700/1280×800/1440×900×来源展开收起×空白/编辑/生成/审阅/成品。PNG逐张hash和源码digests绑定3680ad5；集成源码逐文件一致。生成图通过实际主入口捕获RECOMMENDATION、provider受控等待，只验证运行布局，不伪称额外音乐生成。旧v2锁屏失败、v3对应4d05图和更早before/UI1图仍分别保留。负责人已实际看最新版空白、编辑、运行、候选和成品图，最终独立复核另行出具。
+
+本轮新真实完整LMMS和设备流证据仍为lead-backend/tests/new-pipeline；修复改的是UI状态，未重新作曲来伪造更多音频。人工视觉审美、物理Mac操作、Windows三个缩放、人工音乐听感与外设音频依旧PENDING；P8历史PARTIAL与两项既知限制未改写。最终收据写仓库外，不为标记PASS改冻结目录。
+
+最新版生成取消入口另由frontend真实窗口复测10项PASS：v4原图及新增图均可见“取消”，实际坐标点击先登记CANCEL_REQUESTED再收拢到CANCELLED，busy退出，工程/saved/undo/播放器不变。该疑点未复现，不改代码；收据frontend/tests/UI3-R1-cancel-check/report.json。最终交付UI3-R1-fix-delivery.json为READY_FOR_REVIEW，源码3680ad5，旧BLOCKED交付另存不覆盖。
