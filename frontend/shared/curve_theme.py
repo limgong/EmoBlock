@@ -66,7 +66,7 @@ class Theme:
                         borderwidth=1, bordercolor=p['accent'] if 'Primary' in name_ else p['line'], font=font())
             s.map(name_, background=[('active', background)],
                   foreground=[('disabled', p['muted'])], bordercolor=[('focus', p['accent'])])
-        for style_,padding,size in (('Curve.Compact.TButton',(5,8),11),('Curve.Small.TButton',(5,2),10)):
+        for style_,padding,size in (('Curve.Compact.TButton',(5,9),11),('Curve.Small.TButton',(5,2),10)):
             s.configure(style_,background=p['inset'],foreground=p['ink'],borderwidth=1,bordercolor=p['line'],
                         padding=padding,font=font(size),width=0)
             s.map(style_,foreground=[('disabled',p['muted'])],bordercolor=[('focus',p['accent'])])
@@ -80,11 +80,20 @@ class Theme:
         self.root.option_add('*Menu.activeBackground',p['selected'])
         self.root.option_add('*Menu.activeForeground',p['ink'])
         self.root.option_add('*Menu.font',font())
+        for style_ in ('Curve.TButton','Curve.Primary.TButton','Curve.Compact.TButton','Curve.Small.TButton','Curve.TMenubutton',
+                       'Curve.TCombobox','Curve.TSpinbox','Curve.TEntry','Curve.Horizontal.TScale',
+                       'Curve.Horizontal.TScrollbar','Curve.Vertical.TScrollbar'):
+            s.configure(style_,lightcolor=p['line'],darkcolor=p['line'],relief='solid',borderwidth=1,
+                        arrowcolor=p['ink'],bordercolor=p['accent'] if style_=='Curve.Primary.TButton' else p['line'])
+            s.map(style_,lightcolor=[('focus',p['accent']),('active',p['line'])],
+                  darkcolor=[('focus',p['accent']),('active',p['line'])],
+                  relief=[('pressed','solid'),('active','solid')])
+            s.map(style_,background=[('disabled',p['inset']),('active',p['accent'] if style_=='Curve.Primary.TButton' and name=='light' else p['inset'])],foreground=[('disabled',p['muted'])])
         for widget in ('TCombobox', 'TSpinbox', 'TEntry'):
             s.configure('Curve.'+widget, fieldbackground=p['inset'], background=p['panel'],
                         foreground=p['ink'], insertcolor=p['ink'], font=font())
-            s.map('Curve.'+widget, fieldbackground=[('readonly',p['inset'])],
-                  foreground=[('readonly',p['ink'])])
+            s.map('Curve.'+widget, fieldbackground=[('disabled',p['inset']),('readonly',p['inset'])],
+                  foreground=[('disabled',p['muted']),('readonly',p['ink'])])
         s.configure('Curve.Horizontal.TScale', background=p['panel'], troughcolor=p['inset'])
         self.root.option_add('*TCombobox*Listbox.background',p['inset'])
         self.root.option_add('*TCombobox*Listbox.foreground',p['ink'])
@@ -133,3 +142,4 @@ class Tooltip:
 
 def hint(widget, text, show):
     widget.curve_tooltip=Tooltip(widget,text)
+    for event in ('<Enter>','<FocusIn>'):widget.bind(event,lambda _,t=text:show(t() if callable(t) else t),add='+')

@@ -273,7 +273,8 @@ class CurveP4Tests(MappedUIFixture):
         self.assertEqual(self.worker.requests[0]['target_gaps'],self.app.completion.gaps)
         self.assertEqual(self.musical_state(),before)
         self.assertTrue(self.controller.state()['staging_dirty'])
-        self.assertIn('工程已保存',self.app.save_label.cget('text'));self.assertIn('候选暂存未保存',self.app.save_label.cget('text'))
+        self.assertIn('已保存',self.app.save_label.cget('text'));self.assertIn('暂存未保存',self.app.save_label.cget('text'))
+        self.assertTrue(self.controller.state()['is_saved']);self.assertIn('候选暂存未保存',self.app.saved_description)
         self.assertNotEqual(self.worker.threads[0],threading.get_ident())
 
     def test_default_all_and_clear_selected_gap(self):
@@ -466,8 +467,8 @@ class CurveP4Tests(MappedUIFixture):
     def test_staging_autosave_failure_blocks_switch_close_and_running_save_is_explicit(self):
         self.worker.gate=threading.Event();self.app.completion.start();self.assertTrue(self.worker.started.wait(1))
         self.assertFalse(self.app.close());self.assertFalse(self.app.new_project());self.assertFalse(self.app.open_project('legacy'))
-        save=next(b for name,b in self.app.edit_buttons if name=='保存快照')
-        self.assertFalse(save.instate(['disabled']));save.invoke()
+        self.assertEqual(self.app.file_menu.entrycget('保存快照','state'),'normal')
+        self.app.file_menu.invoke('保存快照')
         self.assertIn(('save-stage','RUNNING'),self.controller.calls)
         self.assertFalse(self.controller.staging_dirty)
         self.app.completion.cancel();self.assertTrue(self.controller.staging_dirty)

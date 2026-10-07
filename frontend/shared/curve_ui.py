@@ -19,6 +19,7 @@ from audio_player import WavePlayer
 from file_drop import FileDrop
 from scroll_input import touchpad_deltas, scroll_canvas_pixels
 from curve_theme import Theme, font, hint, EMOTION_NAMES
+from curve_play_intent import PlayIntent
 from curve_cards import MaterialCards
 from curve_workspace_ui import build_page, build_chrome, build_player
 from curve_canvas import CurveCanvas, snap_tick
@@ -93,6 +94,7 @@ class CurveApplication:
         self.ready_file_digests = {}
         self.card_view_flags = None
         self.playing_target = None
+        self.play_intent = PlayIntent()
         self.play_duration = 0.
         self.seek_active = False
         self.selected_target = None
@@ -103,6 +105,7 @@ class CurveApplication:
         self.material_drag = None
         self.card_scroll_timer = None
         self.status_error = False
+        self.full_status='导入旋律，开始创作。'
         self.source_user_collapsed = None
         self.history_expanded = False
         self.last_export = None
@@ -114,9 +117,12 @@ class CurveApplication:
         self.source_filter_id = None
         self.details_expanded = False
         self.workspace_stage = '编辑'
+        self.advanced = False
+        self.view_bookmarks = {}
         build_chrome(self)
         self.page = CurvePage(self.shell,self)
         self.page.grid(row=1,column=0,sticky='nsew')
+        if controller is None or self.state_data['capabilities'].get('recommendation',False):self.page.timeline.mode='arrange'
         build_player(self)
         self.show_detail(self.detail_text.get())
         self.file_drop = None
@@ -146,8 +152,8 @@ class CurveApplication:
         self.refresh()
         self.timer = root.after(80,self.tick)
 
-    def compact(self, text):
-        width=max(200,self.page.right.winfo_width()-72)
+    def compact(self, text, width=None):
+        width=max(200,self.page.right.winfo_width()-72) if width is None else max(100,width)
         from tkinter import font as tkfont
         actual=tkfont.Font(root=self.root,font=font())
         value=str(text).replace('\n',' · ')
@@ -156,9 +162,8 @@ class CurveApplication:
 
     def toggle_details(self):
         self.details_expanded=not self.details_expanded
-        if self.details_expanded:self.detail_row.pack(fill='x',before=self.page.stage_anchor)
-        else:self.detail_row.pack_forget()
         self.detail_button.configure(text='收起详情' if self.details_expanded else '详情')
+        self.refresh()
 
     def filter_source(self, ident):
         self.source_filter_id=ident
@@ -167,7 +172,7 @@ class CurveApplication:
     @staticmethod
     def material_from_source(material, ident):
         if material['provenance'].get('source_id')==ident:return True
-        if any(n.get('origin',{}).get('source_id')==ident for n in material['notes']):return True
+        if any((n.get('origin') or {}).get('source_id')==ident for n in material['notes']):return True
         return any(CurveApplication.material_from_source(c['snapshot'],ident) for c in material['children'])
 
     def generate_recommendations(self):
@@ -175,14 +180,97 @@ class CurveApplication:
         self.show_curve_stage('完整建议')
         return self.recommendation.start()
 
+    def input_key(self):
+        return snapshot_key('input',self.state_data['project'])
+
+    def invalidate_play_intent(self):
+        if not hasattr(self,'play_intent'):self.play_intent=PlayIntent()
+        self.play_intent.invalidate()
+
     def audition_target(self, kind, ident):
-        return self.prepare_target(kind,ident)
+        if not ident:return False
+        target=self.resolve(kind,ident)
+        if not target:return False
+        self.select_target(kind,ident)
+        mode=self.recommendation.mode_key() if kind=='history' and target.get('scope') in ('FULL','LOCAL') else None
+        if kind=='history':
+            self.invalidate_play_intent()
+            return self.play_target(kind,ident)
+        return self.request_audition((kind,ident),audition_key(kind,target,self.state_data['project']['bpm']))
 
     def audition_selected(self):
-        return self.prepare_selected()
+        if not self.selected_target:
+            self.tell('请先选择来源、素材、积木或历史版本。');return False
+        if self.selected_target[0]=='draft':return self.audition_combo()
+        return self.audition_target(*self.selected_target)
 
     def audition_combo(self):
-        return self.prepare_combo()
+        if not self.combo_inputs:return False
+        target=('draft',snapshot_key('draft',self.combo_inputs))
+        self.selected_target=target
+        return self.request_audition(target,audition_key('draft',self.combo_inputs,self.state_data['project']['bpm']))
+
+    def request_audition(self, target, key):
+        self.invalidate_play_intent()
+        # A newer explicit audition supersedes only audition preparation, never a music-stage job.
+        for ident,job in list(self.jobs.items()):
+            if job['kind']=='AUDITION' or (job['kind']=='COMBINE' and job.get('audition')):
+                self.controller.cancel_job(job['token']);self.jobs.pop(ident)
+        if self.jobs:
+            self.tell('已有音乐任务运行；可取消后试听。');return False
+        self.play_intent.begin(target,None,self.input_key(),key)
+        if self._ready_asset(key):
+            result=self.play_selected()
+            if not result:self.invalidate_play_intent()
+            return result
+        result=self.prepare_combo() if target[0]=='draft' else self.prepare_target(*target)
+        if not result:self.invalidate_play_intent()
+        return result
+
+    def play_prepared_intent(self, token, key):
+        target=self.selected_target
+        if not target or not self.play_intent.accepts(token,target,None,self.input_key(),key):return False
+        if not self._ready_asset(key):
+            self.invalidate_play_intent();return False
+        return self.play_selected()
+
+    def selected_gap(self):
+        return next((g for g in self.completion.gaps if g['id']==self.completion.selected_gap_id),None)
+
+    def mark_selected_blank(self):
+        gap=self.selected_gap()
+        if gap and self.can_edit('completion'):
+            return self.edit('mark_blank',start_tick=gap['start_tick'],end_tick=gap['end_tick'],reason='user intent')
+        return False
+
+    def toggle_advanced(self):
+        self.advanced=not self.advanced
+        self.page.advanced_button.configure(text='收起高级' if self.advanced else '高级')
+        if self.advanced:
+            self.show_curve_stage(self.workspace_stage if self.workspace_stage!='编辑' else '补全')
+        else:
+            self.suspend_private_view()
+            self.workspace_stage='编辑'
+            self.refresh()
+
+    def suspend_private_view(self):
+        for name,stage,field in self.stages():
+            preview=getattr(stage,field)
+            if preview is not None:
+                self.view_bookmarks[name]=dict(preview=preview,bookmark=stage.bookmark,view=dict(selected=self.page.timeline.selected_id,bridge=self.page.timeline.selected_bridge_id,connection=self.page.timeline.selected_connection_id,scroll=self.page.timeline.canvas.xview()[0],mode=self.page.timeline.mode))
+                stage.restore_view()
+            if hasattr(stage,'visible'):stage.visible=False
+
+    def stages(self):
+        return [('补全',self.completion,'preview_candidate'),('Bridge',self.bridge,'preview'),
+                ('连接',self.connection,'preview'),('完整建议',self.recommendation,'preview')]
+
+    def restore_private_view(self, name):
+        saved=self.view_bookmarks.pop(name,None)
+        if saved:
+            stage,field=next((s,f) for n,s,f in self.stages() if n==name)
+            setattr(stage,field,saved['preview']);stage.bookmark=saved['bookmark']
+            self.resumed_view=saved['view']
 
     @property
     def editable(self):
@@ -208,7 +296,7 @@ class CurveApplication:
             self.page.emotion_panel.pack_forget()
             return
         self.page.emotion_panel.pack(fill='x',before=self.page.memory_label,pady=(4,0))
-        self.page.emotion_title.configure(text='所选积木 · '+EMOTION_NAMES[placement['emotion']])
+        self.page.emotion_title.configure(text='情绪')
         for emotion,button in self.page.emotion_buttons.items():
             button.configure(style='Curve.Primary.TButton' if placement['emotion']==emotion else 'Curve.TButton')
             button.state(['!disabled'] if self.can_edit('emotion') else ['disabled'])
@@ -243,14 +331,23 @@ class CurveApplication:
                            and p['kind']=='memory' and p['placement_id']==info['placement_id']
                            and p['status']=='CONTENT_READY'),None) if project else None
         region = protection or info['range']
-        span = f'{region["start_tick"]}–{region["end_tick"]} tick' if region else '范围未落位'
+        span = (f'{region["start_tick"]/480:g}–{region["end_tick"]/480:g}拍' if compact else f'{region["start_tick"]}–{region["end_tick"]} tick') if region else '范围未落位'
         status = ('音高与节奏已保护' if compact else '音高与节奏已保护；用户仍可编辑') if protection else '目标未落保护'
         path = ' / '.join(info['component_path'])
         return '记忆积木 · '+status+' · '+span+(' · 组件 '+path if path and not compact else '')
 
     def toggle_history(self):
-        self.history_expanded = not self.history_expanded
-        self.refresh()
+        self.invalidate_play_intent()
+        if not self.history_expanded:
+            self.history_return_stage=self.workspace_stage
+            self.suspend_private_view()
+            self.workspace_stage='历史'
+            self.history_expanded=True
+            self.refresh()
+        else:
+            self.history_expanded=False
+            self.show_curve_stage(getattr(self,'history_return_stage','编辑'))
+
 
     def safe(self, fn):
         try:
@@ -264,6 +361,15 @@ class CurveApplication:
         self.full_status=('失败：' if error else '')+str(text)
         self.status_text.set(self.compact(self.full_status))
         self.status_label.configure(foreground=self.theme.colors['error' if error else 'ink'])
+        if error:self.show_detail(self.full_status)
+
+    def status_description(self):
+        if self.status_error:return self.full_status
+        if self.recommendation.visible or self.recommendation.active_job():return self.recommendation.description()
+        if self.connection.visible:return self.connection.description()
+        if self.bridge.visible:return self.bridge.description()
+        if self.workspace_stage=='补全':return self.completion.description()
+        return self.full_status
 
     def show_detail(self, text):
         self.detail_text.set(str(text))
@@ -287,9 +393,12 @@ class CurveApplication:
             saved_text += ' · 候选暂存'+('未保存' if self.state_data['staging_dirty'] else '已保存')
         if self.state_data['capabilities'].get('recommendation',False):
             accepted = self.controller.accepted_state()
+            self.accepted_status=accepted
             if accepted['status']!='NONE':saved_text += ' · '+('接受版本有效' if accepted['status']=='ACTIVE' else '接受层已失效')
         self.saved_description=saved_text
-        self.save_label.configure(text=('已保存' if self.state_data['is_saved'] else '未保存')+(' · 暂存未保存' if self.state_data.get('staging_dirty') else ''))
+        path=self.state_data.get('saved_path')
+        self.project_label.configure(text=(Path(path).stem[:9]+'…' if path and len(Path(path).stem)>9 else Path(path).stem if path else '未命名工程'))
+        self.save_label.configure(text=('旧工程 · 只读' if self.state_data['access_mode']!='editable' else '已保存' if self.state_data['is_saved'] else '未保存')+(' · 暂存未保存' if self.state_data.get('staging_dirty') else ''))
         self.completion.refresh()
         self.bridge.refresh()
         self.connection.refresh()
@@ -333,7 +442,7 @@ class CurveApplication:
                 self.selected_target = None
             else:self.page.timeline.selected_id = self.selected_target[1]
         self.update_emotions()
-        self.page.memory_label.configure(text=self.compact((self.preview_memory_description() if private else self.memory_description(compact=True)).split(' · ')[0]+' · '+('候选只读' if private else '记忆保护由后端管理')),
+        self.page.memory_label.configure(text=self.compact(self.preview_memory_description().split(' · ')[0]+' · 候选只读' if private else self.memory_description(compact=True)),
                                          wraplength=0)
         self.page.timeline.set_project(private['project'] if private else project,
                                        readonly=bool(private),memory_info=private['memory_info'] if private else None,
@@ -360,6 +469,7 @@ class CurveApplication:
         else:
             self.page.history_panel.pack_forget()
         self.history_button.configure(text=f'历史 {len(self.history)}')
+        self.page.source_audition.state(['!disabled'] if self.selected_source_id else ['disabled'])
         for text,button in self.edit_buttons:
             enabled = self.editable
             if text=='保存快照':
@@ -370,8 +480,53 @@ class CurveApplication:
         for button in (self.page.derive_button,self.page.grid_entry,self.page.resize_button):
             button.state(['!disabled'] if self.editable else ['disabled'])
         self.update_exports()
+        self.update_workspace()
+        if getattr(self,'resumed_view',None):
+            if private:
+                view=self.resumed_view;canvas=self.page.timeline
+                canvas.selected_id=view['selected'];canvas.selected_bridge_id=view['bridge'];canvas.selected_connection_id=view['connection']
+                canvas.mode=view['mode'];canvas.canvas.xview_moveto(view['scroll']);canvas.draw()
+            self.resumed_view=None
         self.update_transport()
         self.layout_sources()
+
+    def update_workspace(self):
+        page=self.page
+        gap=self.selected_gap()
+        if gap and not self.private_preview() and not self.jobs:
+            page.gap_panel.pack(fill='x',before=page.memory_label)
+            page.gap_label.configure(text=f'空缺 · 第{gap["start_tick"]/480+1:g}拍 · {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
+        else:page.gap_panel.pack_forget()
+        if self.advanced:
+            page.advanced_row.pack(fill='x',before=page.stage_anchor)
+            page.timeline.stage_selector.pack(side='right')
+            page.timeline.mode_buttons['gaps'].pack(side='left')
+            self.recommendation.auto_button.pack(side='left') if self.recommendation.available() else self.recommendation.auto_button.pack_forget()
+        else:
+            page.timeline.stage_selector.pack_forget()
+            page.timeline.mode_buttons['gaps'].pack_forget()
+            page.advanced_row.pack_forget()
+            self.recommendation.auto_button.pack_forget()
+        # Edit-specific controls do not consume review space.
+        if self.private_preview() or self.recommendation.visible or self.jobs or self.history_expanded or self.state_data['access_mode']!='editable':
+            page.timeline.tools.pack_forget()
+            page.emotion_panel.pack_forget()
+        else:page.timeline.tools.pack(fill='x',before=page.timeline.canvas,pady=(0,4))
+        self.file_menu.entryconfigure('导入旋律',state='normal' if self.editable else 'disabled')
+        save_allowed=self.state_data['access_mode']=='editable' and all(j.get('kind') in ('COMPLETION','BRIDGE','CONNECTION','RECOMMENDATION','RECOMMENDATION_MODE') for j in self.jobs.values())
+        self.file_menu.entryconfigure('保存快照',state='normal' if save_allowed else 'disabled')
+        page.import_button.state(['!disabled'] if self.editable else ['disabled'])
+        if getattr(self,'accepted_status',{}).get('status')=='STALE' and not self.recommendation.visible and not self.status_error:self.status_text.set(self.compact(self.accepted_status['message']))
+        if self.recommendation.visible and not self.status_error:self.status_text.set(self.compact(self.recommendation.status_text()))
+        if self.jobs:
+            stage=self.recommendation.status_text() if self.recommendation.active_job() else self.bridge.status_text() if self.bridge.active_job() else self.connection.status_text() if self.connection.active_job() else self.full_status
+            self.status_text.set(self.compact(stage))
+        if self.details_expanded:
+            for _,stage,_ in self.stages():stage.panel.pack_forget()
+            page.history_panel.pack_forget();page.advanced_row.pack_forget()
+            self.detail_row.pack(fill='x',before=page.stage_anchor,pady=(2,0))
+        else:self.detail_row.pack_forget()
+        page.timeline.empty_import.place(relx=.5,rely=.45,anchor='center') if self.state_data['project'] and not self.state_data['project']['sources'] and not self.state_data['project']['placements'] else page.timeline.empty_import.place_forget()
 
     def preview_memory_description(self):
         preview = self.private_preview()
@@ -399,28 +554,23 @@ class CurveApplication:
         return completion.preview_candidate if completion else None
 
     def exit_private_preview(self):
+        self.invalidate_play_intent()
         if self.recommendation.preview is not None:self.recommendation.exit_preview()
         elif self.connection.preview is not None:self.connection.exit_preview()
         elif self.bridge.preview is not None:self.bridge.exit_preview()
         elif self.completion.preview_candidate:self.completion.exit_preview()
 
     def show_curve_stage(self, stage):
-        self.workspace_stage = stage
-        if stage=='完整建议':
-            self.recommendation.show()
-            return
-        self.recommendation.restore_view()
-        self.recommendation.visible = False
-        if stage=='连接':self.connection.show()
+        self.invalidate_play_intent()
+        self.cancel_interaction()
+        self.suspend_private_view()
+        self.workspace_stage=stage
+        self.history_expanded=False
+        if stage=='完整建议':self.recommendation.show()
+        elif stage=='连接':self.connection.show()
         elif stage=='Bridge':self.bridge.show()
-        else:
-            self.cancel_interaction()
-            self.connection.restore_view()
-            self.connection.visible = False
-            self.bridge.restore_view()
-            self.bridge.visible = False
-            self.completion.restore_view()
-            self.refresh()
+        self.restore_private_view(stage)
+        self.refresh()
 
     def describe_bridge_overlay(self, overlay):
         if self.recommendation.preview is not None:return self.recommendation.describe_overlay(overlay,'Bridge')
@@ -445,11 +595,13 @@ class CurveApplication:
             self.tell('当前为只读模式或任务尚未结束。',True)
             return False
         try:
+            self.invalidate_play_intent()
             changed = self.controller.edit(action,**args)
         except Exception as exc:
             self.tell(str(exc),True)
             self.refresh()
             return False
+        if changed:self.view_bookmarks.clear()
         self.refresh()
         self.tell('工程已更新 · 一次撤销可恢复。' if changed else '位置与工程内容未改变。')
         return changed
@@ -467,17 +619,22 @@ class CurveApplication:
             self.cancel_interaction()
             return
         if self.editable:
+            self.invalidate_play_intent()
+            self.view_bookmarks.clear()
             self.controller.undo()
             self.refresh()
 
     def redo(self):
         if self.editable:
+            self.invalidate_play_intent()
+            self.view_bookmarks.clear()
             self.controller.redo()
             self.refresh()
 
     def select_target(self, kind, ident, redraw=True):
         if not ident:
             return
+        if self.selected_target!=(kind,ident):self.invalidate_play_intent()
         self.selected_target = (kind,ident)
         if kind=='material':self.selected_material_id = ident
         if kind=='source':self.selected_source_id = ident
@@ -509,10 +666,15 @@ class CurveApplication:
         if self.jobs:
             self.tell('已有任务正在准备；可以取消。')
             return False
+        if kind not in ('AUDITION','COMBINE'):self.invalidate_play_intent()
         captured = self.controller.capture_job(kind,target)
         token,snapshot = copy.deepcopy(captured['token']),copy.deepcopy(captured['snapshot'])
         job = dict(token=token,done=done,kind=kind,snapshot=snapshot)
         self.jobs[token['request_id']] = job
+        if kind in ('AUDITION','COMBINE'):
+            if not hasattr(self,'play_intent'):self.play_intent=PlayIntent()
+            self.play_intent.bind(token,snapshot_key('input',snapshot['project']))
+            job['audition']=self.play_intent.current is not None
         def worker():
             try:
                 result = work(snapshot)
@@ -533,6 +695,7 @@ class CurveApplication:
                 if self.jobs.get(token['request_id']) is job:
                     self.jobs.pop(token['request_id'])
             self.refresh()
+            self.invalidate_play_intent()
             self.tell('准备启动失败：'+str(exc),True)
             return False
         return True
@@ -555,8 +718,9 @@ class CurveApplication:
                     self.tell('准备结果已过期，请重新准备。')
                     continue
                 if success:
-                    job['done'](payload,token,job['snapshot'])
-                    self.controller.finish_job(token)
+                    ready_key=job['done'](payload,token,job['snapshot'])
+                    acknowledged=self.controller.finish_job(token)
+                    if acknowledged and job.get('audition') and isinstance(ready_key,str):self.play_prepared_intent(token,ready_key)
                 else:
                     self.controller.finish_job(token)
                     self.tell(payload,True)
@@ -568,6 +732,7 @@ class CurveApplication:
                 self.refresh()
 
     def cancel_jobs(self):
+        self.invalidate_play_intent()
         self.completion.cancel()
         self.bridge.cancel()
         self.connection.cancel()
@@ -581,6 +746,7 @@ class CurveApplication:
                   else '准备已取消 · 工程和当前播放保持原状。')
 
     def apply_batch(self, batch, token, snapshot=None):
+        self.invalidate_play_intent()
         self.controller.apply_batch(batch,token)
         warnings = batch['warnings']
         self.tell('素材已加入 · 一次撤销可恢复。'+(' '+ '；'.join(w['message'] for w in warnings) if warnings else ''))
@@ -673,7 +839,8 @@ class CurveApplication:
         def done(asset,token,snapshot):
             key = audition_key(kind,snapshot['target'],snapshot['project']['bpm'])
             self._cache_asset(key,asset,snapshot.get('audition_profile'))
-            self.tell(f'试听已就绪 · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒 · 请明确播放。')
+            self.tell(f'试听已就绪 · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒。')
+            return key
         return self._start_job('AUDITION',dict(kind=kind,id=ident),
                               lambda snap:_provider().render_audition(snap['target'],bpm=snap['project']['bpm']),done)
 
@@ -709,6 +876,7 @@ class CurveApplication:
         return self.start_playback(asset,(kind,ident),label if kind=='history' else target['label'])
 
     def start_playback(self, asset, target, label):
+        self.invalidate_play_intent()
         path = Path(asset['wav_path'])
         if not path.is_file():
             self._discard_asset_path(path)
@@ -741,6 +909,7 @@ class CurveApplication:
         self.update_transport()
 
     def stop(self):
+        self.invalidate_play_intent()
         self.player.close()
         self.playing_target = None
         self.play_duration = 0.
@@ -785,14 +954,18 @@ class CurveApplication:
         prefix = {'playing':'播放中','paused':'已暂停','stopped':'已结束','closed':'已停止'}.get(mode,mode)
         asset = self.playing_target['asset'] if self.playing_target else None
         durations = f' · 预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
-        self.transport_label.configure(text=self.compact(f'{prefix} · {playing} · {position:.1f}/{self.play_duration:.1f} 秒'),wraplength=0)
+        mode_label=('编配' if asset.get('mode')=='arranged' else '单旋律') if asset else ''
+        side_label=('基础' if asset.get('kind')=='comparison' else '处理后' if asset.get('kind')=='final' else '') if asset else ''
+        self.transport_label.configure(text=self.compact(f'{prefix} · {playing[:9]}'+(f' · {mode_label} {side_label}' if asset else '')+f' · {position:.1f}/{self.play_duration:.1f}秒'+(f' · 预计正文{asset["body_seconds"]:.1f}秒 / 实际音频{asset["audio_seconds"]:.1f}秒' if asset else ''),width=self.page.right.winfo_width()-(180 if self.last_export else 28)),wraplength=0)
         self.cancel_button.state(['!disabled'] if self.jobs else ['disabled'])
 
     def transport_description(self):
         playing = self.playing_target['label'] if self.playing_target else '尚未播放'
         target = self.resolve(*self.selected_target) if self.selected_target and self.selected_target[0]!='draft' else None
         selected = target['label'] if target else ('组合草稿' if self.selected_target and self.selected_target[0]=='draft' else '未选择试听对象')
-        return '当前播放：'+playing+'\n当前选择：'+selected
+        asset=self.playing_target['asset'] if self.playing_target else None
+        durations=f'\n预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
+        return '当前播放：'+playing+'\n当前选择：'+selected+durations
 
     def begin_material_drag(self, event, material, card):
         self.select_target('material',material['id'],redraw=False)
@@ -862,6 +1035,7 @@ class CurveApplication:
             if raw<0 or raw+d['material']['length_ticks']>canvas.project['total_ticks']:
                 self.tell('放置已取消：落点超出时间轴。',True)
                 return
+            canvas.set_mode('arrange')
             self.edit('place',material_id=d['material']['id'],start_tick=snap_tick(raw))
         elif hit:
             self.add_combo(d['material'],hit[0],hit[1])
@@ -882,6 +1056,7 @@ class CurveApplication:
         return 'break' if event else None
 
     def add_combo(self, source, target_id, side):
+        self.invalidate_play_intent()
         target = self.resolve('material',target_id)
         if not target:
             return
@@ -894,12 +1069,14 @@ class CurveApplication:
                 index = len(self.combo_inputs)-1
             self.combo_inputs.insert(index if side=='left' else index+1,copy.deepcopy(source))
         self.page.combo_panel.pack(fill='x',before=self.page.cards,pady=6)
-        self.page.combo_text.configure(text='组合草稿：'+' → '.join(m['label'] for m in self.combo_inputs))
+        self.page.combo_text.configure(text='组合草稿 · '+str(len(self.combo_inputs))+' 个组件')
+        self.show_detail('组合草稿：'+' → '.join(m['label'] for m in self.combo_inputs))
         self.selected_target = ('draft',snapshot_key('draft',self.combo_inputs))
         self.update_transport()
         self.tell('组合尚未加入工程 · 确认或取消。')
 
     def cancel_combo(self):
+        self.invalidate_play_intent()
         for request,job in list(self.jobs.items()):
             if job['kind']=='COMBINE':
                 self.controller.cancel_job(job['token'])
@@ -929,18 +1106,20 @@ class CurveApplication:
             if audition:
                 key = audition_key('draft',inputs,snapshot['project']['bpm'])
                 self._cache_asset(key,payload,snapshot.get('audition_profile'))
-                self.tell(f'组合试听已就绪 · 预计正文 {payload["body_seconds"]:.1f} 秒 / 实际音频 {payload["audio_seconds"]:.1f} 秒 · 请明确播放。')
+                self.tell(f'组合试听已就绪 · 预计正文 {payload["body_seconds"]:.1f} 秒 / 实际音频 {payload["audio_seconds"]:.1f} 秒。')
+                return key
             else:
                 self.apply_batch(payload,token)
                 self.combo_inputs = []
                 self.page.combo_panel.pack_forget()
                 self.selected_target = None
-        self._start_job('COMBINE',None,work,done)
+        return self._start_job('COMBINE',None,work,done)
 
     def prepare_combo(self):
         return self._combo_job(True)
 
     def confirm_combo(self):
+        self.invalidate_play_intent()
         return self._combo_job(False)
 
     def history_selected(self, event=None):
@@ -975,10 +1154,14 @@ class CurveApplication:
     def update_exports(self):
         item = self.resolve('history',self.selected_history_id)
         output = self.history_output(item) if item else None
-        for format_,button in self.page.export_buttons.items():
-            button.state(['!disabled'] if item and item.get('scope')!='LOCAL'
-                         and item.get('capabilities',{}).get('can_export_final',True)
-                         and output['availability'][format_] else ['disabled'])
+        any_enabled=False
+        for index,(format_,button) in enumerate(self.page.export_buttons.items()):
+            enabled=bool(item and item.get('scope')!='LOCAL' and item.get('capabilities',{}).get('can_export_final',True)
+                         and output['availability'][format_])
+            button.state(['!disabled'] if enabled else ['disabled'])
+            self.export_menu.entryconfigure(index,state='normal' if enabled else 'disabled')
+            any_enabled=any_enabled or enabled
+        self.export_menu_button.state(['!disabled'] if any_enabled else ['disabled'])
 
     def export_history(self, format_):
         item = self.resolve('history',self.selected_history_id)
@@ -1002,9 +1185,10 @@ class CurveApplication:
                 self.export_receipt.delete('1.0','end')
                 display_format = {'wav':'WAV','mid':'MIDI','mmp':'MMP'}[format_]
                 version = f' · v{item["version"]} · {mode}' if mode is not None else ''
-                self.export_receipt.insert('1.0',f'已导出 {display_format} · {label[:16]}{version}')
+                self.export_receipt.insert('1.0',f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.export_receipt.configure(state='disabled')
-                self.export_row.pack(fill='x',before=self.page.stage_anchor)
+                self.export_summary.configure(text=f'{display_format} 已导出')
+                self.export_row.grid(row=0,column=1,sticky='e',padx=(4,0))
                 self.show_detail(f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.tell('导出成功 · '+display_format+' · 完整位置见详情。')
                 return path
@@ -1022,6 +1206,10 @@ class CurveApplication:
             return path
 
     def _switched(self):
+        self.invalidate_play_intent()
+        self.view_bookmarks.clear()
+        self.source_filter_id=None
+        self.workspace_stage='编辑'
         self.recommendation.shutdown()
         self.recommendation.runtimes.clear()
         self.recommendation.restore_view()

@@ -629,6 +629,7 @@ class CurveP6Tests(MappedUIFixture):
 
     def test_mapped_three_sizes_dual_theme_exact_hits_scroll_and_fixed_player(self):
         self.worker.failed_second=True;self.app.connection.start();self.finish_jobs();self.app.connection.toggle_preview()
+        self.app.advanced=True;self.app.refresh()
         before=self.unchanged();sizes=[];canvas=self.app.page.timeline
         for theme in ('light','dark'):
             self.app.theme.set(theme)
@@ -639,8 +640,9 @@ class CurveP6Tests(MappedUIFixture):
                 self.assertGreaterEqual(self.app.connection.start_button.winfo_height(),44)
                 self.assertTrue(canvas.stage_selector.winfo_ismapped());self.assertFalse(self.app.bridge.panel.winfo_manager())
                 self.assertGreaterEqual(canvas.stage_selector.winfo_width(),canvas.stage_selector.winfo_reqwidth())
-                for button in (*canvas.mode_buttons.values(),canvas.all_gaps_button,
-                               self.app.connection.back_button,self.app.connection.preview_button):
+                self.assertFalse(canvas.tools.winfo_ismapped())
+                self.assertTrue(all(b.instate(['disabled']) for b in canvas.mode_buttons.values()))
+                for button in (self.app.connection.back_button,self.app.connection.preview_button):
                     self.assertTrue(button.winfo_ismapped());self.assertGreaterEqual(button.winfo_height(),44)
                     self.assertGreaterEqual(button.winfo_width(),44)
                     self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.root.winfo_rootx()+width)

@@ -116,7 +116,7 @@ class MaterialCards(ttk.Frame):
             card.place(x=left,y=index*stride+4,width=max(1,width-left-4),height=self.CARD_HEIGHT)
             self.rows[ident] = card
             content = tk.Frame(card,bg=surface)
-            window = card.create_window(8,4,anchor='nw',window=content,height=self.CARD_HEIGHT-8)
+            window = card.create_window(8,3,anchor='nw',window=content,height=self.CARD_HEIGHT-6)
             def background(event,canvas=card,window=window,fill=surface,selected=selected):
                 canvas.itemconfigure(window,width=max(1,event.width-16))
                 canvas.delete('surface')

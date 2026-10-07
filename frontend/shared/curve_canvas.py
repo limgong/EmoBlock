@@ -19,7 +19,7 @@ def _normalize_trace(points, total_ticks):
 
 
 class CurveCanvas(ttk.Frame):
-    def __init__(self, parent, app):
+    def __init__(self, parent, app, stage_parent=None):
         super().__init__(parent, style='Curve.Panel.TFrame')
         self.app = app
         self.project = None
@@ -48,12 +48,12 @@ class CurveCanvas(ttk.Frame):
         self.point_boxes = []
         self.gap_boxes = {}
         self.mode = 'points'
-        tools = ttk.Frame(self,style='Curve.Panel.TFrame')
+        tools = self.tools = ttk.Frame(self,style='Curve.Panel.TFrame')
         tools.pack(fill='x',pady=(0,4))
         self.mode_buttons = {}
-        for mode,text in (('points','控制点'),('trace','手绘'),('gaps','选空缺')):
+        for mode,text in (('arrange','编排'),('points','控制点'),('trace','手绘'),('gaps','选空缺')):
             button = ttk.Button(tools,text=text,width=0,style='Curve.TButton',command=lambda m=mode:self.set_mode(m))
-            button.pack(side='left',padx=(0,4))
+            if mode!='gaps':button.pack(side='left',padx=(0,4))
             self.mode_buttons[mode] = button
         hint(self.mode_buttons['points'],'点击空白添加控制点；拖动控制点调整时间与强度，Esc 取消。',app.show_detail)
         hint(self.mode_buttons['trace'],'局部手绘保留区外控制点；释放一次提交，Esc 或拖出取消。',app.show_detail)
@@ -62,7 +62,7 @@ class CurveCanvas(ttk.Frame):
             command=lambda:app.completion.select_gap(None))
         self.all_gaps_button.pack(side='left')
         self.stage_choice = tk.StringVar(value='补全')
-        self.stage_selector = ttk.Combobox(tools,textvariable=self.stage_choice,
+        self.stage_selector = ttk.Combobox(stage_parent if stage_parent is not None else tools,textvariable=self.stage_choice,
             values=('补全','Bridge','连接','完整建议'),state='readonly',width=7,style='Curve.TCombobox')
         self.stage_selector.bind('<<ComboboxSelected>>',lambda _:app.show_curve_stage(self.stage_choice.get()))
         hint(self.stage_selector,'分阶段折叠：补全、Bridge、连接和完整建议共用唯一画布；切换不会修改工程或播放对象。',app.show_detail)
@@ -71,6 +71,7 @@ class CurveCanvas(ttk.Frame):
         self.scrollbar = ttk.Scrollbar(self,style='Curve.Horizontal.TScrollbar', orient='horizontal', command=self.canvas.xview)
         self.scrollbar.pack(fill='x')
         self.canvas.configure(xscrollcommand=self.scrollbar.set)
+        self.empty_import=ttk.Button(self.canvas,text='导入旋律，开始创作',style='Curve.Primary.TButton',command=lambda:app.safe(app.import_file))
         self.canvas.bind('<Motion>',self.hover)
         for event, handler in (('<Configure>', self.draw), ('<ButtonPress-1>', self.press),
                                ('<B1-Motion>', self.motion), ('<ButtonRelease-1>', self.release),
@@ -100,21 +101,22 @@ class CurveCanvas(ttk.Frame):
         self.draw()
         for mode,button in self.mode_buttons.items():
             button.configure(style='Curve.Primary.TButton' if mode==self.mode else 'Curve.TButton')
-            enabled = not readonly and self.app.can_edit('completion' if mode=='gaps' else 'intensity_edit')
+            enabled = not readonly and self.app.can_edit('edit' if mode=='arrange' else 'completion' if mode=='gaps' else 'intensity_edit')
             button.state(['!disabled'] if enabled else ['disabled'])
         self.all_gaps_button.state(['!disabled'] if not readonly and self.app.can_edit('completion') else ['disabled'])
         if self.app.state_data['capabilities'].get('connection',False) or self.app.state_data['capabilities'].get('recommendation',False):
             self.stage_selector.configure(values=('补全','Bridge','连接')+(
                 ('完整建议',) if self.app.state_data['capabilities'].get('recommendation',False) else ()))
             self.stage_choice.set('完整建议' if self.app.recommendation.visible else '连接' if self.app.connection.visible else 'Bridge' if self.app.bridge.visible else '补全')
-            self.stage_selector.pack(side='right')
+            self.stage_selector.pack(side='right') if self.app.advanced else self.stage_selector.pack_forget()
         else:self.stage_selector.pack_forget()
 
     def set_mode(self, mode):
         if self.readonly:return
         self.cancel()
         self.mode = mode
-        self.set_project(self.project)
+        self.draw()
+        for value,button in self.mode_buttons.items():button.configure(style='Curve.Primary.TButton' if value==mode else 'Curve.TButton')
 
     def points(self):
         return self.intensity_draft['points'] if self.intensity_draft else self.project['intensity_points']
@@ -166,12 +168,12 @@ class CurveCanvas(ttk.Frame):
         for level in (0., .25, .5, .75, 1.):
             y = self.y(level)
             c.create_line(self.margin,y,self.x(total),y,fill=p['inset'])
-            c.create_text(24,y,text=f'{level:g}',fill=p['muted'],font=font(8))
+            c.create_text(24,y,text=f'{level*100:g}%',fill=p['muted'],font=font(8))
         for tick in range(0,total+1,480):
             x = self.x(tick)
             c.create_line(x,40,x,height-36,fill=p['line'] if tick%1920==0 else p['inset'])
             if tick%1920==0:
-                c.create_text(x,22,anchor='w',text=f'{tick//1920+1:02}',fill=p['muted'],font=font(9))
+                c.create_text(x,22,anchor='w',text=f'{tick//1920+1}格 · {tick//480+1}拍',fill=p['muted'],font=font(9))
         for blank in self.project['blank_regions']:
             a,b = self.x(blank['start_tick']),self.x(blank['end_tick'])
             c.create_rectangle(a,45,b,height-37,fill=p['inset'],outline=p['line'],dash=(3,3))
@@ -226,9 +228,9 @@ class CurveCanvas(ttk.Frame):
         for index,point in enumerate(self.points()):
             x,y = self.x(point['tick']),self.y(point['level'])
             self.point_boxes.append((index,x,y))
-            c.create_oval(x-6,y-6,x+6,y+6,fill=p['panel'],outline=p['accent'],width=1,tags='control-point')
+            c.create_oval(x-6,y-6,x+6,y+6,fill=p['panel'],outline=p['accent'] if self.mode=='points' and not self.readonly else p['muted'],width=1,tags='control-point')
         text = ('手绘 · 释放提交，Esc 取消' if self.mode=='trace' else '控制点 · 点击添加，拖动调整')
-        if self.mode=='gaps':text = '选择精确空缺 · 未选中时处理全部'
+        if self.mode in ('arrange','gaps'):text = '编排 · 拖放每拍吸附 · 选择空缺可仅生成此处方案'
         if not self.app.can_edit('intensity_edit'):text = '强度不可编辑'
         if self.readonly:text = '基础候选只读 · 尚未处理bridge与连接'
         if self.bridge_preview is not None:text = 'Bridge阶段只读 · 尚未处理连接与最终边界'
@@ -464,7 +466,7 @@ class CurveCanvas(ttk.Frame):
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
         if any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
-            self.app.show_detail('强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
+            self.app.show_detail('候选强度只读。' if self.readonly else '切换到控制点模式可编辑强度。' if self.mode=='arrange' else '强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
             return
         if self.badge_detail(x,y):return
         if self.final_detail(x,y):return
@@ -477,7 +479,7 @@ class CurveCanvas(ttk.Frame):
             overlay = next(o for o in self.connection_preview['connection_overlays'] if o['id']==connection_id)
             self.app.show_detail(self.app.describe_connection_overlay(overlay))
         elif any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
-            self.app.show_detail('强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
+            self.app.show_detail('候选强度只读。' if self.readonly else '切换到控制点模式可编辑强度。' if self.mode=='arrange' else '强度控制点 · tick 精确定位，端点时间固定；Esc 取消未提交操作。')
         else:
             overlay = self.memory_overlay()
             if overlay and self.hit(x,y)==overlay[0]['placement_id']:
@@ -542,7 +544,7 @@ class CurveCanvas(ttk.Frame):
             self.draw()
             return
         point_index = next((i for i,a,b in self.point_boxes if abs(x-a)<=10 and abs(y-b)<=10),None)
-        if self.app.can_edit('intensity_edit') and (self.mode=='trace' or point_index is not None):
+        if self.app.can_edit('intensity_edit') and (self.mode=='trace' or (self.mode=='points' and point_index is not None)):
             self.begin_intensity(event,point_index if self.mode=='points' else None)
             return
         if self.badge_detail(x,y):return
@@ -557,10 +559,10 @@ class CurveCanvas(ttk.Frame):
             if self.app.editable:
                 self.drag = dict(id=ident,start_root=(event.x_root,event.y_root),
                                  offset=x-self.x(placement['start_tick']),length=placement['length_ticks'],active=False)
-        elif self.mode=='gaps':
+        elif self.mode in ('arrange','gaps'):
             ident = self.hit_gap(x,y)
             if ident:self.app.completion.select_gap(ident)
-        elif self.app.can_edit('intensity_edit'):
+        elif self.mode=='points' and self.app.can_edit('intensity_edit'):
             self.begin_intensity(event,None)
         self.draw()
 

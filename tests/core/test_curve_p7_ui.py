@@ -688,7 +688,7 @@ class RecommendationMappedTests(MappedUIFixture):
         self.assertAlmostEqual(canvas.canvas.xview()[0],scroll,places=2)
 
     def test_own_boundary_bridge_connection_labels_and_scrolled_integer_hits(self):
-        self.ready();self.select();canvas=self.app.page.timeline
+        self.ready();self.select();self.app.advanced=True;self.app.refresh();canvas=self.app.page.timeline
         self.assertTrue(canvas.canvas.find_withtag('final-boundary'))
         self.assertTrue(canvas.canvas.find_withtag('bridge-range'))
         self.assertTrue(canvas.canvas.find_withtag('connection-range'))
@@ -708,9 +708,11 @@ class RecommendationMappedTests(MappedUIFixture):
                                self.rec.confirm_button,self.rec.final_button,self.rec.comparison_button):
                     self.assertTrue(button.winfo_ismapped())
                     self.assertGreaterEqual(button.winfo_height(),44)
-                    self.assertGreaterEqual(button.winfo_rootx(),self.app.page.middle.winfo_rootx())
-                    self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.app.page.middle.winfo_rootx()+self.app.page.middle.winfo_width())
-                    self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),self.app.play_button.winfo_rooty())
+                    self.assertGreaterEqual(button.winfo_rootx(),self.app.page.right.winfo_rootx())
+                    self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.app.page.right.winfo_rootx()+self.app.page.right.winfo_width())
+                    if button is self.rec.cancel_button:
+                        self.assertEqual(button.master,self.app.play_button.master)
+                    else:self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),self.app.play_button.winfo_rooty())
 
     def test_one_tick_tail_and_neighbor_preview_no_music_quantization(self):
         self.ready();self.select();canvas=self.app.page.timeline
@@ -810,8 +812,11 @@ class RecommendationMappedTests(MappedUIFixture):
         self.controller.edit('resize',grid_count=64)
         self.ready();self.root.update();canvas=self.app.page.timeline;canvas.canvas.xview_moveto(.2)
         scroll=canvas.canvas.xview()[0];self.select()
+        preview=copy.deepcopy(self.rec.preview)
         for stage in ('Bridge','连接','补全','完整建议'):
             self.app.show_curve_stage(stage);self.root.update()
-            self.assertIsNone(self.rec.preview)
+            if stage=='完整建议':self.assertEqual(self.rec.preview,preview)
+            else:self.assertIsNone(self.rec.preview)
+            self.assertLessEqual(sum(getattr(s,f) is not None for _,s,f in self.app.stages()),1)
             self.assertAlmostEqual(canvas.canvas.xview()[0],scroll,places=2)
             self.assertEqual(self.rec.visible,stage=='完整建议')

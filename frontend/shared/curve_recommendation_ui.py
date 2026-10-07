@@ -76,10 +76,11 @@ class RecommendationUI:
         self.back_button=ttk.Button(row,text='返回编辑',style='Curve.Compact.TButton',command=self.exit_preview)
         self.back_button.pack(side='right',padx=3)
         self.calculate_button=app.page.final_button
-        self.auto_button=ttk.Button(self.panel,text='自动补全并应用',style='Curve.TButton',command=lambda:app.safe(lambda:self.start(automatic=True)))
+        self.auto_button=ttk.Button(app.page.advanced_row,text='自动补全并应用',style='Curve.TButton',command=lambda:app.safe(lambda:self.start(automatic=True)))
         self.cancel_button=app.cancel_button
         self.label=ttk.Label(self.panel,style='Curve.Muted.TLabel',takefocus=True)
         self.label.grid(row=2,column=0,columnspan=2,sticky='ew')
+        self.label.grid_remove()
         hint(self.label, self.description, app.show_detail)
         hint(self.selector, self.description, app.show_detail)
         self.label.bind('<Button-1>', lambda _: app.show_detail(self.description()))
@@ -140,12 +141,13 @@ class RecommendationUI:
         caps = self.state['capabilities']
         mode = self.mode_data(candidate)
         mc = mode.get('capabilities', {})
+        can_prepare=bool(candidate and self.state['status'] in ('READY','APPLIED') and not app.jobs and mode.get('status','MISSING') in ('MISSING','FAILED','SCORE_READY'))
         active = self.active_job()
         for button, enabled in ((self.calculate_button, not app.jobs and caps.get('can_calculate',False)),
             (self.auto_button, not app.jobs and caps.get('can_auto_complete',False)),
             (self.cancel_button, bool(active)), (self.retry_button, bool(candidate) and not app.jobs),
-            (self.comparison_button, mc.get('can_play_comparison',False)),
-            (self.final_button, mc.get('can_play_final',False)),
+            (self.comparison_button, mc.get('can_play_comparison',False) or can_prepare),
+            (self.final_button, mc.get('can_play_final',False) or can_prepare),
             (self.confirm_button, not app.jobs and mc.get('can_apply',False))):
             button.state(['!disabled'] if enabled else ['disabled'])
         self.retry_button.state(['disabled'] if mode.get('status')=='RENDERING' else [])
@@ -171,6 +173,7 @@ class RecommendationUI:
         index = self.selector.current()
         if index<0 or index>=len(self.state['candidates']):return
         candidate = self.state['candidates'][index]
+        if self.selected_id!=candidate['id']:self.app.invalidate_play_intent()
         self.selected_id = candidate['id']
         if candidate['capabilities']['can_preview']:
             if self.bookmark is None:
@@ -186,6 +189,7 @@ class RecommendationUI:
         self.app.show_detail(self.description())
 
     def mode_changed(self, event=None):
+        self.app.invalidate_play_intent()
         self.app.refresh()
         item = self.app.resolve('history',self.app.selected_history_id)
         self.app.show_detail(self.app.history_output_description(item) if item else self.description())
@@ -201,6 +205,7 @@ class RecommendationUI:
             self.bookmark = None
 
     def exit_preview(self):
+        self.app.invalidate_play_intent()
         self.restore_view()
         self.app.refresh()
 
@@ -215,6 +220,7 @@ class RecommendationUI:
         return self.register(captured, 'RECOMMENDATION', automatic=automatic)
 
     def prepare_mode(self):
+        self.app.invalidate_play_intent()
         if not self.candidate() or self.app.jobs:return False
         captured = self.app.controller.capture_recommendation_mode(self.selected_id,self.mode_key())
         return self.register(captured, 'RECOMMENDATION_MODE')
@@ -320,10 +326,13 @@ class RecommendationUI:
                     if was_live and self.state['attempt_id']==token['request_id']:self.report(job)
                 elif kind=='result':
                     if job['kind']=='RECOMMENDATION_MODE':
-                        self.app.controller.finish_recommendation_mode(token,payload)
+                        acknowledged=self.app.controller.finish_recommendation_mode(token,payload)
                     else:self.app.controller.finish_recommendations(token,payload)
                     self.remove_job(job)
                     if was_live:self.report(job)
+                    if was_live and job['kind']=='RECOMMENDATION_MODE' and acknowledged:
+                        try:self.play_mode_intent(job)
+                        except Exception as exc:self.app.invalidate_play_intent();self.app.tell(str(exc),True)
                     if (was_live and job['automatic'] and not job['cancel'].is_set() and self.state['attempt_id']==token['request_id']
                             and self.state['status']=='READY'):
                         candidates = sorted(self.state['candidates'],key=lambda c:c['rank'])
@@ -366,17 +375,49 @@ class RecommendationUI:
             job['cancel'].set()
             job['shutdown'].set()
 
+    def intent_key(self, candidate, mode, kind):
+        from curve_ui import snapshot_key
+        return snapshot_key('candidate-play',dict(id=candidate['id'],version=candidate['version'],
+                             music_fingerprint=candidate['music_fingerprint'],mode=mode,kind=kind))
+
     def play(self, kind):
-        candidate = self.candidate()
+        candidate=self.candidate()
         if not candidate:return False
-        mode = self.mode_key()
-        if not self.mode_data(candidate).get('capabilities',{}).get('can_play_'+kind,False):return False
-        asset = self.app.controller.recommendation_asset(candidate['id'],kind=kind,mode=mode)
-        label = candidate['title']+' · '+MODES[mode]+' · '+('基础对比' if kind=='comparison' else '处理后')
+        app=self.app;mode=self.mode_key()
+        target=('recommendation',candidate['id'],mode,kind)
+        key=self.intent_key(candidate,mode,kind)
+        app.play_intent.begin(target,mode,app.input_key(),key)
+        if self.mode_data(candidate).get('capabilities',{}).get('can_play_'+kind,False):
+            return self.play_authenticated(candidate,mode,kind)
+        if app.jobs or self.state['status'] not in ('READY','APPLIED'):
+            app.invalidate_play_intent();return False
+        try:
+            captured=app.controller.capture_recommendation_mode(candidate['id'],mode)
+            app.play_intent.bind(captured['token'],app.input_key())
+            return self.register(captured,'RECOMMENDATION_MODE')
+        except Exception:
+            app.invalidate_play_intent();raise
+
+    def play_mode_intent(self, job):
+        captured=job['captured'];candidate=self.candidate(captured['candidate_id']);mode=captured['mode']
+        if not candidate or self.selected_id!=candidate['id'] or self.mode_key()!=mode:return False
+        value=self.app.play_intent.current
+        if not value:return False
+        kind=value['target'][-1]
+        target=('recommendation',candidate['id'],mode,kind)
+        if not self.app.play_intent.accepts(job['token'],target,mode,self.app.input_key(),self.intent_key(candidate,mode,kind)):return False
+        if not candidate['modes'].get(mode,{}).get('capabilities',{}).get('can_play_'+kind,False):return False
+        return self.play_authenticated(candidate,mode,kind)
+
+    def play_authenticated(self, candidate, mode, kind):
+        asset=self.app.controller.recommendation_asset(candidate['id'],kind=kind,mode=mode)
+        label=candidate['title']+' · '+MODES[mode]+' · '+('基础拼接' if kind=='comparison' else '处理后')
         return self.app.start_playback(playback_asset(asset),('recommendation',candidate['id'],mode,kind),label)
 
     def apply(self, candidate_id, mode):
         ref = self.app.controller.confirmation_ref(candidate_id,mode=mode)
+        self.app.invalidate_play_intent()
+        self.app.view_bookmarks.clear()
         result = self.app.controller.apply_recommendation(candidate_id,mode=mode,confirmation_ref=ref)
         self.restore_view()
         self.app.refresh()

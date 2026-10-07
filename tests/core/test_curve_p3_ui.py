@@ -298,7 +298,8 @@ class CurveP3Tests(MappedUIFixture):
                                 start_tick=2400,end_tick=4320,notes=[dict(start_tick=2280,duration_tick=300)])]
         self.app.refresh();self.root.update()
         self.assertIn('音高与节奏已保护',self.app.page.memory_label.cget('text'))
-        self.assertIn('2400–4320',self.app.page.memory_label.cget('text'))
+        self.assertIn('5–9拍',self.app.page.memory_label.cget('text'))
+        self.assertIn('2400–4320',self.app.memory_description())
         rect = c.canvas.coords(c.canvas.find_withtag('memory-range')[0])
         self.assertAlmostEqual(rect[0],c.x(2400));self.assertAlmostEqual(rect[2],c.x(4320))
         support = c.canvas.coords(c.canvas.find_withtag('memory-support')[0])
@@ -403,7 +404,8 @@ class CurveP3Tests(MappedUIFixture):
         self.app.select_target('placement',ident)
         self.root.geometry('1020x700');self.app.refresh();self.root.update()
         self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),160)
-        for widget in (self.app.export_receipt,self.app.export_folder_button,self.app.play_button):
+        self.app.toggle_details();self.root.update()
+        for widget in (self.app.detail_label,self.app.export_folder_button,self.app.play_button):
             self.assertTrue(widget.winfo_ismapped())
             self.assertLessEqual(widget.winfo_rootx()+widget.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
 
@@ -430,7 +432,7 @@ class CurveP3Tests(MappedUIFixture):
                                range=dict(start_tick=480,end_tick=2400),protection_id=None)
             self.app.refresh();self.root.update()
             self.assertGreaterEqual(c.canvas.winfo_height(),160)
-            for button in list(c.mode_buttons.values())+list(self.app.page.emotion_buttons.values())+[self.app.play_button]:
+            for button in [c.mode_buttons[m] for m in ('arrange','points','trace')]+list(self.app.page.emotion_buttons.values())+[self.app.play_button]:
                 self.assertTrue(button.winfo_ismapped());self.assertGreaterEqual(button.winfo_height(),44)
                 self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
                 self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())

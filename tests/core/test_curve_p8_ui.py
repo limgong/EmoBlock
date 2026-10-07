@@ -221,7 +221,7 @@ class CurveP8MappedTests(MappedUIFixture):
                     rx,ry=self.root.winfo_rootx(),self.root.winfo_rooty()
                     canvas=self.app.page.timeline.canvas
                     self.assertLessEqual(canvas.winfo_rootx()+canvas.winfo_width(),rx+width)
-                    for button in (self.app.page.final_button,self.app.history_button,self.app.prepare_button,self.app.play_button,self.app.cancel_button):
+                    for button in (self.app.page.final_button,self.app.history_button,self.app.play_button,self.app.stop_button,self.app.cancel_button):
                         self.assertTrue(button.winfo_ismapped())
                         self.assertGreaterEqual(button.winfo_height(),44)
                         self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),rx+width)
@@ -301,6 +301,10 @@ class CurveP8MappedTests(MappedUIFixture):
 
     def test_editable_points_and_trace_win_badge_overlap_readonly_keeps_detail(self):
         self.short_protection_setup();timeline=self.app.page.timeline
+        # The taller plot requires a stronger original peak to keep the memory
+        # owner fixed while adding a high control point at the callout's y.
+        points=copy.deepcopy(self.controller.project['intensity_points']);points[1]['level']=1.
+        self.controller.edit('set_intensity',points=points);self.app.refresh();self.root.update()
         (a,t,b,d),_=timeline.range_badges[0]
         x,y=(a+b)/2,(t+d)/2
         point=dict(tick=round(timeline.tick(x)),level=1-(y-36)/max(1,timeline.canvas.winfo_height()-80))
@@ -308,7 +312,12 @@ class CurveP8MappedTests(MappedUIFixture):
         self.controller.edit('set_intensity',points=points);self.app.refresh();self.root.update()
         for theme in ('light','dark'):
             if self.app.theme.name!=theme:self.app.toggle_theme()
-            self.root.update();before=self.invariant()
+            self.root.update()
+            (a,t,b,d),_=timeline.range_badges[0];x,y=(a+b)/2,(t+d)/2
+            point['level']=1-(y-36)/max(1,timeline.canvas.winfo_height()-80)
+            points=[p for p in self.controller.project['intensity_points'] if p['tick']!=point['tick']]+[point]
+            self.controller.edit('set_intensity',points=sorted(points,key=lambda p:p['tick']))
+            self.app.refresh();self.root.update();before=self.invariant()
             index,x,y=next(v for v in timeline.point_boxes if timeline.points()[v[0]]['tick']==point['tick'])
             self.assertTrue(any(a<=x<=b and t<=y<=d for (a,t,b,d),_ in timeline.range_badges))
             def click(x,y):

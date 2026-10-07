@@ -35,3 +35,13 @@ class WorkspaceLayoutTests(MappedUIFixture):
         self.assertTrue(tip.window.winfo_ismapped())
         self.assertIn('完整乐句',tip.window.winfo_children()[0].cget('text'))
         tip.hide();self.root.update();self.assertIsNone(tip.window)
+
+    def test_source_threshold_respects_explicit_choice_and_merged_action_is_single(self):
+        self.assertIs(self.app.prepare_button,self.app.play_button)
+        before=self.controller.state()['project']
+        for width,collapsed in ((1150,True),(1179,True),(1180,False)):
+            self.app.source_user_collapsed=None;self.root.geometry(f'{width}x700');self.root.update()
+            self.assertEqual(bool(self.app.page.source_panel.winfo_ismapped()),not collapsed)
+        self.app.source_user_collapsed=False;self.root.geometry('1020x700');self.root.update()
+        self.assertTrue(self.app.page.source_panel.winfo_ismapped())
+        self.assertEqual(before,self.controller.state()['project'])

@@ -103,7 +103,7 @@ class CompletionUI:
                       INTERRUPTED='计算已中断 · 请明确重试', NOT_NEEDED='没有待补全空缺')[self.state['status']]
         if outcome and outcome['status']=='INSUFFICIENT': status += ' · 方案不足'
         target = next((g for g in self.gaps if g['id']==self.selected_gap_id), None)
-        scope = f'{target["start_tick"]}–{target["end_tick"]} tick' if target else '全部空缺'
+        scope = f'第{target["start_tick"]/480+1:g}拍 · {(target["end_tick"]-target["start_tick"])/480:g}拍' if target else '全部空缺'
         if self.preview_candidate: status = '基础候选只读 · 尚未处理bridge与连接'
         self.label.configure(text=status if self.preview_candidate else status+' · '+scope, wraplength=450)
 
@@ -111,7 +111,11 @@ class CompletionUI:
         if self.app.private_preview() or self.app.jobs: return
         if ident is not None and ident not in {g['id'] for g in self.gaps}: return
         self.selected_gap_id = ident
-        self.refresh()
+        self.app.invalidate_play_intent()
+        if ident is not None:
+            self.app.page.timeline.selected_id=None
+            if self.app.selected_target and self.app.selected_target[0]=='placement':self.app.selected_target=None
+        self.app.refresh()
         self.app.page.timeline.draw()
         self.app.show_detail(self.label.cget('text'))
 
