@@ -117,3 +117,11 @@ lead独占公共curve_final/curve_recommendations/curve_final_render/curve_appli
 运行时补充13.18状态DRAFT：p7音乐数据对象保持原冻结版本，服务捕获增加source_facts以及纯历史Snapshot闭包。算法与前端只读评审对文档825b9ac3125770504aa7f1fff290e72ffb8f974d417f4e8f82f64921f3b5969c均PASS；仍需独立P7-CONTRACT ROUND3/5，新增捕获字段尚未实施。
 
 运行时补充独立P7-CONTRACT ROUND3 PASS：HEAD=7cc0a0f5c698c740e8b7f657227ce05a59666428，209文件前后与lead现场指纹a820e1656d442e17517e269ea762c52fc025e1d28667f4e70e78eda2e08311c5完全相同。第13.18只将状态改FROZEN；服务runtime1、音乐数据p7分离，新增运行时字段现在允许实施。本结论不代替产品实现验收。
+
+## P8本轮执行记录
+
+用户已授权P8综合验收和实际缺陷定向修复，P0–P7历史记录/规范不覆盖。RUN_ID=curve-v2-p8-20261007-492036f5；服务CONTRACT_REV=p7-runtime1不变，输出补充p8-output1和布局纯恢复补充p8-layout1已由P8累计第2轮独立PASS并冻结。音乐native版本仍按所属版本解释。本轮累计独立提交最多5次，已用矩阵R1 FAIL、矩阵+契约R2 PASS，后续实施继续R3起，不重置。
+
+lead独占公共数据/curve_final/curve_final_render/curve_workflow/必要推荐job门禁/export_safe与后端测试；music只中性素材试听与boundary provider请求识别及所属测试、仓库外固定对照集；frontend只shared Curve界面/缓存/失败恢复/视觉及其测试、必要配对适配检查。三个worker复用原pane/分支，动态实际映射、交付及GUI/render/device单一时隙记录仓库外。不得并发改公共文件或自行合并/互派/唤醒；lead读取pane收集，集成冻结后verifier只读检查。
+
+P8_READY必须实际证据齐全，P8_PARTIAL列物理/人工/Win等缺证，真实前置/功能阻塞则BLOCKED。源码/程序化Tk/截图/设备流/人工听感分别记录，不自动进入发布或下一开发轮。

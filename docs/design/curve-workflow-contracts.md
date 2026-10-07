@@ -1148,14 +1148,14 @@ sources为上述全部逻辑notes、父notes及material_snapshots的notes/childr
 验收：已接受p7工程→新推荐捕获→私有P4/5/6→最终score，保原真实音乐/桥锁与完整来源；捕获后立即编辑、撤销同内容与取消均不能用旧闭包绕过会话门禁；缺闭包/借另工程合法闭包/伪造旧Score重新计算hash均拒绝；保存重开不调用生成/渲染。新项目的source_facts=[]兼容原正常路径。只读评审与独立PASS后才能将本节标为FROZEN并实施新增捕获字段。
 
 
-## 15. P8定向验收修复补充（DRAFT）
+## 15. P8定向验收修复补充（FROZEN）
 
 SPEC_REV=curve-workflow-v2-r3
 服务CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1保持。
 OUTPUT_CONTRACT_REV=curve-workflow-v2-r3-p8-output1
 LAYOUT_COMPAT_REV=curve-workflow-v2-r3-p8-layout1
 
-本节整合双方只读意见，独立PASS后才FROZEN。只修复已复现的输出用途门禁、中性试听身份、布局纯恢复与UI故障；不扩展作曲能力。音乐native p0/p23/p4/p5/p6/p7头、Project/FinalScore/AudioAsset字段不统一改版；仅输出profile及既有BoundaryRequest.algorithm_version分别版本化。旧保存/打开绝不重生成或偷偷升级。
+本节整合双方只读意见，RUN_ID=curve-v2-p8-20261007-492036f5、TASK_ID=P8-MATRIX-AND-REPAIR-CONTRACT、ROUND=2已独立PASS；受检HEAD=23c03815d7307c3f6393fb622f24295c0accc2d8、前后完整指纹ce0139373410498ef58554984eff341c41dc3fea7ce496da310bbe78c9adbd95。此结论仅契约与矩阵，不是实施通过。只修复已复现的输出用途门禁、中性试听身份、布局纯恢复与UI故障；不扩展作曲能力。音乐native p0/p23/p4/p5/p6/p7头、Project/FinalScore/AudioAsset字段不统一改版；仅输出profile及既有BoundaryRequest.algorithm_version分别版本化。旧保存/打开绝不重生成或偷偷升级。
 
 ### 15.1 逐格式和逐模式的只读能力
 

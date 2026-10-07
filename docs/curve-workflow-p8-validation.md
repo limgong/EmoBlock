@@ -4,7 +4,7 @@ SPEC_REV=curve-workflow-v2-r3
 CONTRACT_REV=curve-workflow-v2-r3-p7-runtime1
 RUN_ID=curve-v2-p8-20261007-492036f5
 BASE_SHA=c47c5dca9c14e84216cbc9fce904cf0f0d611e85
-状态：MATRIX_DRAFT。P8只验证并定向修复已有工作流，不扩展产品。
+状态：实施中；矩阵及定向修复契约第2轮独立PASS（不代表实施验收）。P8只验证并定向修复已有工作流，不扩展产品。
 
 ## 基线与证据门禁
 
@@ -116,3 +116,5 @@ D-AUDITION-OWNERSHIP已由lead公开导入/组合/放置及真实P5/P6 none服�
 第1轮矩阵独立FAIL已核对身份、HEAD和211文件完整前后指纹相等：d06bd80de230c8e3112bc7e50c030fa27cdea1bbb00c207b27dbc0ba9a3d1ca5。具体修正为70父项的155独立证据叶、VIS12和Windows36独立参数叶；每叶拥有ID/category/required/status/executor/time/env/inputfp/head/evidence/actual/inheritance。父项只有全部required叶PASS才PASS，任一FAIL优先FAIL，否则BLOCKED或NOT_TESTED；不会以设备/程序化Tk替代人手/听感。第1轮JSON已封存，轮数不重置。
 
 新增D-RESTORE-ORDER：原P7收据local-auto已接受大工程127707456字节在本轮纯恢复失败，真实诊断仅同priority的segment归属受集合顺序影响。P7独立认证的accepted-current工程55970981字节在本轮正常load/save/reopen/capture-cancel通过（约7.63/6.68/7.32/6.75秒，进程累计峰值RSS约1.44GB）；不能把它替代大工程反例。兼容修复先纳入15.4独立契约，不改原件/不删除来源保护、不用新hash重签旧请求。
+
+第2轮TASK_ID=P8-MATRIX-AND-REPAIR-CONTRACT：MATRIX_VERDICT=PASS、CONTRACT_VERDICT=PASS，总PASS；HEAD=23c03815d7307c3f6393fb622f24295c0accc2d8、前后指纹ce0139373410498ef58554984eff341c41dc3fea7ce496da310bbe78c9adbd95，本轮现场重算一致。15节标FROZEN后安全同步原worktree，才派定向实现。服务runtime1与音乐native p7仍不变，输出profile和布局algorithm_version分别版本化。
