@@ -62,15 +62,16 @@ class CurveCanvas(ttk.Frame):
         tools.pack(fill='x',pady=(0,4))
         self.mode_buttons = {}
         for mode,text in (('arrange','编排'),('points','控制点'),('trace','手绘'),('gaps','选空缺')):
-            button = ttk.Button(tools,text=text,width=0,style='Curve.TButton',command=lambda m=mode:self.set_mode(m))
-            if mode!='gaps':button.pack(side='left',padx=(0,4))
+            button = ttk.Button(tools,text=text,width=0,padding=(-pixels(app.root,5),0),style='Curve.TButton',command=lambda m=mode:self.set_mode(m))
+            if mode!='gaps':button.pack(side='left',padx=(0,2))
             self.mode_buttons[mode] = button
         hint(self.mode_buttons['points'],'点击空白添加控制点；拖动控制点调整时间与强度，Esc 取消。',app.show_detail)
         hint(self.mode_buttons['trace'],'局部手绘保留区外控制点；释放一次提交，Esc 或拖出取消。',app.show_detail)
         hint(self.mode_buttons['gaps'],'只选择后端查询的精确空缺；默认补全全部，点击不会计算或播放。',app.show_detail)
-        self.all_gaps_button = ttk.Button(tools,text='全部空缺',width=0,style='Curve.TButton',
+        self.all_gaps_button = ttk.Button(tools,text='全部',width=0,padding=(-pixels(app.root,5),0),style='Curve.TButton',
             command=lambda:app.completion.select_gap(None))
         self.all_gaps_button.pack(side='left')
+        hint(self.all_gaps_button,'回到全部空缺；不会计算或播放。',app.show_detail)
         self.stage_choice = tk.StringVar(value='补全')
         self.stage_selector = ttk.Combobox(stage_parent if stage_parent is not None else tools,textvariable=self.stage_choice,
             values=('补全','Bridge','连接','完整建议'),state='readonly',width=7,style='Curve.TCombobox')
@@ -127,6 +128,8 @@ class CurveCanvas(ttk.Frame):
         self.mode = mode
         self.draw()
         for value,button in self.mode_buttons.items():button.configure(style='Curve.Primary.TButton' if value==mode else 'Curve.TButton')
+        self.app.update_emotions()
+        self.app.update_workspace()
 
     def points(self):
         return self.intensity_draft['points'] if self.intensity_draft else self.project['intensity_points']

@@ -90,28 +90,33 @@ def build_page(page, parent, app, methods, emotions):
     page.resize_button=page.minus_button
     page.final_button=IconButton(row,app,'generate','生成方案',lambda:app.safe(app.generate_recommendations),style='Curve.Primary.TButton',label=True)
     page.final_button.pack(side='right')
-    page.gap_panel=ttk.Frame(page.right,style='Curve.Panel.TFrame')
-    page.gap_label=ttk.Label(page.gap_panel,style='Curve.Muted.TLabel');page.gap_label.pack(side='left')
-    button(page.gap_panel,'生成此处方案',lambda:app.safe(app.generate_recommendations)).pack(side='left',padx=3)
-    button(page.gap_panel,'设为留白',lambda:app.safe(app.mark_selected_blank)).pack(side='left')
     # Advanced is always reachable, independently of gap selection.
     page.advanced_button=button(row,'高级',app.toggle_advanced,style='Curve.TButton')
     page.advanced_button.pack(side='right',padx=4)
-    page.emotion_panel=ttk.Frame(page.right,style='Curve.Panel.TFrame')
-    page.emotion_title=ttk.Label(page.emotion_panel,style='Curve.Muted.TLabel')
-    page.emotion_title.grid(row=0,column=0,sticky='w')
-    page.emotion_buttons={}
-    for index,(emotion,text) in enumerate(emotions.items()):
-        b=button(page.emotion_panel,text,lambda e=emotion:app.set_emotion(e),style='Curve.Compact.TButton')
-        b.grid(row=0,column=index+1,sticky='ew',padx=1)
-        page.emotion_buttons[emotion]=b
-        hint(b,lambda e=emotion:'仅修改所选放置的'+emotions[e]+'情绪；不改基础素材。',app.show_detail)
     page.memory_label=ttk.Label(page.right,style='Curve.Muted.TLabel',takefocus=True)
     page.memory_label.pack(fill='x',pady=(2,0))
     hint(page.memory_label,app.current_memory_description,app.show_detail)
     page.memory_label.bind('<Button-1>',lambda _:app.show_detail(app.current_memory_description()))
     page.timeline=CurveCanvas(page.right,app,stage_parent=page.advanced_row);page.timeline.pack(fill='both',expand=True,pady=(2,0))
+    page.gap_panel=ttk.Frame(page.timeline.tools,style='Curve.Panel.TFrame')
+    page.gap_label=ttk.Label(page.gap_panel,style='Curve.Muted.TLabel',takefocus=True);page.gap_label.pack(side='left')
+    hint(page.gap_label,lambda:gap_description(app),app.show_detail)
+    button(page.gap_panel,'生成此处方案',lambda:app.safe(app.generate_recommendations),padding=(-pixels(app.root,5),0)).pack(side='left',padx=2)
+    button(page.gap_panel,'设为留白',lambda:app.safe(app.mark_selected_blank),padding=(-pixels(app.root,5),0)).pack(side='left')
+    page.emotion_panel=ttk.Frame(page.timeline.tools,style='Curve.Panel.TFrame')
+    page.emotion_title=ttk.Label(page.emotion_panel,style='Curve.Muted.TLabel')
+    page.emotion_buttons={}
+    for index,(emotion,text) in enumerate(emotions.items()):
+        b=button(page.emotion_panel,text,lambda e=emotion:app.set_emotion(e),padding=(-pixels(app.root,5),0))
+        b.grid(row=0,column=index+1,sticky='ew',padx=1)
+        page.emotion_buttons[emotion]=b
+        hint(b,lambda e=emotion:'仅修改所选放置的'+emotions[e]+'情绪；不改基础素材。',app.show_detail)
     page.empty_workspace=ttk.Frame(page.timeline.canvas,style='Curve.Panel.TFrame')
+
+
+def gap_description(app):
+    gap=app.selected_gap()
+    return (f'空缺范围 {gap["start_tick"]/480+1:g}–{gap["end_tick"]/480+1:g}拍 · 精确ID {gap["id"]}' if gap else '默认处理全部空缺。')
 
 
 def build_chrome(app):

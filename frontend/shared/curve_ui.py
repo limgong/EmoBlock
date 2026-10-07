@@ -325,12 +325,12 @@ class CurveApplication:
 
     def update_emotions(self):
         placement = self.selected_placement()
-        if not placement or self.private_preview():
+        if not placement or self.private_preview() or self.page.timeline.mode=='gaps':
             self.page.emotion_panel.pack_forget()
+            self.page.timeline.all_gaps_button.pack(side='left')
             return
-        # Timeline stays packed through review/return; the duplicate memory summary
-        # is conditional and cannot serve as a lifecycle-stable pack anchor.
-        self.page.emotion_panel.pack(fill='x',before=self.page.timeline,pady=(4,0))
+        self.page.timeline.all_gaps_button.pack_forget()
+        self.page.emotion_panel.pack(side='right')
         self.page.emotion_title.configure(text='情绪')
         for emotion,button in self.page.emotion_buttons.items():
             button.configure(style='Curve.Primary.TButton' if placement['emotion']==emotion else 'Curve.TButton')
@@ -547,8 +547,8 @@ class CurveApplication:
         else:page.derive_row.pack_forget()
         gap=self.selected_gap()
         if gap and not empty and not self.private_preview() and not self.jobs:
-            page.gap_panel.pack(fill='x',before=page.timeline)
-            page.gap_label.configure(text=f'空缺 · 第{gap["start_tick"]/480+1:g}拍 · {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
+            page.gap_panel.pack(side='right')
+            page.gap_label.configure(text=f'空缺 {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
         else:page.gap_panel.pack_forget()
         if self.advanced and not empty:
             page.advanced_row.pack(fill='x',before=page.stage_anchor)
@@ -588,14 +588,15 @@ class CurveApplication:
             for w in (page.all_materials_button,page.source_frame,page.source_notes,page.source_audition,page.source_reminder):w.pack_forget()
         else:
             page.empty_workspace.place_forget();page.timeline.empty_import.place_forget()
+            if self.private_preview() or self.recommendation.visible or any(j['kind']=='RECOMMENDATION' for j in self.jobs.values()):page.creation_row.pack_forget()
+            else:page.creation_row.pack(fill='x',before=page.timeline)
             preview=self.private_preview()
-            if preview and (preview.get('memory_info') or {}).get('state')=='BOUND':
+            info=preview.get('memory_info') if preview else self.state_data.get('memory_info')
+            if (info or {}).get('state')=='BOUND' and page.timeline.memory_overlay():
                 # The actual protected badge remains on the canvas; avoid a duplicate
                 # bound-memory row while preserving pending-gap/blank explanations.
                 page.memory_label.pack_forget()
             else:page.memory_label.pack(fill='x',before=page.timeline,pady=(2,0))
-            if self.private_preview() or self.recommendation.visible or any(j['kind']=='RECOMMENDATION' for j in self.jobs.values()):page.creation_row.pack_forget()
-            else:page.creation_row.pack(fill='x',before=page.memory_label)
             page.timeline.scrollbar.pack(fill='x')
             page.all_materials_button.pack(fill='x',pady=6)
             page.source_frame.pack(fill='both',expand=True)

@@ -8,6 +8,44 @@ from test_curve_ui import MappedUIFixture, FakeController, fixture
 
 
 class WorkspaceLayoutTests(MappedUIFixture):
+    def test_real_selected_placement_and_gap_keep_minimum_canvas_and_direct_memory_errors(self):
+        for memory in ('BOUND','PENDING_GAP','PRESERVE_BLANK'):
+            controller=curve_workflow.Controller(fixture())
+            controller.edit('place',material_id='block',start_tick=0)
+            if memory=='BOUND':
+                controller.edit('set_intensity',points=[dict(tick=0,level=.2),dict(tick=120,level=.9),dict(tick=15360,level=.2)])
+            else:
+                controller.edit('set_intensity',points=[dict(tick=0,level=.2),dict(tick=15360,level=.9)])
+                if memory=='PRESERVE_BLANK':controller.edit('mark_blank',start_tick=14880,end_tick=15360,reason='test explicit blank')
+            self.app.controller=controller;self.app._switched();self.root.update()
+            self.assertEqual(controller.state()['memory_info']['state'],memory)
+            before=copy.deepcopy(controller.state())
+            placement=before['project']['placements'][0]['id']
+            gap=self.app.completion.gaps[0]
+            for selection in ('placement','gap'):
+                self.app.page.timeline.set_mode('arrange' if selection=='placement' else 'gaps')
+                if selection=='placement':self.app.select_target('placement',placement)
+                else:self.app.completion.select_gap(gap['id'])
+                for theme in ('light','dark'):
+                    self.app.theme.set(theme);self.app.refresh()
+                    self.root.geometry('1020x700')
+                    for collapsed in (False,True):
+                        self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
+                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        for button in (list(self.app.page.emotion_buttons.values()) if selection=='placement' else self.app.page.gap_panel.winfo_children()[1:]):
+                            self.assertTrue(button.winfo_ismapped())
+                            self.assertGreaterEqual(button.winfo_width(),44);self.assertGreaterEqual(button.winfo_height(),44)
+                            self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
+                        self.assertEqual(bool(self.app.page.memory_label.winfo_ismapped()),memory!='BOUND')
+                        if memory=='BOUND':self.assertTrue(self.app.page.timeline.canvas.find_withtag('memory-label'))
+                        self.app.tell('受控错误：已有保护仍保留',True);self.root.update()
+                        self.assertTrue(self.app.status_label.winfo_ismapped())
+                        self.assertIn('已有保护',self.app.status_label.cget('text'))
+                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        self.assertTrue(self.app.stop_button.winfo_ismapped());self.assertGreaterEqual(self.app.stop_button.winfo_height(),44)
+                        self.app.tell(self.app.workspace_hint())
+            self.assertEqual(before,controller.state())
+
     def test_empty_workspace_only_import_and_no_recommendation_capture(self):
         self.app.controller=curve_workflow.Controller();self.app._switched();self.root.update()
         before=self.app.controller.state()

@@ -49,7 +49,7 @@ def install_surfaces(root, style, palette, name):
                     ('normal','active','pressed','focus','disabled','selected')]
             element='CurveSurface'+role+resource
             style.element_create(element,'image',states[0],('disabled',states[4]),('pressed',states[2]),
-                                 ('focus',states[3]),('selected',states[5]),('active',states[1]),border=pixels(root,11),sticky='nsew')
+                                 ('focus',states[3]),('selected',states[5]),('active',states[1]),border=pixels(root,11),width=pixels(root,44),height=pixels(root,44),sticky='nsew')
             images.extend(states)
         small=[image.subsample(2) for image in images[:6]]
         style.element_create('CurveSurfaceSmall'+resource,'image',small[0],('disabled',small[4]),('pressed',small[2]),('focus',small[3]),('selected',small[5]),('active',small[1]),border=pixels(root,1),sticky='nsew')
