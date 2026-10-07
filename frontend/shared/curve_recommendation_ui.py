@@ -207,7 +207,7 @@ class RecommendationUI:
     def exit_preview(self):
         self.app.invalidate_play_intent()
         self.restore_view()
-        self.app.refresh()
+        self.app.show_curve_stage('编辑')
 
     def start(self, automatic=False):
         app = self.app
@@ -420,7 +420,7 @@ class RecommendationUI:
         self.app.view_bookmarks.clear()
         result = self.app.controller.apply_recommendation(candidate_id,mode=mode,confirmation_ref=ref)
         self.restore_view()
-        self.app.refresh()
+        self.app.show_curve_stage('编辑')
         self.app.tell('同谱已接受 · 一次撤销可恢复' if result['changed'] else '此版本已经接受')
         self.app.show_detail(str(result['receipt']))
         return result

@@ -10,8 +10,10 @@ import curve_ui
 
 class RecommendationControlTests(p7.RecommendationMappedTests):
     def click(self, widget):
-        self.root.update();widget.event_generate('<ButtonPress-1>',x=8,y=8)
-        widget.event_generate('<ButtonRelease-1>',x=8,y=8);self.root.update()
+        self.root.update()
+        coords=dict(x=8,y=8,rootx=widget.winfo_rootx()+8,rooty=widget.winfo_rooty()+8)
+        widget.event_generate('<ButtonPress-1>',**coords)
+        widget.event_generate('<ButtonRelease-1>',**coords);self.root.update()
 
     def mode_fixture(self):
         self.rec.mode.set('情绪编配');self.rec.mode_changed()
@@ -53,11 +55,75 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.assertAlmostEqual(self.app.page.timeline.canvas.xview()[0],scroll,places=2)
         self.click(self.rec.back_button)
         self.assertIsNone(self.rec.preview);self.assertEqual(before,self.music_state())
+        self.assertFalse(self.rec.visible)
+        self.assertEqual(self.app.workspace_stage,'编辑')
+        self.assertTrue(self.app.page.timeline.tools.winfo_ismapped())
+        self.rec.show()
         self.select();self.click(self.rec.confirm_button)
         calls=[c for c in self.controller.calls if c[0]=='apply-recommendation']
         self.assertEqual(len(calls),1);self.assertEqual(calls[0][1][2],self.controller.confirmations[-1])
+        self.assertFalse(self.rec.visible);self.assertTrue(self.app.page.timeline.tools.winfo_ismapped())
+        self.assertTrue(self.app.editable);self.assertEqual(self.app.workspace_stage,'编辑')
+        self.rec.show();self.select();self.root.update()
+        self.assertIsNotNone(self.rec.preview);self.assertTrue(self.rec.panel.winfo_ismapped())
         # This fixture checks the exact once-only public transaction call.
         # Actual undo/save authentication is exercised by the real-Facade probe.
+
+    def test_mapped_return_restores_selected_edit_actions_and_retains_candidates_cache(self):
+        self.app.edit('resize',grid_count=8)
+        self.ready();canvas=self.app.page.timeline
+        self.app.combo_inputs=[copy.deepcopy(self.controller._project['materials'][0])]
+        asset=dict(wav_path=str(self.wav),midi_path=str(self.wav),mmp_path=str(self.wav),
+                   renderer_version=self.app.audition_profile(),body_seconds=1.,audio_seconds=1.)
+        self.app._cache_asset('retained-audition',asset)
+        self.app.start_playback(asset,('fixture','playing'),'已明确试听对象')
+        for mode in ('arrange','points','trace'):
+            for selected in ('placement','gap'):
+                with self.subTest(mode=mode,selected=selected):
+                    self.rec.show();self.rec.exit_preview();self.root.update()
+                    self.click(canvas.mode_buttons[mode])
+                    if selected=='placement':
+                        self.app.completion.select_gap(None)
+                        self.app.select_target('placement',self.controller._project['placements'][-1]['id'])
+                    else:
+                        self.assertTrue(self.app.completion.gaps)
+                        self.app.completion.select_gap(self.app.completion.gaps[0]['id'])
+                    self.app.refresh();self.root.update()
+                    before=self.music_state();draft=copy.deepcopy(self.app.combo_inputs)
+                    cache=copy.deepcopy(self.app.ready_assets)
+                    cache_identity=copy.deepcopy(self.app.ready_file_digests)
+                    self.rec.show();self.select();self.root.update()
+                    candidates=copy.deepcopy(self.rec.state['candidates'])
+                    self.assertFalse(canvas.tools.winfo_ismapped())
+                    self.click(self.rec.back_button)
+
+                    self.assertTrue(self.app.editable);self.assertFalse(self.rec.visible)
+                    self.assertFalse(self.rec.panel.winfo_ismapped());self.assertIsNone(self.rec.preview)
+                    self.assertEqual(canvas.mode,mode)
+                    for name in ('arrange','points','trace'):
+                        self.assertTrue(canvas.mode_buttons[name].winfo_ismapped())
+                        self.assertFalse(canvas.mode_buttons[name].instate(['disabled']))
+                    self.assertEqual(bool(self.app.page.emotion_panel.winfo_ismapped()),selected=='placement')
+                    self.assertEqual(bool(self.app.page.gap_panel.winfo_ismapped()),selected=='gap')
+                    self.assertEqual(before,self.music_state());self.assertEqual(draft,self.app.combo_inputs)
+                    self.assertEqual(cache,self.app.ready_assets);self.assertEqual(candidates,self.rec.state['candidates'])
+                    self.assertEqual(cache_identity,self.app.ready_file_digests)
+                    self.assertEqual(self.rec.selected_id,candidates[0]['id'])
+                    self.rec.show();self.select();self.root.update()
+                    self.assertIsNotNone(self.rec.preview);self.assertTrue(self.rec.panel.winfo_ismapped())
+                    self.assertFalse(canvas.tools.winfo_ismapped())
+                    self.assertEqual(before,self.music_state())
+                    self.click(self.rec.back_button)
+
+    def test_mapped_failed_apply_preserves_readonly_review(self):
+        self.ready();self.select();self.root.update()
+        before=self.music_state();preview=copy.deepcopy(self.rec.preview)
+        with patch.object(self.controller,'apply_recommendation',side_effect=ValueError('APPLY_REJECTED')):
+            self.click(self.rec.confirm_button)
+        self.assertTrue(self.rec.visible);self.assertTrue(self.rec.panel.winfo_ismapped())
+        self.assertFalse(self.app.page.timeline.tools.winfo_ismapped());self.assertFalse(self.app.editable)
+        self.assertEqual(self.rec.preview,preview);self.assertEqual(before,self.music_state())
+        self.assertIn('APPLY_REJECTED',self.app.status_text.get())
 
     def test_review_minimum_canvas_and_readonly_controls_both_themes(self):
         self.ready();self.select()
