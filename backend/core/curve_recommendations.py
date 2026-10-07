@@ -228,7 +228,8 @@ def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_pro
             _cancel(should_cancel);tested+=1;current=base['id'] if base else None
             try:
                 emit('BRIDGE_DECISION','判断桥接是否有音乐收益。')
-                job=private.capture_bridge(current,captured['attempt_id'] if captured else None,request['seed'],request['parameters']['bridge_parameters'])
+                job=private.capture_bridge(current,captured['attempt_id'] if captured else None,request['seed'],request['parameters']['bridge_parameters'],
+                                           algorithm_version=bridge.GLOBAL_ALGORITHM)
                 proposal=decide_bridge(job['request'],should_cancel=should_cancel)
                 plan=private.lock_bridge(job['token'],proposal)
                 emit('BRIDGE_LOCKED','桥接位置与全部保护已在同一事务登记。')

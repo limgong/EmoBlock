@@ -16,7 +16,7 @@ from test_curve_candidates import fixture, prepared, proposal as completion_prop
 
 def ready_bridge(controller=None, ranges=()):
     controller = controller or complete()
-    cap = controller.capture_bridge()
+    cap = controller.capture_bridge(algorithm_version=b.ALGORITHM)
     plan = controller.lock_bridge(cap['token'], decision(cap['request'], ranges))
     controller.begin_bridge_generation(cap['token'], plan)
     result = b.generate_bridges(cap['request'], plan)
@@ -111,7 +111,7 @@ class ConnectionServiceTests(unittest.TestCase):
         c = complete(); self.assertEqual(c.connection_state()['status'], 'IDLE')
         with self.assertRaises(m.ProjectError): c.capture_connection()
         c = ready_bridge(c); first = c.bridge_state()['attempt_id']
-        newer = c.capture_bridge(); c.cancel_bridge(newer['token'])
+        newer = c.capture_bridge(algorithm_version=b.ALGORITHM); c.cancel_bridge(newer['token'])
         with self.assertRaises(m.ProjectError): c.capture_connection()
         selected = c.capture_connection(first); self.assertEqual(selected['request']['bridge_ref']['attempt_id'], first)
         self.assertTrue(c.cancel_job(selected['token']))
@@ -246,7 +246,7 @@ class ConnectionServiceTests(unittest.TestCase):
 
     def test_partial_candidate_preserves_remaining_gaps_and_base(self):
         c=fixture();cap=c.capture_completion(c.gap_items()[0]['id']);outcome=prepared(cap['request'],[completion_proposal(cap['request'])]);c.finish_completion(cap['token'],outcome)
-        bridge=c.capture_bridge(outcome['candidates'][0]['id'],cap['token']['request_id']);plan=c.lock_bridge(bridge['token'],decision(bridge['request']));c.begin_bridge_generation(bridge['token'],plan)
+        bridge=c.capture_bridge(outcome['candidates'][0]['id'],cap['token']['request_id'], algorithm_version=b.ALGORITHM);plan=c.lock_bridge(bridge['token'],decision(bridge['request']));c.begin_bridge_generation(bridge['token'],plan)
         c.finish_bridge(bridge['token'],b.generate_bridges(bridge['request'],plan));cap,plan=begin(c,())
         self.assertTrue(c.finish_connection(cap['token'],n.raw_outcome(cap['request'],plan,[])))
         self.assertEqual(c.connection_state()['remaining_gaps'],outcome['candidates'][0]['remaining_gaps'])

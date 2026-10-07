@@ -252,9 +252,15 @@ def validate_proposal(request, proposal):
     for item in m.objects(proposal['assessments']):
         if not isinstance(item, dict): m.reject('选位评价必须是对象。', 'INVALID_BRIDGE')
         m.canonical(item)
-    m.shape(proposal['search'], 'tested_windows termination')
-    m.integer(proposal['search']['tested_windows'], 0, request['parameters']['max_window_tests'])
-    m.ident(proposal['search']['termination'])
+    if request['algorithm_version'] == GLOBAL_ALGORITHM:
+        # Authenticate captured musical facts and search proof without planning
+        # or generating again.  Legacy attempts retain their original grammar.
+        from curve_phrase_analysis import validate_search
+        validate_search(request, proposal)
+    else:
+        m.shape(proposal['search'], 'tested_windows termination')
+        m.integer(proposal['search']['tested_windows'], 0, request['parameters']['max_window_tests'])
+        m.ident(proposal['search']['termination'])
     parents = m.indexed(request['base_notes']); total = request['base_project']['total_ticks']
     for w in windows.values():
         m.shape(w, 'id start_tick end_tick placement_ids context emotion_segments blank_mask')

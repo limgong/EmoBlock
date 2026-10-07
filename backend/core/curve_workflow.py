@@ -381,7 +381,8 @@ class Controller(RecommendationFacade):
     def _active_bridge(self, token):
         return self.accepts(token) and self._jobs[token['request_id']]['kind']=='BRIDGE'
 
-    def capture_bridge(self, candidate_id=None, completion_attempt_id=None, seed=31, parameters=None):
+    def capture_bridge(self, candidate_id=None, completion_attempt_id=None, seed=31, parameters=None,
+                       *, algorithm_version=curve_bridges.GLOBAL_ALGORITHM):
         self._editable()
         if self._jobs:
             model.reject('已有任务正在准备，请等待或明确取消。','DUPLICATE_REQUEST')
@@ -397,10 +398,12 @@ class Controller(RecommendationFacade):
             ref=dict(attempt_id=completion_attempt_id,candidate_id=candidate_id,
                      request=copy.deepcopy(previous['request']),candidate=copy.deepcopy(selected))
         version=max([a['bridge']['request']['plan_version'] for a in self._bundle['attempts'] if 'bridge' in a]+[0])+1
-        tentative=curve_bridges.make_request(self.project,ref,seed=seed,values=parameters,plan_version=version)
+        tentative=curve_bridges.make_request(self.project,ref,seed=seed,values=parameters,plan_version=version,
+                                             algorithm_version=algorithm_version)
         captured=self.session.capture(tentative['request_id'],contract_rev=curve_bridges.REV);token=captured['token']
         try:
-            request=curve_bridges.make_request(captured['project'],ref,token,seed,parameters,tentative['plan_id'],version)
+            request=curve_bridges.make_request(captured['project'],ref,token,seed,parameters,tentative['plan_id'],version,
+                                               algorithm_version=algorithm_version)
             attempt=dict(id=request['request_id'],snapshot_id=request['snapshot_id'],input_fingerprint=request['input_fingerprint'],
                 state='RUNNING',records=[],protections=copy.deepcopy(request['base_project']['protections']),staged_materials=[],error=None,
                 bridge=dict(schema='emoblocks.bridge-attempt.v1',spec_rev=model.SPEC_REV,contract_rev=curve_bridges.REV,

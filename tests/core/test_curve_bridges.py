@@ -68,7 +68,7 @@ def historical_automatic(velocity):
 class BridgeServiceTests(unittest.TestCase):
     def test_current_complete_none_no_fake_completion_or_edit(self):
         c=complete();before=c.project;history=copy.deepcopy((c.session._undo,c.session._redo))
-        cap=c.capture_bridge();req=cap['request'];token=cap['token']
+        cap=c.capture_bridge(algorithm_version=b.ALGORITHM);req=cap['request'];token=cap['token']
         self.assertEqual(req['input_kind'],'current_complete');self.assertIsNone(req['completion_ref'])
         self.assertEqual(token['contract_rev'],b.REV);self.assertEqual(c.project['contract_rev'],m.CONTRACT_REV)
         plan=c.lock_bridge(token,decision(req));self.assertTrue(c.accepts(token))
@@ -82,10 +82,10 @@ class BridgeServiceTests(unittest.TestCase):
 
     def test_gap_no_fake_current_input_and_duplicate_request(self):
         c=fixture()
-        with self.assertRaises(m.ProjectError):c.capture_bridge()
+        with self.assertRaises(m.ProjectError):c.capture_bridge(algorithm_version=b.ALGORITHM)
         self.assertEqual(c._bundle['attempts'],[]);self.assertEqual(c._jobs,{})
-        c=complete();cap=c.capture_bridge()
-        with self.assertRaises(m.ProjectError) as exc:c.capture_bridge()
+        c=complete();cap=c.capture_bridge(algorithm_version=b.ALGORITHM)
+        with self.assertRaises(m.ProjectError) as exc:c.capture_bridge(algorithm_version=b.ALGORITHM)
         self.assertEqual(exc.exception.code,'DUPLICATE_REQUEST');self.assertTrue(c.cancel_bridge(cap['token']))
         self.assertEqual(c.bridge_state()['outcome']['plan_fingerprint'],None)
 
@@ -93,14 +93,14 @@ class BridgeServiceTests(unittest.TestCase):
         c=fixture();cap=c.capture_completion(c.gap_items()[0]['id'])
         outcome=prepared(cap['request'],[completion_proposal(cap['request'])])
         self.assertEqual(outcome['status'],'INSUFFICIENT');self.assertTrue(c.finish_completion(cap['token'],outcome))
-        bridge=c.capture_bridge(outcome['candidates'][0]['id'],cap['token']['request_id'])
+        bridge=c.capture_bridge(outcome['candidates'][0]['id'],cap['token']['request_id'], algorithm_version=b.ALGORITHM)
         req=bridge['request'];self.assertEqual(req['remaining_gaps'],outcome['candidates'][0]['remaining_gaps'])
         self.assertEqual(req['resolved_ranges'],[dict(start_tick=0,end_tick=3360)])
         self.assertEqual(c.project,req['input_project']);self.assertEqual(c.project['materials'],req['base_project']['materials'])
         self.assertTrue(c.cancel_bridge(bridge['token']))
 
     def test_atomic_locks_before_generation_and_failed_transaction(self):
-        c=complete();cap=c.capture_bridge();token=cap['token'];req=cap['request']
+        c=complete();cap=c.capture_bridge(algorithm_version=b.ALGORITHM);token=cap['token'];req=cap['request']
         before=copy.deepcopy(c._bundle);bad=decision(req,[(1920,3840),(5760,7680)])
         bad['windows'][1]['start_tick']=2000
         with self.assertRaises(m.ProjectError):c.lock_bridge(token,bad)
@@ -113,7 +113,7 @@ class BridgeServiceTests(unittest.TestCase):
         self.assertFalse(c.finish_job(token));self.assertFalse(state['capabilities']['can_plan_connections'])
 
     def test_failure_cancel_locks_old_callback_and_new_plan_isolation(self):
-        c=complete();cap=c.capture_bridge();req=cap['request'];token=cap['token']
+        c=complete();cap=c.capture_bridge(algorithm_version=b.ALGORITHM);req=cap['request'];token=cap['token']
         plan=c.lock_bridge(token,decision(req,[(1920,3840),(5760,7680)]));c.begin_bridge_generation(token,plan)
         first=b.failure_result(req,plan,'automatic-0',b.error('SYNTHETIC_FAILURE','模拟失败'))
         self.assertTrue(c.record_bridge_result(token,first));self.assertFalse(c.record_bridge_result(token,first))
@@ -121,12 +121,12 @@ class BridgeServiceTests(unittest.TestCase):
         self.assertEqual([r['status'] for r in old['results']],['FAILED','CANCELLED'])
         self.assertEqual([p['status'] for p in old['protections'] if p['kind']=='bridge'],['RANGE_LOCKED']*2)
         self.assertFalse(c.finish_bridge(token,raw(req,plan)));self.assertFalse(c.record_bridge_result(token,first))
-        new=c.capture_bridge();self.assertGreater(new['request']['plan_version'],req['plan_version'])
+        new=c.capture_bridge(algorithm_version=b.ALGORITHM);self.assertGreater(new['request']['plan_version'],req['plan_version'])
         self.assertNotEqual(new['request']['plan_id'],req['plan_id']);self.assertEqual(c._bridge_attempt(token['request_id'])['protections'],old['protections'])
         self.assertFalse(c.fail_bridge(token,b.error('LATE','迟到')));self.assertEqual(c.bridge_state()['status'],'RUNNING')
 
     def test_edit_undo_never_revives_parent_or_bridge(self):
-        c=complete();before=c.project;cap=c.capture_bridge();token=cap['token'];req=cap['request']
+        c=complete();before=c.project;cap=c.capture_bridge(algorithm_version=b.ALGORITHM);token=cap['token'];req=cap['request']
         c.lock_bridge(token,decision(req,[(1920,3840)]))
         c.edit('set_melody_only',value=True);c.undo();self.assertEqual(c.project,before)
         self.assertEqual(c.bridge_state()['status'],'STALE');self.assertFalse(c.accepts(token))
@@ -134,10 +134,10 @@ class BridgeServiceTests(unittest.TestCase):
         store.validate_bundle(c._current_bundle())
         c=fixture();cap=c.capture_completion(c.gap_items()[0]['id']);outcome=prepared(cap['request'],[completion_proposal(cap['request'])])
         c.finish_completion(cap['token'],outcome);c.edit('set_melody_only',value=True);c.undo()
-        with self.assertRaises(m.ProjectError):c.capture_bridge(outcome['candidates'][0]['id'],cap['token']['request_id'])
+        with self.assertRaises(m.ProjectError):c.capture_bridge(outcome['candidates'][0]['id'],cap['token']['request_id'], algorithm_version=b.ALGORITHM)
 
     def test_manual_none_actual_ready_set_preserves_old_lock(self):
-        c=complete(manual=True);cap=c.capture_bridge();req=cap['request'];token=cap['token']
+        c=complete(manual=True);cap=c.capture_bridge(algorithm_version=b.ALGORITHM);req=cap['request'];token=cap['token']
         old=copy.deepcopy([p for p in c.project['protections'] if p['kind']=='bridge'])
         plan=c.lock_bridge(token,decision(req));rows=[b.inherited_result(req,plan,owner) for owner in plan['inherited_bridge_ids']]
         self.assertEqual(len(rows),1);self.assertEqual(rows[0]['status'],'READY')
@@ -147,7 +147,7 @@ class BridgeServiceTests(unittest.TestCase):
         self.assertEqual(c.bridge_state()['outcome']['notes'],req['base_notes'])
 
     def test_pure_restore_running_interrupts_without_music_calls(self):
-        c=complete();cap=c.capture_bridge();plan=c.lock_bridge(cap['token'],decision(cap['request'],[(1920,3840)]))
+        c=complete();cap=c.capture_bridge(algorithm_version=b.ALGORITHM);plan=c.lock_bridge(cap['token'],decision(cap['request'],[(1920,3840)]))
         c.begin_bridge_generation(cap['token'],plan)
         with tempfile.TemporaryDirectory() as tmp:
             path=c.save_snapshot(Path(tmp)/'保存 中文.json');original=c.project
@@ -162,7 +162,7 @@ class BridgeServiceTests(unittest.TestCase):
             self.assertEqual([p['status'] for p in d.bridge_state()['protections'] if p['kind']=='bridge'],['RANGE_LOCKED'])
 
     def test_decision_error_audit_and_save_failure(self):
-        c=complete();before=c.project;cap=c.capture_bridge()
+        c=complete();before=c.project;cap=c.capture_bridge(algorithm_version=b.ALGORITHM)
         self.assertTrue(c.fail_bridge(cap['token'],RuntimeError('decision error')))
         state=c.bridge_state();self.assertEqual(state['status'],'FAILED');self.assertIsNone(state['plan'])
         self.assertIsNone(state['outcome']['plan_fingerprint']);self.assertEqual(state['outcome']['results'],[])
@@ -175,7 +175,7 @@ class BridgeServiceTests(unittest.TestCase):
 class BridgeActualMusicTests(unittest.TestCase):
     def start(self, count=4):
         from test_curve_bridge_music import fixture as music_fixture
-        c=w.Controller(music_fixture(count));cap=c.capture_bridge()
+        c=w.Controller(music_fixture(count));cap=c.capture_bridge(algorithm_version=b.ALGORITHM)
         return c,cap
 
     def test_public_actual_roundtrip_source_and_reproducibility_no_p6(self):
@@ -191,7 +191,7 @@ class BridgeActualMusicTests(unittest.TestCase):
         self.assertEqual(row['emotion_processing']['pass_count'],1);self.assertEqual(len(row['children']),4)
         self.assertEqual(len(row['operations']),len(row['base_material']['notes']))
         self.assertTrue(any(op['rule'] in ('answer','sequence','rhythm') for op in row['operations']))
-        other=c.capture_bridge();otherplan=c.lock_bridge(other['token'],w.decide_bridge(other['request']))
+        other=c.capture_bridge(algorithm_version=b.ALGORITHM);otherplan=c.lock_bridge(other['token'],w.decide_bridge(other['request']))
         regenerated=w.generate_bridges(other['request'],otherplan)
         musical=lambda rows:[(n['pitch'],n['start_tick'],n['duration_tick']) for r in rows for n in r['notes']]
         self.assertEqual(musical(result['results']),musical(regenerated['results']))
@@ -256,7 +256,7 @@ class BridgeActualMusicTests(unittest.TestCase):
         p['materials'].append(nested);p['placements']=[dict(id='nested-use',material_id=nested['id'],base_snapshot=nested,
              start_tick=0,length_ticks=nested['length_ticks'],emotion='calm',emotion_variant=None)]
         p['blank_regions']=[dict(id='endblank',start_tick=nested['length_ticks'],end_tick=p['total_ticks'],reason='主动留白')]
-        c=w.Controller(p);cap=c.capture_bridge();req=cap['request']
+        c=w.Controller(p);cap=c.capture_bridge(algorithm_version=b.ALGORITHM);req=cap['request']
         expected=[combo['children'][0]['occurrence_id'],first['id']]
         ref=b.parent_ref(req,'nested-use:'+nested['notes'][0]['id'])
         self.assertEqual(ref['component_path'],[nested['children'][0]['occurrence_id'],combo['children'][0]['occurrence_id']])
@@ -278,7 +278,7 @@ class BridgeActualMusicTests(unittest.TestCase):
                     with tempfile.TemporaryDirectory() as tmp:
                         path=store.save(store.new_bundle(p),Path(tmp)/'old.json')
                         self.assertEqual(store.load(path)['bundle']['project'],p)
-                        c=w.Controller(p);c.session.mark_saved();cap=c.capture_bridge(parameters={'policy':'none'} if policy=='none' else None)
+                        c=w.Controller(p);c.session.mark_saved();cap=c.capture_bridge(parameters={'policy':'none'} if policy=='none' else None, algorithm_version=b.ALGORITHM)
                         req=cap['request'];prop=w.decide_bridge(req) if policy=='none' else decision(req,[(5760,9600)])
                         plan=c.lock_bridge(cap['token'],prop);c.begin_bridge_generation(cap['token'],plan)
                         generated=w.generate_bridges(req,plan);b.validate_raw(req,plan,generated)
