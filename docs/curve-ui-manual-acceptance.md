@@ -20,3 +20,12 @@
 音乐反馈另填样例ID、实际文件、模式、时间位置、动机可辨/桥入口/衔接/呼吸/记忆/杂音/尾音及听者日期。文件有效和设备能播不是听感PASS。Windows及人手记录未收到不填完成。
 
 保留限制：LMMS1.3alpha2导入MIDI时值差异，优先直接MMP编辑；MMP非自包含、目标机须实际资源解析；大历史工程高时间和内存。本轮不自动宣称修复。静态Vibrancy无原生模糊，情绪数据色为授权例外。
+
+
+## 当前可用材料和剩余条件
+
+本轮仓库外目录为EmoBlocks/dev-runs/curve-ui-20261007-af9a6bd3。frontend/tests/delivery.json是实施索引；before-light/dark-1020/1280与ui1-light/dark-1020/1280为真实阶段前后图，最终UI2图片仍待实际解锁。matrix-geometry只有Tk坐标/实际样式，不能填视觉PASS。
+
+actual-controls/report.json含新真实组合试听音频与受控迟到结果证据；actual-recommendation-v2/report.json含已有P8真实资产的候选/成品播放和同谱采用/保存/输出；lead-backend/tests/new-pipeline保留本轮新完整主入口结果。先由实际索引核对播放对象、模式及文件摘要，再填写听感表，不把文件有效写成自然衔接。
+
+最短补验：手动解锁Mac后双主题最小窗口查看三栏/单画布/右底播放器，卡片只选→试听、stop后无迟到抢播、控件hover/键盘focus；再一次组合取消、采用后undo-redo、保存重开和所选版本WAV。Windowspartner另按三缩放做删除/Ctrl/滚动与资源实际打开；人耳反馈写同候选两侧及时间位置。文件均本地，不自动发送或上传。
