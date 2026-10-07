@@ -1,11 +1,14 @@
 """Bounded actual PCM waveform and immutable-object block navigation UI."""
 import audioop
+from array import array
 from collections import OrderedDict
 import hashlib
 import math
 import json
 from pathlib import Path
 import queue
+import sys
+import tempfile
 import threading
 import tkinter as tk
 from tkinter import ttk
@@ -17,15 +20,51 @@ from curve_raster import pixels
 
 def waveform(path, bins=1024):
     """Read every PCM frame in bounded chunks; no synthetic envelope."""
-    with wave.open(str(path),'rb') as stream:
+    return _waveform_stream(str(path),bins)
+
+
+def _waveform_stream(source,bins=1024):
+    with wave.open(source,'rb') as stream:
         width=stream.getsampwidth();frames=stream.getnframes();rate=stream.getframerate()
+        frame_limit=max(1,65536//(width*stream.getnchannels()))
         chunk=max(1,math.ceil(frames/bins));values=[]
         for _ in range(bins):
-            data=stream.readframes(chunk)
+            data=stream.readframes(min(chunk,frame_limit))
             if not data:break
             if width==1:data=audioop.bias(data,1,-128)
-            values.append(audioop.rms(data,width)/float(2**(8*width-1)))
+            if chunk<=frame_limit:
+                level=audioop.rms(data,width)
+            else:
+                # Keep even very large bins bounded, with the same integer RMS.
+                energy=0;samples=0;remaining=chunk
+                while data:
+                    if width==3:
+                        pcm=(int.from_bytes(data[i:i+3],'little',signed=True) for i in range(0,len(data),3))
+                    else:
+                        pcm=array({1:'b',2:'h',4:'i'}[width],data)
+                        if width>1 and sys.byteorder!='little':pcm.byteswap()
+                    energy+=sum(sample*sample for sample in pcm);samples+=len(data)//width
+                    remaining-=len(data)//(width*stream.getnchannels())
+                    if remaining<=0:break
+                    data=stream.readframes(min(remaining,frame_limit))
+                    if width==1:data=audioop.bias(data,1,-128)
+                level=math.isqrt(energy//samples)
+            values.append(level/float(2**(8*width-1)))
     return values,frames/rate
+
+
+def _authenticated_waveform(path,expected_digest,bins=1024):
+    # Hash exactly the copied bytes, then parse only this private snapshot.
+    # Large files spill to disk; neither the WAV nor a large bin lives in RAM.
+    with tempfile.SpooledTemporaryFile(max_size=1048576,mode='w+b') as snapshot:
+        digest=hashlib.sha256()
+        with Path(path).open('rb') as source:
+            for data in iter(lambda:source.read(65536),b''):
+                digest.update(data);snapshot.write(data)
+        if digest.hexdigest()!=expected_digest:
+            raise ValueError('音频文件已变化，波形不可用。')
+        snapshot.seek(0)
+        return _waveform_stream(snapshot,bins)
 
 
 class Waveform(tk.Canvas):
@@ -54,12 +93,7 @@ class Waveform(tk.Canvas):
             results=self.results
             def work():
                 try:
-                    values,_=waveform(key[0])
-                    digest=hashlib.sha256()
-                    with Path(key[0]).open('rb') as stream:
-                        for data in iter(lambda:stream.read(65536),b''):digest.update(data)
-                    digest=digest.hexdigest()
-                    if digest!=key[1]:raise ValueError('音频文件已变化，波形不可用。')
+                    values,_=_authenticated_waveform(key[0],key[1])
                     results.put((key,values,None))
                 except Exception as exc:results.put((key,[],str(exc)))
             try:threading.Thread(target=work,daemon=True).start()
