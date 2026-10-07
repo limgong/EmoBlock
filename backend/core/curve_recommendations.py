@@ -431,7 +431,7 @@ class RecommendationFacade:
             bundle['attempts'].append(dict(id=token['request_id'],snapshot_id=token['snapshot_id'],input_fingerprint=token['input_fingerprint'],state='RUNNING',records=[],protections=[],staged_materials=[],error=None,recommendation=value))
             validate_p7_bundle(bundle)
         except Exception:self.session.finish(token);raise
-        self._bundle=bundle;self._jobs[token['request_id']]=dict(kind='RECOMMENDATION',request=copy.deepcopy(request),renderer_profile=audio.RENDERER);self._recommendation_id=token['request_id'];self._staging_dirty=True
+        self._bundle=bundle;self._jobs[token['request_id']]=dict(kind='RECOMMENDATION',request=copy.deepcopy(request),renderer_profile=audio.RENDERER,boundary_algorithm=final.ALGORITHM);self._recommendation_id=token['request_id'];self._staging_dirty=True
         return dict(token=copy.deepcopy(token),request=copy.deepcopy(request),attempt_id=token['request_id'],source_facts=copy.deepcopy(bundle['final_facts']))
 
     def record_recommendation_progress(self,token,event):
@@ -481,6 +481,10 @@ class RecommendationFacade:
         value=attempt['recommendation'];validate_outcome(value['request'],outcome)
         if value['cancel_requested'] and outcome['status']!='CANCELLED':return False
         for candidate in outcome['candidates']:
+            score=resolve(outcome['facts'],candidate['final_score_ref'],'final_score')
+            boundary=resolve(outcome['facts'],score['boundary_request_ref'],'boundary_request')
+            if boundary['algorithm_version']!=self._jobs[token['request_id']]['boundary_algorithm']:
+                m.reject('新任务返回了旧布局算法结果，请重新计算。','PLAN_VERSION_MISMATCH')
             for mode,member in candidate['modes'].items():
                 for kind,asset in member['assets'].items():
                     if asset['renderer_version']!=self._jobs[token['request_id']]['renderer_profile']:

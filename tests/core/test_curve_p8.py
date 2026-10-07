@@ -129,6 +129,19 @@ class OutputGateTests(unittest.TestCase):
             with self.assertRaises(model.ProjectError):rec.validate_outcome(cap['request'],out)
             self.assertNotEqual(out,before)
 
+    def test_new_task_rejects_old_layout_algorithm_but_legacy_fact_validation_is_pure(self):
+        with tempfile.TemporaryDirectory() as directory,patch.object(audio,'render',side_effect=simulated_render(directory)):
+            controller=complete();before=controller.project;undo=copy.deepcopy(controller.session._undo)
+            cap=controller.capture_recommendations();original=final.make_request
+            def old(*args,**kwargs):
+                if len(args)<8 and 'algorithm_version' not in kwargs:kwargs['algorithm_version']=final.LEGACY_ALGORITHM
+                return original(*args,**kwargs)
+            with patch.object(final,'make_request',side_effect=old):out=rec.prepare_recommendations(cap['request'])
+            self.assertTrue(out['candidates']);rec.validate_outcome(cap['request'],out)
+            with self.assertRaises(model.ProjectError) as error:controller.finish_recommendations(cap['token'],out)
+            self.assertEqual(error.exception.code,'PLAN_VERSION_MISMATCH')
+            self.assertEqual(controller.project,before);self.assertEqual(controller.session._undo,undo)
+
 
 class LegacyLayoutTests(unittest.TestCase):
     def test_original_request_remains_pure_and_tampered_legacy_content_is_rejected(self):
