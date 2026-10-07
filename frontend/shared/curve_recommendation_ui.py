@@ -60,14 +60,14 @@ class RecommendationUI:
         self.panel = ttk.Frame(app.page.stage_area, style='Curve.Panel.TFrame')
         self.panel.columnconfigure(0,weight=1)
         self.panel.columnconfigure(1,weight=1)
-        row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=0,column=0,columnspan=2,sticky='ew')
+        row=self.choice_row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=0,column=0,columnspan=2,sticky='ew')
         self.selector=ttk.Combobox(row,textvariable=self.choice,state='readonly',width=12,style='Curve.TCombobox')
         self.selector.pack(side='left',fill='x',expand=True);self.selector.bind('<<ComboboxSelected>>',self.select)
         self.mode_selector=ttk.Combobox(row,textvariable=self.mode,values=list(MODES.values()),state='readonly',width=9,style='Curve.TCombobox')
         self.mode_selector.pack(side='left',padx=4);self.mode_selector.bind('<<ComboboxSelected>>',self.mode_changed)
         self.retry_button=ttk.Button(row,text='重试',style='Curve.Compact.TButton',command=lambda:app.safe(self.prepare_mode))
         self.retry_button.pack(side='right')
-        row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=2)
+        row=self.audition_row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=2)
         self.comparison_button=ttk.Button(row,text='试听基础',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('comparison')))
         self.comparison_button.pack(side='left')
         self.final_button=ttk.Button(row,text='试听处理后',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('final')))
@@ -115,7 +115,6 @@ class RecommendationUI:
             text += f' · {int(time.monotonic()-job["started"])}秒'
         if self.state['error']:text += ' · '+self.state['error']['message']
         if self.state['insufficient_reason']:text += ' · '+str(self.state['insufficient_reason'])
-        if self.state['status']=='RUNNING' and self.state['message']:text += ' · '+self.state['message']
         return text
 
     def update_elapsed(self):
@@ -144,6 +143,8 @@ class RecommendationUI:
         mc = mode.get('capabilities', {})
         can_prepare=bool(candidate and self.state['status'] in ('READY','APPLIED') and not app.jobs and mode.get('status','MISSING') in ('MISSING','FAILED','SCORE_READY'))
         active = self.active_job()
+        for row in (self.choice_row,self.audition_row):
+            row.grid_remove() if active and active['kind']=='RECOMMENDATION' else row.grid()
         for button, enabled in ((self.calculate_button, not app.jobs and app.has_generation_input() and caps.get('can_calculate',False)),
             (self.auto_button, not app.jobs and app.has_generation_input() and caps.get('can_auto_complete',False)),
             (self.cancel_button, bool(active)), (self.retry_button, bool(candidate) and not app.jobs),
@@ -458,6 +459,7 @@ class RecommendationUI:
 
     def description(self):
         parts = [self.status_text(),'选卡只选择；基础和处理后均需明确播放。模式只编配/渲染，不重新作曲。']
+        if self.state['phase']:parts.append('阶段：'+self.state['phase'])
         if self.state['message']:parts.append(self.state['message'])
         if self.state['search']:parts.append('有限搜索：'+str(self.state['search']))
         candidate = self.candidate()

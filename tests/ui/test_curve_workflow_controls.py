@@ -25,6 +25,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.ready();self.select();self.mode_fixture();before=self.controller.state()['project']
         self.click(self.rec.comparison_button)
         self.assertTrue(self.app.jobs);self.assertEqual(self.app.player.calls,[])
+        self.assertTrue(self.rec.choice_row.winfo_ismapped());self.assertTrue(self.rec.audition_row.winfo_ismapped())
         self.mode_gate.set();self.finish_jobs()
         self.assertEqual(self.app.playing_target['target'],('recommendation','candidate-A','arranged','comparison'))
         self.assertEqual(self.controller.assets_called[-1],('candidate-A','comparison','arranged'))
@@ -124,6 +125,31 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.assertFalse(self.app.page.timeline.tools.winfo_ismapped());self.assertFalse(self.app.editable)
         self.assertEqual(self.rec.preview,preview);self.assertEqual(before,self.music_state())
         self.assertIn('APPLY_REJECTED',self.app.status_text.get())
+
+    def test_mapped_generation_wait_only_status_cancel_and_restored_review_after_finish(self):
+        self.progress_gate=threading.Event();before=self.music_state()
+        self.prepared_outcome=self.controller.outcome(dict(input_project=copy.deepcopy(self.controller._project),
+            mode=self.rec.mode_key(),request_fingerprint='fixture'))
+        self.app.combo_inputs=[copy.deepcopy(self.controller._project['materials'][0])]
+        draft=copy.deepcopy(self.app.combo_inputs)
+        self.click(self.app.page.final_button)
+        self.controller.rec.update(phase='BASE_COMPLETION',message='完整建议: RUNNING')
+        self.app.refresh();self.root.update()
+        self.assertEqual(self.rec.active_job()['kind'],'RECOMMENDATION')
+        self.assertFalse(self.app.page.timeline.tools.winfo_ismapped())
+        for widget in (self.rec.selector,self.rec.mode_selector,self.rec.retry_button,self.rec.comparison_button,
+                       self.rec.final_button,self.rec.confirm_button,self.rec.back_button):
+            self.assertFalse(widget.winfo_ismapped())
+        self.assertTrue(self.app.cancel_button.winfo_ismapped());self.assertFalse(self.app.cancel_button.instate(['disabled']))
+        self.assertIn('补全计算中',self.app.status_label.cget('text'));self.assertIn('秒',self.app.status_label.cget('text'))
+        self.assertNotIn('RUNNING',self.app.status_label.cget('text'))
+        self.assertIn('RUNNING',self.rec.description());self.assertIn('BASE_COMPLETION',self.rec.description())
+        self.assertEqual(before,self.music_state());self.assertEqual(draft,self.app.combo_inputs)
+        self.progress_gate.set();self.finish_jobs();self.root.update()
+        self.assertTrue(self.rec.choice_row.winfo_ismapped());self.assertTrue(self.rec.audition_row.winfo_ismapped())
+        self.assertTrue(self.rec.state['candidates']);self.select();self.root.update()
+        self.assertTrue(self.rec.final_button.winfo_ismapped());self.assertTrue(self.rec.confirm_button.winfo_ismapped())
+        self.assertEqual(before,self.music_state());self.assertEqual(draft,self.app.combo_inputs)
 
     def test_rest_only_material_cannot_start_generation_and_short_labels_remain_human(self):
         self.ready();self.select();self.root.update()
