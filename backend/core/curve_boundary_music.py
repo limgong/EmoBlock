@@ -93,8 +93,9 @@ def _ref(value):
 def _validate(request):
     """Check the musical input and ledger; backend owns full registry authority."""
     m.canonical(request); m.shape(request, REQUEST_FIELDS)
-    if (request['schema'], request['spec_rev'], request['contract_rev'], request['algorithm_version']) != (
-            'emoblocks.boundary-request.v1', m.SPEC_REV, REV, ALGORITHM):
+    if ((request['schema'], request['spec_rev'], request['contract_rev']) != (
+            'emoblocks.boundary-request.v1', m.SPEC_REV, REV)
+            or request['algorithm_version'] not in (ALGORITHM, 'curve-boundary-v2-deterministic-layout')):
         _fail('UNSUPPORTED_VERSION', '最终边界请求版本不匹配。')
     token = request['token']
     m.shape(token, 'project_id session_id request_id snapshot_id spec_rev contract_rev edit_revision input_fingerprint')

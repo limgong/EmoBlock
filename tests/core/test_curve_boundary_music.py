@@ -156,6 +156,20 @@ def shape_check(req,proposal):
 
 
 class BoundaryMusicTests(unittest.TestCase):
+    def test_layout_algorithm_versions_change_only_request_recognition(self):
+        frame=request();before=copy.deepcopy(frame)
+        original=music.plan_boundaries(frame)
+        newer=copy.deepcopy(frame);newer['algorithm_version']='curve-boundary-v2-deterministic-layout'
+        result=music.plan_boundaries(newer)
+        self.assertNotEqual(original['request_fingerprint'],result['request_fingerprint'])
+        self.assertEqual(m.musical_notes(actual_notes(frame,original)),m.musical_notes(actual_notes(newer,result)))
+        self.assertEqual([(b['tick'],b['method'],b['editable_ranges']) for b in original['boundaries']],
+                         [(b['tick'],b['method'],b['editable_ranges']) for b in result['boundaries']])
+        self.assertEqual(original['search'],result['search']);self.assertEqual(frame,before)
+        unknown=copy.deepcopy(frame);unknown['algorithm_version']='curve-boundary-v3'
+        with self.assertRaises(m.ProjectError) as caught:music.plan_boundaries(unknown)
+        self.assertEqual(caught.exception.code,'UNSUPPORTED_VERSION')
+
     def public_roundtrip(self,frame):
         import curve_final as final
         req=final.make_request(frame['connection_ref'],token=frame['token'],seed=frame['seed'],

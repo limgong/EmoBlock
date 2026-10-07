@@ -225,4 +225,104 @@ class FacadeTests(unittest.TestCase):
         self.assertNotEqual(curve_audition.audition_fingerprint(copy_item),fp)
 
 
+class AuditionOwnershipTests(unittest.TestCase):
+    def sliced_phrase(self):
+        item=material(length=480);item['kind']='phrase'
+        item['provenance']['key_context']=dict(tonic=0,mode='major',confidence=1.,method='fixture')
+        first=item['notes'][0]
+        first.update(duration_tick=240,slice=dict(parent_emission_id='held',offset_tick=0,parent_duration_tick=480))
+        second=copy.deepcopy(first);second.update(id='second',start_tick=240,velocity=37)
+        second['slice']['offset_tick']=240;item['notes']=[first,second]
+        return item
+
+    def test_phrase_tie_uses_first_velocity_and_does_not_mutate_source(self):
+        item=self.sliced_phrase();before=copy.deepcopy(item)
+        emitted=curve_audition.playable_notes(item)
+        self.assertEqual([(n['start_tick'],n['duration_tick'],n['velocity']) for n in emitted],[(0,480,item['notes'][0]['velocity'])])
+        self.assertEqual(item,before)
+        unsliced=copy.deepcopy(item);unsliced['notes']=[dict(copy.deepcopy(item['notes'][0]),duration_tick=480,slice=None)]
+        self.assertEqual(curve_audition.audition_fingerprint(item),curve_audition.audition_fingerprint(unsliced))
+
+    def test_independent_complementary_slices_and_nested_repeats_retrigger(self):
+        from test_curve_melody import combination
+        phrase=self.sliced_phrase();phrase['notes'][1]['velocity']=phrase['notes'][0]['velocity']
+        parts=[]
+        for index,note in enumerate(phrase['notes']):
+            leaf=copy.deepcopy(phrase);leaf.update(id='part'+str(index),length_ticks=240)
+            leaf['notes']=[dict(copy.deepcopy(note),start_tick=0)];parts.append(leaf)
+        combo=combination('combo',parts);before=copy.deepcopy(combo)
+        self.assertEqual([(n['start_tick'],n['duration_tick']) for n in curve_audition.playable_notes(combo)],[(0,240),(240,240)])
+        self.assertNotEqual(curve_audition.audition_fingerprint(combo),curve_audition.audition_fingerprint(phrase))
+        nested=combination('nested',[combo,combo])
+        self.assertEqual([n['start_tick'] for n in curve_audition.playable_notes(nested)],[0,240,480,720])
+        self.assertEqual(combo,before)
+        renamed=copy.deepcopy(nested)
+        def rename(node):
+            node['id']='renamed-'+node['id'];node['label']='renamed'
+            for n in node['notes']:n['id']='arbitrary-'+n['id']
+            for child in node['children']:
+                child['occurrence_id']='new-'+child['occurrence_id'];rename(child['snapshot'])
+        rename(renamed)
+        self.assertEqual(curve_audition.audition_fingerprint(nested),curve_audition.audition_fingerprint(renamed))
+
+    def test_derived_phrase_is_one_performance_despite_combination_provenance(self):
+        item=self.sliced_phrase();item['provenance']['component_snapshots']=['old-combo']
+        self.assertEqual(len(curve_audition.playable_notes(item)),1)
+
+    def test_bad_flattening_source_slice_and_occurrence_identity_reject(self):
+        from test_curve_melody import combination
+        item=self.sliced_phrase();combo=combination('combo',[item,item])
+        bads=[]
+        for field,value in [('pitch',61),('lineage',['foreign']),('origin',None)]:
+            bad=copy.deepcopy(combo);bad['notes'][0][field]=value;bads.append(bad)
+        bad=copy.deepcopy(combo);bad['children'][1]['occurrence_id']=bad['children'][0]['occurrence_id'];bads.append(bad)
+        bad=copy.deepcopy(combo);bad['children'][1]['offset_tick']-=1;bads.append(bad)
+        bad=copy.deepcopy(combo);bad['children'][0]['snapshot']['notes'][0]['slice']['offset_tick']=400;bads.append(bad)
+        bad=copy.deepcopy(combo);bad['children'][0]['snapshot']=bad;bads.append(bad)
+        bad=copy.deepcopy(item);bad['children']=[combo['children'][0]];bads.append(bad)
+        bads.extend([None,[],{'id':'incomplete'}])
+        for bad in bads:
+            with self.subTest(case=type(bad).__name__):
+                with self.assertRaises(m.ProjectError):curve_audition.playable_notes(bad)
+
+    def test_source_and_rest_and_changed_slice_parent_remain_explicit(self):
+        item=self.sliced_phrase()
+        src={k:copy.deepcopy(item[k]) for k in ('id','label','length_ticks','notes','provenance')}
+        self.assertEqual(len(curve_audition.playable_notes(src)),1)
+        for field,value in [('parent_emission_id','other'),('parent_duration_tick',720),('offset_tick',0)]:
+            other=copy.deepcopy(item);other['notes'][1]['slice'][field]=value
+            self.assertEqual(len(curve_audition.playable_notes(other)),2)
+        src['notes']=[]
+        self.assertEqual(curve_audition.playable_notes(src),[])
+        with self.assertRaises(m.ProjectError) as caught:curve_audition.audition_fingerprint(src)
+        self.assertEqual(caught.exception.code,'EMPTY_MATERIAL')
+
+    def test_public_3840_combo_matches_actual_final_without_renderer(self):
+        import mido
+        import curve_final as final
+        from test_curve_boundary_music import request
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'held.mid';native=mido.MidiFile(ticks_per_beat=480);track=mido.MidiTrack();native.tracks.append(track)
+            track.extend([mido.Message('note_on',note=60,velocity=80,time=0),mido.Message('note_off',note=60,time=3840)]);native.save(path)
+            c=w.Controller();job=c.capture_job('IMPORT');c.apply_batch(w.prepare_import(path),job['token'])
+            blocks=[i for i in c.project['materials'] if i['kind']=='block' and i['phrase_id'] is None and i['generation'] is None]
+            self.assertEqual([i['length_ticks'] for i in blocks],[1920,1920])
+            combo=w.combine(c.project,[i['id'] for i in blocks]);job=c.capture_job('COMBINE')
+            c.apply_batch(dict(sources=[],materials=[combo],warnings=[]),job['token']);c.edit('resize',grid_count=2)
+            c.edit('place',material_id=combo['id'],start_tick=0);before=copy.deepcopy(c.project)
+            captured=request(c.project);auth=final.make_request(captured['connection_ref'],captured['token'])
+            final.validate_request(auth);emitted,_=final.joined_events(auth['actual_layout']['notes'],auth['actual_layout']['emission_ledger'])
+            projection=lambda notes:[(n['pitch'],n['start_tick'],n['duration_tick']) for n in notes]
+            self.assertEqual(projection(curve_audition.playable_notes(combo)),projection(emitted))
+            self.assertEqual(len(emitted),2);self.assertEqual(c.project,before)
+            self.assertEqual(curve_audition.RENDERER_VERSION,'curve-neutral-lmms-v2')
+
+    def test_old_v1_files_are_not_rewritten_by_v2_normalization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'old-asset.json';old=b'{"renderer_version":"curve-neutral-lmms-v1","fingerprint":"legacy"}'
+            path.write_bytes(old);item=self.sliced_phrase()
+            curve_audition.audition_fingerprint(item);curve_audition.playable_notes(item)
+            self.assertEqual(path.read_bytes(),old)
+
+
 if __name__=='__main__':unittest.main()
