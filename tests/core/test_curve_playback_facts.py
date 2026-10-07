@@ -67,8 +67,9 @@ class PlaybackFactsTests(unittest.TestCase):
         self.assertEqual(self.state(), before)
 
     def test_modes_and_missing_file_cannot_borrow_another_asset(self):
-        with self.assertRaises(model.ProjectError):
-            self.controller.recommendation_playback(self.candidate['id'], mode='')
+        for invalid in ('', False, 0, [], {}, 'unknown'):
+            with self.subTest(mode=invalid), self.assertRaises(model.ProjectError):
+                self.controller.recommendation_playback(self.candidate['id'], mode=invalid)
         with self.assertRaises(model.ProjectError):
             self.controller.recommendation_playback(self.candidate['id'], mode='arranged')
         with self.assertRaises(model.ProjectError):
@@ -79,6 +80,28 @@ class PlaybackFactsTests(unittest.TestCase):
             self.controller.recommendation_playback(self.candidate['id'])
         # Missing final must not silently return still-valid comparison.
         self.assertEqual(self.controller.recommendation_playback(self.candidate['id'], 'comparison')['target']['side'], 'comparison')
+
+    def test_two_prepared_modes_bind_both_sides_and_history_rejects_false_defaults(self):
+        cid = self.candidate['id']
+        capture = self.controller.capture_recommendation_mode(cid, 'arranged')
+        with patch.object(audio, 'render', side_effect=simulated_render(self.tmp.name)):
+            result = rec.prepare_candidate_mode(capture['request'], cid, 'arranged', capture['source_facts'])
+        self.assertTrue(self.controller.finish_recommendation_mode(capture['token'], result))
+        before = self.state()
+        refs = set()
+        for mode in ('arranged', 'melody_only'):
+            for side in ('comparison', 'final'):
+                view = self.controller.recommendation_playback(cid, side, mode)
+                self.assertEqual((view['target']['side'], view['target']['mode']), (side, mode))
+                self.assertEqual(view['asset']['score_ref'], view['score_ref'])
+                refs.add(view['score_ref']['fingerprint'])
+        self.assertEqual(len(refs), 4)
+        self.assertEqual(self.state(), before)
+        with patch('curve_store.data_root', return_value=Path(self.tmp.name)):
+            accepted = self.controller.apply_recommendation(cid)
+        for invalid in ('', False, 0, [], {}):
+            with self.subTest(mode=invalid), self.assertRaises(model.ProjectError):
+                self.controller.history_playback(accepted['receipt']['result_id'], invalid)
 
     def test_legacy_unmapped_keeps_audio_without_invented_editor_navigation(self):
         asset = dict(wav_path=str(Path(self.tmp.name) / 'old.wav'), body_seconds=2, audio_seconds=3,
