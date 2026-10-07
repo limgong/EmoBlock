@@ -266,8 +266,19 @@ class CurveCanvas(ttk.Frame):
             for note in notes:
                 center = self.y(self.level(note['start_tick']))
                 y = center+14-(note['pitch']-low)/max(1,high-low)*20
-                self.canvas.create_line(self.x(note['start_tick']),y,
-                    self.x(note['start_tick']+note['duration_tick']),y,fill=p['ink'],width=1,tags='final-note')
+                start,end = self.x(note['start_tick']),self.x(note['start_tick']+note['duration_tick'])
+                data_faces = [box for box in self.boxes.values() if box[1]<=y<=box[3]]
+                stage_faces = [box for box in (*self.bridge_boxes.values(),*self.connection_boxes.values(),
+                                              *self.accepted_bridge_boxes.values()) if box[1]<=y<=box[3]]
+                edges = sorted({start,end,*[x for box in data_faces+stage_faces
+                                            for x in (box[0],box[2]) if start<x<end]})
+                for left,right in zip(edges,edges[1:]):
+                    midpoint = (left+right)/2
+                    data_face = any(box[0]<=midpoint<=box[2] for box in data_faces)
+                    stage_face = any(box[0]<=midpoint<=box[2] for box in stage_faces)
+                    # Emotion surfaces are data colors, while stage overlays use theme surfaces.
+                    ink = EMOTION_INK if data_face and not stage_face else p['ink']
+                    self.canvas.create_line(left,y,right,y,fill=ink,width=1,tags='final-note')
         if preview is not None:
             for overlay in preview['boundary_overlays']:
                 x = self.x(overlay['tick'])
