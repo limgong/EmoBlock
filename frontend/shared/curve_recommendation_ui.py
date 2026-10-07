@@ -12,6 +12,7 @@ from curve_completion_ui import error_info
 from curve_theme import hint
 
 MODES = {'melody_only': '中性单旋律', 'arranged': '情绪编配'}
+SCOPE_LABELS = {'FULL':'完整','LOCAL':'局部'}
 METHODS = dict(natural_continuation='自然延续',motif_reply='动机回应',gradual_build='渐进铺垫',
     blank_entry='留白进入',resolve_close='回落收束',none='明确保留音乐')
 PHASES = dict(BASE_COMPLETION='补全计算中', BRIDGE_DECISION='Bridge位置计算中',
@@ -131,7 +132,7 @@ class RecommendationUI:
             return
         self.state = app.controller.recommendation_state()
         candidates = self.state['candidates']
-        values = [f'{i+1} · {c["title"]} · {c["scope"]}' for i,c in enumerate(candidates)]
+        values = [f'{i+1} · {c["title"]} · {SCOPE_LABELS.get(c["scope"],"阶段版本")}' for i,c in enumerate(candidates)]
         self.selector.configure(values=values)
         candidate = self.candidate()
         self.choice.set(values[next(i for i,c in enumerate(candidates) if c['id']==candidate['id'])] if candidate else '')
@@ -143,8 +144,8 @@ class RecommendationUI:
         mc = mode.get('capabilities', {})
         can_prepare=bool(candidate and self.state['status'] in ('READY','APPLIED') and not app.jobs and mode.get('status','MISSING') in ('MISSING','FAILED','SCORE_READY'))
         active = self.active_job()
-        for button, enabled in ((self.calculate_button, not app.jobs and caps.get('can_calculate',False)),
-            (self.auto_button, not app.jobs and caps.get('can_auto_complete',False)),
+        for button, enabled in ((self.calculate_button, not app.jobs and app.has_generation_input() and caps.get('can_calculate',False)),
+            (self.auto_button, not app.jobs and app.has_generation_input() and caps.get('can_auto_complete',False)),
             (self.cancel_button, bool(active)), (self.retry_button, bool(candidate) and not app.jobs),
             (self.comparison_button, mc.get('can_play_comparison',False) or can_prepare),
             (self.final_button, mc.get('can_play_final',False) or can_prepare),
@@ -212,6 +213,9 @@ class RecommendationUI:
     def start(self, automatic=False):
         app = self.app
         if not self.available() or app.jobs:return False
+        if not app.has_generation_input():
+            app.tell('请先导入旋律或添加有音符的素材。')
+            return False
         cap = 'can_auto_complete' if automatic else 'can_calculate'
         if not self.state['capabilities'].get(cap,False):return False
         self.show()

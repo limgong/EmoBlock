@@ -1,9 +1,55 @@
 """Mapped layout checks; these exercise shared widgets, not physical input."""
 import unittest
-from test_curve_ui import MappedUIFixture
+import copy
+from unittest.mock import patch
+import curve_project
+import curve_workflow
+from test_curve_ui import MappedUIFixture, FakeController, fixture
 
 
 class WorkspaceLayoutTests(MappedUIFixture):
+    def test_empty_workspace_only_import_and_no_recommendation_capture(self):
+        self.app.controller=curve_workflow.Controller();self.app._switched();self.root.update()
+        before=self.app.controller.state()
+        with patch.object(self.app.controller,'capture_recommendations') as capture:
+            self.assertFalse(self.app.generate_recommendations())
+            self.assertFalse(self.app.recommendation.start())
+            self.assertFalse(self.app.recommendation.start(automatic=True))
+            capture.assert_not_called()
+        for theme in ('light','dark'):
+            if self.app.theme.name!=theme:self.app.toggle_theme()
+            for size in ('1020x700','1280x800','1440x900'):
+                self.root.geometry(size);self.root.update()
+                page=self.app.page
+                self.assertTrue(page.timeline.empty_import.winfo_ismapped())
+                self.assertTrue(page.empty_workspace.winfo_ismapped())
+                self.assertFalse(page.timeline.tools.winfo_ismapped())
+                self.assertFalse(page.derive_button.winfo_ismapped())
+                self.assertFalse(page.final_button.winfo_ismapped())
+                self.assertFalse(page.grid_entry.winfo_ismapped())
+                self.assertFalse(page.memory_label.winfo_ismapped())
+                self.assertTrue(page.final_button.instate(['disabled']))
+                self.assertFalse(self.app.jobs)
+        self.assertEqual(before,self.app.controller.state())
+
+    def test_snapshot_without_source_restores_creation_tools_and_truthful_hint(self):
+        project=curve_project.new_project()
+        material=copy.deepcopy(fixture()['materials'][-1])
+        material.update(id='handmade-snapshot',provenance={},phrase_id=None)
+        for note in material['notes']:note.update(origin=None,lineage=[],slice=None)
+        project['materials']=[material];curve_project.validate(project)
+        self.app.controller=FakeController(project);self.app._switched();self.root.update()
+        before=self.app.controller.state()
+        self.assertFalse(self.app.page.empty_workspace.winfo_ismapped())
+        self.assertFalse(self.app.page.timeline.empty_import.winfo_ismapped())
+        self.assertTrue(self.app.page.timeline.tools.winfo_ismapped())
+        self.assertTrue(self.app.page.derive_button.winfo_ismapped())
+        self.assertFalse(self.app.page.derive_button.instate(['disabled']))
+        self.assertTrue(self.app.has_generation_input())
+        self.assertNotIn('导入旋律，开始创作',self.app.status_label.cget('text'))
+        self.assertIn('素材',self.app.status_label.cget('text'))
+        self.assertEqual(before,self.app.controller.state())
+
     def test_two_themes_sizes_source_visibility_and_player_column(self):
         before=self.controller.state()['project']
         for theme in ('light','dark'):

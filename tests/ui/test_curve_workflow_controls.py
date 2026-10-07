@@ -125,6 +125,37 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.assertEqual(self.rec.preview,preview);self.assertEqual(before,self.music_state())
         self.assertIn('APPLY_REJECTED',self.app.status_text.get())
 
+    def test_rest_only_material_cannot_start_generation_and_short_labels_remain_human(self):
+        self.ready();self.select();self.root.update()
+        before=self.music_state()
+        self.assertIn('完整',self.rec.choice.get());self.assertNotIn('FULL',self.rec.choice.get())
+        self.controller.rec['candidates'][0]['scope']='LOCAL';self.app.refresh();self.root.update()
+        self.assertIn('局部',self.rec.choice.get());self.assertNotIn('LOCAL',self.rec.choice.get())
+        self.controller.rec['candidates'][0]['scope']='FULL'
+        self.controller.histories=[dict(id='label-history',label='已接受版本',version=1,scope='FULL',
+            mode='melody_only',score_ref=p7.ref('label-score'),modes={},availability=dict(wav=True,mid=True,mmp=True),
+            application_status='CURRENT',body_seconds=1.,audio_seconds=1.)]
+        self.app.refresh();self.app.toggle_history();self.root.update()
+        labels=' '.join(self.app.page.history_list.get(0,'end'))
+        self.assertIn('完整',labels);self.assertIn('编辑一致',labels)
+        self.assertNotIn('FULL',labels);self.assertNotIn('CURRENT',labels)
+        self.assertEqual(before,self.music_state())
+        # Data codes still belong to the certified DTO and inline details.
+        self.assertEqual(self.rec.state['candidates'][0]['scope'],'FULL')
+        self.rec.show();self.select();self.assertIn('FULL',self.rec.description())
+        self.click(self.rec.back_button)
+        rest=base.fixture()
+        for item in rest['sources']+rest['materials']:item['notes']=[]
+        self.controller._project=rest;self.controller.histories=[];self.app._switched();self.root.update()
+        state=self.music_state()
+        self.assertTrue(self.app.has_workspace_content());self.assertFalse(self.app.has_generation_input())
+        self.assertTrue(self.app.page.timeline.tools.winfo_ismapped())
+        self.assertTrue(self.app.page.final_button.instate(['disabled']))
+        with patch.object(self.controller,'capture_recommendations') as capture:
+            self.assertFalse(self.app.generate_recommendations());self.assertFalse(self.rec.start())
+            capture.assert_not_called()
+        self.assertEqual(state,self.music_state());self.assertFalse(self.app.jobs)
+
     def test_review_minimum_canvas_and_readonly_controls_both_themes(self):
         self.ready();self.select()
         for theme in ('light','dark'):

@@ -23,8 +23,9 @@ def build_page(page, parent, app, methods, emotions):
     ttk.Label(row, text='原始来源', style='Curve.Title.TLabel').pack(side='left')
     page.import_button = button(row, '导入', lambda:app.safe(app.import_file))
     page.import_button.pack(side='right')
-    button(page.source_panel, '全部素材', lambda:app.filter_source(None)).pack(fill='x', pady=6)
-    sources = ttk.Frame(page.source_panel, style='Curve.Panel.TFrame'); sources.pack(fill='both', expand=True)
+    page.all_materials_button=button(page.source_panel, '全部素材', lambda:app.filter_source(None))
+    page.all_materials_button.pack(fill='x', pady=6)
+    sources = page.source_frame = ttk.Frame(page.source_panel, style='Curve.Panel.TFrame'); sources.pack(fill='both', expand=True)
     page.source_list = tk.Listbox(sources, height=3, exportselection=False, activestyle='none', font=font(), borderwidth=0)
     page.source_list.pack(side='left', fill='both', expand=True)
     ttk.Scrollbar(sources, style='Curve.Vertical.TScrollbar', command=page.source_list.yview).pack(side='right', fill='y')
@@ -37,11 +38,12 @@ def build_page(page, parent, app, methods, emotions):
     page.source_audition = button(page.source_panel, '试听原始旋律', lambda:app.safe(lambda:app.audition_target('source',app.selected_source_id)))
     page.source_audition.pack(fill='x')
     hint(page.source_audition, '选择来源只筛选；试听明确准备并播放该原始旋律。', app.show_detail)
-    ttk.Label(page.source_panel,text='原始来源始终保留',style='Curve.Muted.TLabel').pack(anchor='w',pady=8)
+    page.source_reminder=ttk.Label(page.source_panel,text='原始来源始终保留',style='Curve.Muted.TLabel')
+    page.source_reminder.pack(anchor='w',pady=8)
     page.middle = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=252)
     page.middle.grid(row=0, column=1, sticky='nsew', padx=(0,8));page.middle.pack_propagate(False)
     ttk.Label(page.middle,text='旋律素材',style='Curve.Title.TLabel').pack(anchor='w',pady=(2,6))
-    row=ttk.Frame(page.middle,style='Curve.Panel.TFrame');row.pack(fill='x')
+    row=page.derive_row=ttk.Frame(page.middle,style='Curve.Panel.TFrame');row.pack(fill='x')
     page.method=tk.StringVar(value=methods[0][1])
     ttk.Combobox(row,textvariable=page.method,values=[v for _,v in methods],state='readonly',width=8,
                  style='Curve.TCombobox').pack(side='left',fill='x',expand=True)
@@ -74,7 +76,7 @@ def build_page(page, parent, app, methods, emotions):
     for fmt,text in (('wav','WAV'),('mid','MIDI'),('mmp','MMP')):
         b=button(row,text,lambda f=fmt:app.export_history(f));b.pack(side='left',padx=2)
         page.export_buttons[fmt]=b
-    row=ttk.Frame(page.right,style='Curve.Panel.TFrame');row.pack(fill='x')
+    row=page.creation_row=ttk.Frame(page.right,style='Curve.Panel.TFrame');row.pack(fill='x')
     ttk.Label(row,text='创作画布',style='Curve.Title.TLabel').pack(side='left')
     ttk.Label(row,text='四拍格',style='Curve.Muted.TLabel').pack(side='left',padx=(8,3))
     page.grid_count=tk.StringVar(value='8')
@@ -104,6 +106,7 @@ def build_page(page, parent, app, methods, emotions):
     hint(page.memory_label,app.current_memory_description,app.show_detail)
     page.memory_label.bind('<Button-1>',lambda _:app.show_detail(app.current_memory_description()))
     page.timeline=CurveCanvas(page.right,app,stage_parent=page.advanced_row);page.timeline.pack(fill='both',expand=True,pady=(2,0))
+    page.empty_workspace=ttk.Frame(page.timeline.canvas,style='Curve.Panel.TFrame')
 
 
 def build_chrome(app):

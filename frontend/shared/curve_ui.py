@@ -26,7 +26,7 @@ from curve_canvas import CurveCanvas, snap_tick
 from curve_completion_ui import CompletionUI
 from curve_bridge_ui import BridgeUI
 from curve_connection_ui import ConnectionUI
-from curve_recommendation_ui import RecommendationUI, playback_asset, MODES
+from curve_recommendation_ui import RecommendationUI, playback_asset, MODES, SCOPE_LABELS
 
 METHODS = [('variant','局部变化'),('answer','回答句'),('counter','副旋律规则'),
            ('rhythm','节奏重组'),('develop','动机发展'),('density','疏密变化')]
@@ -150,6 +150,7 @@ class CurveApplication:
         root.bind('<Destroy>',self.destroyed,add='+')
         root.protocol('WM_DELETE_WINDOW',self.close)
         self.refresh()
+        self.tell(self.workspace_hint())
         self.timer = root.after(80,self.tick)
 
     def compact(self, text, width=None):
@@ -177,8 +178,37 @@ class CurveApplication:
 
     def generate_recommendations(self):
         if not self.recommendation.available():return False
+        if not self.has_generation_input():
+            self.tell('请先导入旋律或添加有音符的素材。')
+            return False
         self.show_curve_stage('完整建议')
         return self.recommendation.start()
+
+    def has_workspace_content(self):
+        project=self.state_data['project']
+        return bool(project and any(project[k] for k in ('sources','materials','placements')))
+
+    def has_generation_input(self):
+        project=self.state_data['project']
+        if not project:return False
+        def notes(material):
+            return bool(material.get('notes') or any(notes(c['snapshot']) for c in material.get('children',[])))
+        return any(notes(m) for m in project['sources']+project['materials']) or any(
+            notes(p['emotion_variant'] or p['base_snapshot']) for p in project['placements'])
+
+    def workspace_hint(self):
+        if self.state_data['access_mode']!='editable':return '旧工程只读 · 请选择历史版本试听或导出。'
+        accepted=getattr(self,'accepted_status',{})
+        if accepted.get('status')=='STALE':return accepted['message']
+        if accepted.get('status')=='ACTIVE':return '已接受版本 · 可继续编辑或查看历史。'
+        rec=getattr(self,'recommendation',None)
+        if rec and rec.available() and rec.state['status'] in ('FAILED','INTERRUPTED','STALE','CANCELLED'):
+            return rec.status_text()
+        project=self.state_data['project']
+        if project and project['placements']:return '继续编排或调整强度 · 生成方案仅预览。'
+        if project and project['materials']:return '拖入素材，绘制强度，开始逐块编排。'
+        if project and project['sources']:return '请选择来源素材，开始逐块编排。'
+        return '导入旋律，开始创作。'
 
     def input_key(self):
         return snapshot_key('input',self.state_data['project'])
@@ -404,7 +434,7 @@ class CurveApplication:
         self.connection.refresh()
         self.recommendation.refresh()
         self.page.final_button.configure(text='生成方案' if self.recommendation.available() else '尚未接通')
-        self.page.final_button.state(['!disabled'] if self.recommendation.available() else ['disabled'])
+        self.page.final_button.state(['!disabled'] if self.recommendation.available() and self.has_generation_input() and not self.jobs else ['disabled'])
         sources = project['sources'] if project else []
         materials = project['materials'] if project else []
         if self.source_filter_id:
@@ -457,7 +487,8 @@ class CurveApplication:
             availability = '可试听' if output['availability']['wav'] else '音频不可用'
             if output['errors']['wav']:
                 availability += ' · '+output['errors']['wav']['message']
-            version = f' · v{item["version"]} · {item["application_status"]} · {item["scope"]}' if 'score_ref' in item else ''
+            status={'CURRENT':'编辑一致','HISTORICAL':'历史版本'}.get(item.get('application_status'),'历史版本')
+            version = f' · v{item["version"]} · {status} · {SCOPE_LABELS.get(item["scope"],"阶段版本")}' if 'score_ref' in item else ''
             self.page.history_list.insert('end',f'{item["label"]}{version} · {availability}')
             if item['id']==self.selected_history_id:
                 self.page.history_list.selection_set(i)
@@ -479,6 +510,7 @@ class CurveApplication:
             button.state(['!disabled'] if enabled else ['disabled'])
         for button in (self.page.derive_button,self.page.grid_entry,self.page.resize_button):
             button.state(['!disabled'] if self.editable else ['disabled'])
+        if not materials:self.page.derive_button.state(['disabled'])
         self.update_exports()
         self.update_workspace()
         if getattr(self,'resumed_view',None):
@@ -492,12 +524,17 @@ class CurveApplication:
 
     def update_workspace(self):
         page=self.page
+        empty=(not self.has_workspace_content() and not self.private_preview() and not self.jobs
+               and not self.history_expanded and self.state_data['access_mode']=='editable')
+        if self.state_data['project'] and self.state_data['project']['materials']:
+            page.derive_row.pack(fill='x',before=page.combo_panel if page.combo_panel.winfo_manager() else page.cards)
+        else:page.derive_row.pack_forget()
         gap=self.selected_gap()
-        if gap and not self.private_preview() and not self.jobs:
+        if gap and not empty and not self.private_preview() and not self.jobs:
             page.gap_panel.pack(fill='x',before=page.memory_label)
             page.gap_label.configure(text=f'空缺 · 第{gap["start_tick"]/480+1:g}拍 · {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
         else:page.gap_panel.pack_forget()
-        if self.advanced:
+        if self.advanced and not empty:
             page.advanced_row.pack(fill='x',before=page.stage_anchor)
             page.timeline.stage_selector.pack(side='right')
             page.timeline.mode_buttons['gaps'].pack(side='left')
@@ -508,7 +545,7 @@ class CurveApplication:
             page.advanced_row.pack_forget()
             self.recommendation.auto_button.pack_forget()
         # Edit-specific controls do not consume review space.
-        if self.private_preview() or self.recommendation.visible or self.jobs or self.history_expanded or self.state_data['access_mode']!='editable':
+        if empty or self.private_preview() or self.recommendation.visible or self.jobs or self.history_expanded or self.state_data['access_mode']!='editable':
             page.timeline.tools.pack_forget()
             page.emotion_panel.pack_forget()
         else:page.timeline.tools.pack(fill='x',before=page.timeline.canvas,pady=(0,4))
@@ -526,7 +563,22 @@ class CurveApplication:
             page.history_panel.pack_forget();page.advanced_row.pack_forget()
             self.detail_row.pack(fill='x',before=page.stage_anchor,pady=(2,0))
         else:self.detail_row.pack_forget()
-        page.timeline.empty_import.place(relx=.5,rely=.45,anchor='center') if self.state_data['project'] and not self.state_data['project']['sources'] and not self.state_data['project']['placements'] else page.timeline.empty_import.place_forget()
+        if empty:
+            page.creation_row.pack_forget();page.memory_label.pack_forget()
+            page.empty_workspace.place(x=0,y=0,relwidth=1,relheight=1);page.empty_workspace.lift()
+            page.timeline.empty_import.place(relx=.5,rely=.45,anchor='center');page.timeline.empty_import.lift()
+            page.timeline.scrollbar.pack_forget()
+            for w in (page.all_materials_button,page.source_frame,page.source_notes,page.source_audition,page.source_reminder):w.pack_forget()
+        else:
+            page.empty_workspace.place_forget();page.timeline.empty_import.place_forget()
+            page.memory_label.pack(fill='x',before=page.timeline,pady=(2,0))
+            page.creation_row.pack(fill='x',before=page.memory_label)
+            page.timeline.scrollbar.pack(fill='x')
+            page.all_materials_button.pack(fill='x',pady=6)
+            page.source_frame.pack(fill='both',expand=True)
+            page.source_notes.pack(fill='x',pady=8);page.source_audition.pack(fill='x')
+            page.source_reminder.pack(anchor='w',pady=8)
+        page.timeline.canvas.configure(takefocus=not empty)
 
     def preview_memory_description(self):
         preview = self.private_preview()
@@ -1232,6 +1284,7 @@ class CurveApplication:
         self.ready_file_digests.clear()
         self.stop()
         self.refresh()
+        self.tell(self.workspace_hint())
 
     def open_project(self, path=None):
         if self.jobs:
@@ -1241,7 +1294,7 @@ class CurveApplication:
         if path:
             self.controller.load(path)
             self._switched()
-            self.tell('工程已打开'+(' · 旧工程只读' if self.state_data['access_mode']!='editable' else ''))
+            self.tell('工程已打开 · '+self.workspace_hint())
 
     def new_project(self):
         if self.jobs:
