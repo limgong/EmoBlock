@@ -3,6 +3,7 @@ services:
     build:
       context: ../..
       dockerfile: web_demo/deploy/Dockerfile
+      network: host
     restart: unless-stopped
     init: true
     mem_limit: 2300m

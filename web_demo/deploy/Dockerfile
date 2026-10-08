@@ -1,15 +1,15 @@
-FROM node:22-bookworm-slim AS client
+FROM public.ecr.aws/docker/library/node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS client
 WORKDIR /build
 COPY web_demo/client/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY web_demo/client/ ./
 RUN npm run build
 
-FROM python:3.11-slim-bookworm
-RUN apt-get update && apt-get install -y --no-install-recommends lmms ca-certificates libgl1 libxkbcommon-x11-0 fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+FROM public.ecr.aws/docker/library/python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89
+RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends lmms ca-certificates libgl1 libxkbcommon-x11-0 fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY web_demo/requirements.lock.txt /app/web_demo/requirements.lock.txt
-RUN pip install --no-cache-dir -r web_demo/requirements.lock.txt
+RUN pip install --no-cache-dir --index-url https://pypi.tuna.tsinghua.edu.cn/simple --timeout 60 --retries 3 -r web_demo/requirements.lock.txt
 COPY backend/ /app/backend/
 COPY assets/samples/ /app/assets/samples/
 COPY web_demo/api/ /app/web_demo/api/

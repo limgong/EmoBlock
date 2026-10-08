@@ -4,6 +4,7 @@ services:
     build:
       context: ../..
       dockerfile: web_demo/deploy/Dockerfile
+      network: host
     restart: unless-stopped
     init: true
     ports: ['127.0.0.1:8765:8765']

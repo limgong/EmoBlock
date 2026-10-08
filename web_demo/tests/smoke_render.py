@@ -3,7 +3,7 @@ import json,time,os
 from pathlib import Path
 import httpx
 out=Path(os.environ.get('SMOKE_OUTPUT','data/web-demo-evidence'));out.mkdir(parents=True,exist_ok=True)
-with httpx.Client(base_url='http://127.0.0.1:8765',timeout=60) as c:
+with httpx.Client(base_url=os.environ.get('SMOKE_URL','http://127.0.0.1:8765'),timeout=60) as c:
  def post(url,payload):
   r=c.post(url,json=payload);r.raise_for_status();return r.json()
  p=post('/api/session',{'sample':os.environ.get('SMOKE_SAMPLE','joy')})
@@ -32,5 +32,7 @@ with httpx.Client(base_url='http://127.0.0.1:8765',timeout=60) as c:
   for fmt in ('wav','mid','mmp'):
    r=c.get(f'/api/assets/{cid}/{kind}/{fmt}');r.raise_for_status();(out/f'{kind}.{fmt}').write_bytes(r.content)
  p=post('/api/confirm',{'fingerprint':p['fingerprint'],'candidate_id':cid})
+ assert sum(bool(x['applied']) for x in p['candidates'])==1
+ assert next(x for x in p['candidates'] if x['id']==cid)['applied']
  (out/'confirmed.json').write_text(json.dumps(p,ensure_ascii=False))
  print('REAL_RENDER_PASS',len(p['candidates']),flush=True)
