@@ -1,0 +1,27 @@
+{
+    auto_https off
+    default_sni {$DEMO_IP}
+}
+http://{$DEMO_IP} {
+    handle /.well-known/acme-challenge/* {
+        root * /srv/acme
+        file_server
+    }
+    handle {
+        redir https://{$DEMO_IP}{uri} 308
+    }
+}
+https://{$DEMO_IP} {
+    tls /etc/letsencrypt/live/emoblocks-ip/fullchain.pem /etc/letsencrypt/live/emoblocks-ip/privkey.pem
+    encode zstd gzip
+    request_body {
+        max_size 128KB
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        X-Frame-Options DENY
+        -Server
+    }
+    reverse_proxy 127.0.0.1:8765
+}

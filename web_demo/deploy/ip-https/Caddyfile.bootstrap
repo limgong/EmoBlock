@@ -1,0 +1,12 @@
+{
+    auto_https off
+}
+http://{$DEMO_IP} {
+    handle /.well-known/acme-challenge/* {
+        root * /srv/acme
+        file_server
+    }
+    handle {
+        respond "EmoBlocks HTTPS setup in progress" 503
+    }
+}

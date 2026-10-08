@@ -1,0 +1,5 @@
+# Apply together with the existing compose.private-host.yaml, under the same project name.
+services:
+  app:
+    environment:
+      EMOBLOCKS_SECURE_COOKIE: '1'
