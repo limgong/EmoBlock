@@ -90,20 +90,29 @@ class VisualInteractionTests(MappedUIFixture):
         button=controls.winfo_children()[0]
         tip=button.curve_tooltip
         bindings={event:button.bind(event) for event in ('<Enter>','<FocusIn>','<Motion>','<Destroy>')}
+        persistent=self.app.detail_text.get()
+        before=copy.deepcopy(self.controller.state());playing=copy.deepcopy(self.app.playing_target)
         details=[]
         hint(button,lambda:'完整新说明',details.append)
         hint(button,lambda:'最终完整说明',details.append)
         self.assertIs(button.curve_tooltip,tip)
         self.assertEqual(bindings,{event:button.bind(event) for event in bindings})
         button.focus_force();self.root.update()
-        self.assertEqual(details,['最终完整说明'])
+        self.assertEqual(details,[])
+        self.assertEqual(self.app.detail_text.get(),persistent)
         tip.show();self.root.update()
         windows=[w for w in self.root.winfo_children() if isinstance(w,tk.Toplevel)]
         self.assertEqual(windows,[tip.window])
         self.assertEqual(tip.window.winfo_children()[0].cget('text'),'最终完整说明')
         tip.schedule();self.assertIsNotNone(tip.timer)
+        pending=tip.timer
         button.destroy();self.root.update()
+        self.assertNotIn(pending,self.root.tk.call('after','info'))
+        self.assertEqual([w for w in self.root.winfo_children() if isinstance(w,tk.Toplevel)],[])
         self.assertIsNone(tip.timer);self.assertIsNone(tip.window)
+        self.assertEqual(self.controller.state(),before)
+        self.assertEqual(self.app.playing_target,playing)
+        self.assertEqual(details,[])
 
     def test_exact_note_clipping_rests_single_pitch_and_identity_label(self):
         notes=copy.deepcopy(self.controller._project['materials'][0]['notes'])

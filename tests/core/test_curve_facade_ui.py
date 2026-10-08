@@ -47,6 +47,101 @@ class IntegratedFacadeUI(unittest.TestCase):
         self.assertEqual(len(self.controller.project['sources']), 1)
         return next(m for m in self.controller.project['materials'] if m['kind'] == 'block' and m['notes'])
 
+    def test_real_protected_warning_survives_passive_card_events_and_theme_refresh(self):
+        material = self.import_real()
+        self.app.edit('place', material_id=material['id'], start_tick=0)
+        ident = self.controller.project['placements'][0]['id']
+        self.app.select_target('placement', ident)
+        self.app.set_emotion('hope')
+        self.controller.session.mark_saved()
+        self.root.geometry('1020x700')
+        self.root.update()
+        before = copy.deepcopy(self.controller.state())
+        selected = self.app.selected_target
+        playing = copy.deepcopy(self.app.playing_target)
+        for theme in ('light', 'dark'):
+            self.app.theme.set(theme)
+            self.app.refresh()
+            self.root.update()
+            self.app.set_emotion('hope')
+            warning = self.app.detail_text.get()
+            self.assertIn('尚未渲染', warning)
+            row = next(iter(self.app.page.cards.rows.values()))
+            title = row.winfo_children()[0].winfo_children()[0]
+            x, y = title.winfo_width() // 2, title.winfo_height() // 2
+            rx, ry = title.winfo_rootx() + x, title.winfo_rooty() + y
+            self.assertIs(self.root.winfo_containing(rx, ry), title)
+            for event in ('<Motion>', '<Enter>', '<FocusIn>'):
+                if event == '<FocusIn>':
+                    title.focus_force()
+                else:
+                    title.event_generate(event, x=x, y=y, rootx=rx, rooty=ry)
+                self.root.update()
+                self.assertEqual(self.app.detail_text.get(), warning, (theme, event))
+            # Exercise the real delayed tooltip callback, with a bounded observation.
+            observed = []
+            observer = self.root.after(500, lambda: observed.append(True))
+            deadline = time.monotonic() + 2
+            try:
+                while not observed and time.monotonic() < deadline:
+                    self.root.update()
+                self.assertTrue(observed)
+                tip = title.curve_tooltip
+                self.assertIsNotNone(tip.window)
+                text = tip.text() if callable(tip.text) else tip.text
+                self.assertEqual(tip.window.winfo_children()[0].cget('text'), text)
+                self.assertEqual(self.app.detail_text.get(), warning)
+            finally:
+                if not observed:
+                    self.root.after_cancel(observer)
+                title.curve_tooltip.hide()
+            for event in ('<Leave>', '<FocusOut>'):
+                title.event_generate(event)
+                self.root.update()
+                self.assertEqual(self.app.detail_text.get(), warning)
+            self.assertIsNone(title.curve_tooltip.timer)
+            self.assertIsNone(title.curve_tooltip.window)
+            self.assertEqual(self.controller.state(), before)
+            self.assertEqual(self.app.selected_target, selected)
+            self.assertEqual(self.app.playing_target, playing)
+            self.assertEqual(self.app.player.calls, [])
+
+    def test_real_keyboard_hint_preserves_warning_but_explicit_card_selection_updates_details(self):
+        material = self.import_real()
+        self.app.edit('place', material_id=material['id'], start_tick=0)
+        ident = self.controller.project['placements'][0]['id']
+        self.app.select_target('placement', ident)
+        self.app.set_emotion('hope')
+        self.controller.session.mark_saved()
+        self.root.update()
+        before = copy.deepcopy(self.controller.state())
+        warning = self.app.detail_text.get()
+        card_id, row = next(iter(self.app.page.cards.rows.items()))
+        title = row.winfo_children()[0].winfo_children()[0]
+        title.focus_force()
+        self.root.update()
+        self.assertIs(self.root.focus_get(), title)
+        self.assertEqual(self.app.detail_text.get(), warning)
+        title.event_generate('<Return>')
+        self.root.update()
+        self.assertEqual(self.app.selected_target, ('material', card_id))
+        expected = self.app.page.cards.describe(self.app.resolve('material', card_id))
+        self.assertEqual(self.app.detail_text.get(), expected)
+        self.app.select_target('placement', ident)
+        self.app.show_detail(warning)
+        title = self.app.page.cards.rows[card_id].winfo_children()[0].winfo_children()[0]
+        x, y = title.winfo_width() // 2, title.winfo_height() // 2
+        rx, ry = title.winfo_rootx() + x, title.winfo_rooty() + y
+        self.assertIs(self.root.winfo_containing(rx, ry), title)
+        for event in ('<ButtonPress-1>', '<ButtonRelease-1>'):
+            title.event_generate(event, x=x, y=y, rootx=rx, rooty=ry)
+        self.root.update()
+        self.assertEqual(self.app.selected_target, ('material', card_id))
+        self.assertEqual(self.app.detail_text.get(), expected)
+        self.assertEqual(self.controller.state(), before)
+        self.assertIsNone(self.app.playing_target)
+        self.assertEqual(self.app.player.calls, [])
+
     def test_real_import_derive_combo_and_save_reopen_without_implicit_play(self):
         material = self.import_real()
         self.app.select_target('material', material['id'])

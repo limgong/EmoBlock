@@ -180,10 +180,6 @@ def hint(widget, text, show):
         return existing
     tooltip=widget.curve_tooltip=Tooltip(widget,text)
     tooltip.show_detail=show
-    # A layout/theme remap can synthesize Enter under a stationary OS pointer.
-    # It may show the transient tooltip, but must not replace explicit selected details.
-    def detail(_):
-        value=tooltip.text() if callable(tooltip.text) else tooltip.text
-        tooltip.show_detail(value)
-    for event in ('<Motion>','<FocusIn>'):widget.bind(event,detail,add='+')
+    # Passive hover/focus belongs to the transient tooltip only.
+    # Persistent details are written by explicit selection/action handlers.
     return tooltip
