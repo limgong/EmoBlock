@@ -14,7 +14,8 @@ PALETTES = {
 EMOTION_COLORS = dict(calm='#c9ded8', hope='#e9ddba', sad='#ccd6e9',
                       suspense='#dccfe4', crisis='#e9cbd0', resolve='#d4e2c9')
 EMOTION_INK = '#25313a'
-EMOTION_NAMES = dict(calm='平静', hope='希望', sad='悲伤', suspense='悬念', crisis='危机', resolve='释然')
+EMOTION_NAMES = dict(calm='平静／安定', hope='温暖／希望', sad='悲伤／失落',
+                     suspense='悬疑／不安', crisis='紧张／危机', resolve='振奋／坚定')
 
 
 def font(size=12, bold=False):

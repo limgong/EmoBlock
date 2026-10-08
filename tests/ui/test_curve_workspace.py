@@ -1,6 +1,7 @@
 """Mapped layout checks; these exercise shared widgets, not physical input."""
 import unittest
 import copy
+from tkinter import ttk, font as tkfont
 from types import SimpleNamespace
 from unittest.mock import patch
 import curve_project
@@ -128,6 +129,9 @@ class WorkspaceLayoutTests(MappedUIFixture):
         self.assertEqual(playing,self.app.playing_target);self.assertEqual(calls,self.app.player.calls)
 
     def test_real_selected_placement_and_gap_keep_minimum_canvas_and_direct_memory_errors(self):
+        from engine import EMOTIONS
+        for emotion,button in self.app.page.emotion_buttons.items():
+            self.assertEqual(button.cget('text'),EMOTIONS[emotion])
         for memory in ('BOUND','PENDING_GAP','PRESERVE_BLANK'):
             controller=curve_workflow.Controller(fixture())
             controller.edit('place',material_id='block',start_tick=0)
@@ -155,6 +159,9 @@ class WorkspaceLayoutTests(MappedUIFixture):
                             self.assertTrue(button.winfo_ismapped())
                             self.assertGreaterEqual(button.winfo_width(),44);self.assertGreaterEqual(button.winfo_height(),44)
                             self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
+                            if selection=='placement':
+                                label_font=tkfont.Font(root=self.root,font=ttk.Style(self.root).lookup(button.cget('style'),'font'))
+                                self.assertLessEqual(label_font.measure(button.cget('text')),button.winfo_width())
                         self.assertEqual(bool(self.app.page.memory_label.winfo_ismapped()),memory!='BOUND')
                         if memory=='BOUND':self.assertTrue(self.app.page.timeline.canvas.find_withtag('memory-label'))
                         self.app.tell('受控错误：已有保护仍保留',True);self.root.update()

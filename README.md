@@ -6,13 +6,15 @@
 
 ## 主线验证状态
 
-`codex/windows-validation-20261008` 是待 Windows 实机验证的主线候选，代码来源为 `14df7e8`，包含已知 UI 问题。**R8 提示修复 PASS，整体 UI 验收仍 FAIL**：最小窗口展开详情时画布高度不足，以及一次 Text Backspace 完整测试失败尚未归因。当前643项后端测试和配对契约检查通过；不代表 Windows、物理输入或人工音乐听感通过。
+当前 `main` 包含 Herdr 基础上的主线 UI 优化：积木外观与拖影、画板下方统一智能加工面板、蓝白浅色主题，以及还原的六类情绪显示名称。最新范围与验证记录见 [主线合并交接](docs/handover/mainline-ui-upload-20261008.md)。Windows 实机、物理输入及人工音乐听感仍待验收。
+
+`codex/windows-validation-20261008` 与 R8 FAIL 是历史候选记录，不代表当前 UI 状态；历史失败证据继续保留，不以之后通过的检查覆盖。最小窗口画板高度已有新版回归；历史偶发键事件失败仍须物理输入确认。
 
 - [Windows 启动、验收与开发交接](docs/handover/windows-validation-20261008.md)
 - [验证范围与证据摘要](docs/handover/mainline-validation-20261008.json)
-- [下一轮 UI 已确认计划，尚未实现](docs/design/ui-mainline-next-plan-20261008.md)
+- [已实施 UI 的原确认计划](docs/design/ui-mainline-next-plan-20261008.md)
 
-F05/F06、MusicVAE、新哼唱和录音链路继续在隔离分支开发，本候选未纳入。当前为规则音乐工作流；后续模型接入须保留工程与生成接口约束。
+F05/F06、MusicVAE、新哼唱和录音链路继续在隔离分支开发，本主线未纳入。当前为规则音乐工作流；后续模型接入须保留工程与生成接口约束。
 
 ## 当前工作流
 
@@ -94,6 +96,6 @@ docs/                            设计与迁移记录
 
 ## 当前主线 UI（2026-10-08）
 
-Herdr R8 基础上的新 UI 实现见 [主线 UI 交付](docs/handover/ui-mainline-implementation-20261008.md)。Mac 可使用根目录 `launch_current_ui.command` 复用已有开发环境并启动独立数据目录。来源图标切换、逐块素材、右键新旋律、简单组合确认、统一播放/暂停和完整补全候选共用三栏画布。
+Herdr R8 基础上的新 UI 实现见 [主线 UI 交付](docs/handover/ui-mainline-implementation-20261008.md) 与 [积木质感及智能加工面板](docs/handover/ui-processing-dock-20261008.md)。Mac 可使用根目录 `launch_current_ui.command` 复用已有开发环境并启动独立数据目录。来源图标切换、逐块素材、右键新旋律、主题组合确认、统一播放/暂停和完整补全候选共用三栏画布。
 
 Windows 实机验收稍后进行；隔离额外功能不在本轮主线中。后续开发不再要求旧版工程文件兼容，当前格式保存重开和撤销回归继续。

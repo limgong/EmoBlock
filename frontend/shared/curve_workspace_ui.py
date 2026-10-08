@@ -250,7 +250,7 @@ def build_page(page, parent, app, methods, emotions):
     page.emotion_title.grid(row=0,column=0,columnspan=6,sticky='w')
     page.emotion_buttons={}
     for index,(emotion,text) in enumerate(emotions.items()):
-        b=button(page.emotion_panel,text,lambda e=emotion:app.set_emotion(e),padding=(-pixels(app.root,5),0))
+        b=button(page.emotion_panel,text,lambda e=emotion:app.set_emotion(e),padding=(-pixels(app.root,8),0))
         b.grid(row=1,column=index,sticky='ew',padx=1)
         page.emotion_buttons[emotion]=b
         hint(b,lambda e=emotion:'仅修改所选放置的'+emotions[e]+'情绪；不改基础素材。',app.show_detail)
