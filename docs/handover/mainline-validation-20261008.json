@@ -1,0 +1,40 @@
+{
+  "purpose": "Windows mainline validation candidate; known UI failures remain open",
+  "code_baseline": "14df7e8c3fe3e803e1aa53deef210057bd4fb73c",
+  "remote_base": "f1b5fa77120c32e06df94ef9c116f842d7720b9a",
+  "branch": "codex/windows-validation-20261008",
+  "product_source_changes_in_this_handoff": false,
+  "receipt_manifest_files_verified": 242,
+  "receipt_file_mismatches": [],
+  "backend_tests": {
+    "command": "python scripts/test.py --backend-only",
+    "tests": 643,
+    "result": "PASS",
+    "seconds": 73.854
+  },
+  "frontend_contract_check": "PASS",
+  "full_gui_this_session": "NOT_RUN; existing user application retained",
+  "historical_r8": {
+    "hint_fix": "PASS",
+    "overall": "FAIL",
+    "open_findings": [
+      "UI3-R8-F1",
+      "UI3-R8-F2"
+    ],
+    "independent_full": "1044 PASS once",
+    "producer_full": "1044 tests with 1 FAIL"
+  },
+  "windows_physical": "NOT_TESTED",
+  "device_and_listening_this_session": "NOT_TESTED",
+  "excluded_isolated_features": [
+    "F05",
+    "F06",
+    "F05/F06 combined backend",
+    "humming H1/H2",
+    "recording output-release",
+    "async preflight",
+    "H3/H4/H5"
+  ],
+  "handoff_record": "handoff-20261008-161929-bae7c4",
+  "new_ui_plan": "docs/design/ui-mainline-next-plan-20261008.md (confirmed, not implemented)"
+}
