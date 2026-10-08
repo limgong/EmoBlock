@@ -5,8 +5,8 @@ const out=path.resolve(process.env.VIDEO_RAW||'data/video-recording');fs.mkdirSy
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{
  const b=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--autoplay-policy=no-user-gesture-required']});
- const c=await b.newContext({viewport:{width:1920,height:1080},deviceScaleFactor:1});const p=await c.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:8765');await p.getByRole('heading',{name:'情绪画布'}).waitFor();
- await p.evaluate(()=>{localStorage.setItem('theme','light')});await p.reload();await p.getByRole('heading',{name:'情绪画布'}).waitFor();
+ const c=await b.newContext({viewport:{width:1920,height:1080},deviceScaleFactor:1});const p=await c.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:8765');await p.getByRole('heading',{name:'情绪搭建画板'}).waitFor();
+ await p.evaluate(()=>{localStorage.setItem('theme','light')});await p.reload();await p.getByRole('heading',{name:'情绪搭建画板'}).waitFor();
  // Set timeline through genuine UI, before recording.
  for(let i=0;i<8;i++){await p.getByLabel('减少四拍').click();await pause(130)}
  let n=0,frames=[],marks={},running=true;const begin=performance.now();
@@ -19,24 +19,24 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  await overlay('你决定音乐在何时如何发展','规划长段配乐的旋律、情绪与起伏\n让音乐灵活满足视频、游戏等场景的需要');await pause(1600);
  mark('scenario');await overlay('假设你正在给一段视频配乐','开头平静 → 中段紧张 → 熟悉旋律达到高潮 → 结尾回落\n这些变化，需要出现在你指定的位置');await pause(2500);
  await p.evaluate(()=>document.getElementById('video-intro')?.remove());mark('materials');await pause(2500);
- const first=p.getByRole('button',{name:/选择 A1 · M1/}).first();await first.click();await p.getByRole('button',{name:/选择试听 A1 · M1/}).first().click();await p.getByLabel('播放',{exact:true}).click();await pause(2200);await p.getByLabel('停止',{exact:true}).click();
- await p.getByLabel('新旋律方式').selectOption('counter');await p.getByRole('button',{name:'拓展积木',exact:true}).click();await pause(2400);
+ const first=p.getByRole('button',{name:/选择 A1/}).first();await first.click();await p.getByRole('button',{name:/选择试听 A1/}).first().click();await p.getByLabel('播放',{exact:true}).click();await pause(2200);await p.getByLabel('停止',{exact:true}).click();
+ await p.getByLabel('新旋律方式').selectOption('counter');await p.getByRole('button',{name:'新旋律',exact:true}).click();await pause(2400);
  await p.locator('.cards').evaluate(x=>x.scrollTop=x.scrollHeight);await pause(2500);await p.locator('.cards').evaluate(x=>x.scrollTop=0);await pause(2500);
  mark('curve');await p.getByRole('button',{name:'手绘强度',exact:true}).click();const rect=await p.locator('svg.canvas').boundingBox();const w=850,H=340,pad=34,total=15360;
  const X=t=>rect.x+pad+t/total*(w-pad-16),Y=v=>rect.y+H-45-v*(H-90);
  await p.mouse.move(X(0)+2,Y(.2));await p.mouse.down();for(let k=0;k<=32;k++){const t=k*480;const v=t<=9600?.2+.7*t/9600:.9-.65*(t-9600)/5760;await p.mouse.move(X(t),Y(v),{steps:3});await pause(70)}await p.mouse.up();await pause(1500);await p.getByRole('button',{name:'选择 / 调整',exact:true}).click();
  mark('assembly');
- for(const [i,label,emotion] of [[0,'A1 · M1','平静'],[1,'A2 · M2','平静'],[4,'A3 · M3','悬念'],[5,'A1 · M1','危机'],[7,'A2 · M2','释然']]){
+ for(const [i,label,emotion] of [[0,'A1','平静／安定'],[1,'A2','平静／安定'],[4,'A3','悬疑／不安'],[5,'A1','紧张／危机'],[7,'A2','振奋／坚定']]){
   const m=p.getByRole('button',{name:'选择 '+label,exact:true}).first();await m.scrollIntoViewIfNeeded();await m.click();
   // Click empty cell to clear block selection; use actual pointer drop for first block.
   await p.locator('svg.canvas').click({position:{x:pad+i/8*(w-pad-16)+8,y:H-18}});
   if(i===0){const source=p.locator('.material').filter({has:m});const box=await source.boundingBox();await p.mouse.move(box.x+55,box.y+40);await p.mouse.down();await p.mouse.move(X(i*1920),Y(.2),{steps:18});await p.mouse.up();await pause(500);}
   let state=await p.evaluate(()=>fetch('/api/project').then(r=>r.json()));
   if(!state.placements.some(v=>v.start_tick===i*1920)){await p.getByLabel('放置格').fill(String(i+1));await p.getByRole('button',{name:'放入所选积木',exact:true}).click();}
-  await pause(400);await p.locator('svg.canvas .block').last().click();if(emotion!=='平静')await p.getByRole('button',{name:emotion,exact:true}).click();await pause(1000);
+  await pause(400);await p.locator('svg.canvas .block').last().click();if(emotion!=='平静／安定')await p.getByRole('button',{name:emotion,exact:true}).click();await pause(1000);
  }
  await p.locator('svg.canvas').click({position:{x:pad+6/8*(w-pad-16)+8,y:H-18}});await p.getByLabel('放置格').fill('7');await p.getByRole('button',{name:'标为留白',exact:true}).click();await pause(1700);
- mark('generate');await p.getByRole('button',{name:'生成试听方案',exact:true}).click();
+ mark('generate');await p.getByRole('button',{name:'生成方案',exact:true}).click();
  const started=Date.now();while(Date.now()-started<610000){await pause(3000);if(await p.locator('.candidate').count())break;if(await p.locator('.error').count())throw Error(await p.locator('.error').innerText())}
  if(!await p.locator('.candidate').count())throw Error('Real generation timed out');mark('ready');await pause(2300);
  const prepared=await p.evaluate(()=>fetch('/api/project').then(r=>r.json()));const audible=prepared.candidates[0].id;

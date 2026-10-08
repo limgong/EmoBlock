@@ -14,7 +14,7 @@ LMMS must be installed; set EMOBLOCKS_LMMS if discovery cannot locate it. Data d
 
 ## Current scope
 
-Built-in melodies, real block/phrase rules, fixed timeline, draw/control-point intensity, placement/move/delete/emotion, active silence, automatic memory protection, undo/redo, persisted session, real completion → bridge and protection → connection blocks → boundary transitions → LMMS audio. Two genuinely different candidates when available; insufficient results are explicitly reported. Preview and confirmation use authenticated candidate snapshots. Downloads validate WAV/MIDI/MMP against their score and hash.
+One built-in Ode to Joy melody, real block/phrase rules, fixed timeline, draw/control-point intensity, placement/move/delete/emotion, active silence, automatic memory protection, undo/redo, persisted session, real completion → bridge and protection → connection blocks → boundary transitions → LMMS audio. Two genuinely different candidates when available; insufficient results are explicitly reported. Preview and confirmation use authenticated candidate snapshots. Downloads validate WAV/MIDI/MMP against their score and hash.
 
 Source block audition is a clearly labelled browser oscillator pitch preview, not LMMS timbre. Full candidate comparisons use real LMMS WAVs. No uploads, humming, external model inference, or full desktop feature parity claimed. Confirm is one undoable backend transaction. New requests never silently replace the audible object. Generated cards use stored base-note previews; exact final notes are heard in the candidate WAV.
 
@@ -59,3 +59,10 @@ Use `SMOKE_URL` to select the running server (for example `http://127.0.0.1:8876
 The smoke test uses a running server and actual LMMS; never substitute mocked audio. It stores isolated evidence under data/web-demo-evidence. The deployment test stores session cookies in a private restart state (0600); exclude this file from distribution. Browser scripts use Playwright and an installed Chrome. Set PLAYWRIGHT_MODULE to an installed Playwright module path, and CHROME_PATH to your Chrome executable when needed. `browser.cjs` checks themes and layout; `browser_audio.cjs` checks actual cloud WAV decoding/playback using the private acceptance state. No browser, Playwright package or video encoder is installed by the production image.
 
 2026-10-08 private Linux acceptance: Docker build, four Linux API tests, 54 deployed HTTP checks, eight music-constraint checks and Chrome playback of both modes passed. Both modes produced two candidates with actual melody/rhythm differences, retained memory notes and intentional silence, and used real LMMS 1.2.2 exports. Physical listening, Windows device validation, public DNS/HTTPS and host reboot remain separate checks; application restart persistence is verified with `--after-restart`.
+
+
+## Desktop naming alignment (2026-10-08)
+
+The browser Demo exposes only `joy` (欢乐颂) in `/api/samples` and uses it for new sessions. Previously saved private sessions remain intact; loading the new experience explicitly creates an Ode to Joy session.
+
+Labels match desktop main commit 3383929: 旋律原料 / 音乐积木库 / 情绪搭建画板 / 智能加工; emotions are 平静／安定, 温暖／希望, 悲伤／失落, 悬疑／不安, 紧张／危机, 振奋／坚定. The API derives `display_name` from the existing pure `curve_material_names.short_name` helper. A/B/C, prime derivations and combinations therefore follow stored desktop identities, rather than parsing the terminal M index. Source labels, IDs, note snapshots and fingerprints are not rewritten. Original phrase aliases and phrase containers follow the desktop library visibility rules; independent new-melody blocks remain visible.

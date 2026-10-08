@@ -51,7 +51,7 @@ class API(unittest.TestCase):
             service.JOBS['ownership']=dict(sid=sid,status='SUCCEEDED',folder=folder,error=None)
             self.assertEqual(self.client.get('/api/jobs/ownership').status_code,200)
             other=TestClient(service.app)
-            r=other.post('/api/session',json={'sample':'calm'})
+            r=other.post('/api/session',json={'sample':'joy'})
             self.assertEqual(r.status_code,200)
             self.assertEqual(other.get('/api/jobs/ownership').status_code,404)
             self.assertEqual(other.post('/api/jobs/ownership/cancel',json={}).status_code,404)
@@ -64,5 +64,21 @@ class API(unittest.TestCase):
         self.assertEqual(self.edit('mark_blank',{'start_tick':0,'end_tick':1920}).status_code,200)
         self.assertEqual(self.edit('place',{'material_id':self.p['materials'][0]['id'],'start_tick':0}).status_code,422)
         self.assertEqual(self.edit('delete_blank',{'blank_id':self.p['blanks'][0]['id']}).status_code,200)
+
+    def test_official_names_and_joy_only(self):
+        self.assertEqual(self.client.get('/api/samples').json(),[{'id':'joy','label':'欢乐颂'}])
+        self.assertEqual(self.client.post('/api/session',json={'sample':'calm'}).status_code,422)
+        visible=[m for m in self.p['materials'] if m['library_visible']]
+        names=[m['display_name'] for m in visible]
+        self.assertEqual(names[:8],[f'A{i}' for i in range(1,9)])
+        self.assertEqual(len(names),len(set(names)))
+        self.assertTrue(all(name.startswith('B') for name in names[8:]))
+        original=self.p['fingerprint']
+        self.assertEqual(self.client.get('/api/project').json()['fingerprint'],original)
+        target=visible[0]['id']
+        self.assertEqual(self.edit('derive',{'material_id':target,'method':'rhythm'}).status_code,200)
+        self.assertEqual(self.p['materials'][-1]['display_name'],'A1′')
+        self.assertEqual(self.edit('place',{'material_id':target,'start_tick':0}).status_code,200)
+        self.assertEqual(self.p['placements'][0]['base_snapshot']['display_name'],'A1')
 
 if __name__=='__main__':unittest.main()

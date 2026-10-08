@@ -8,9 +8,10 @@ import curve_project as model
 import curve_workflow as workflow
 import curve_recommendations as recommendations
 import curve_store
-SAMPLES = {'calm': ('静谧主题', 'theme-c.mid'), 'journey': ('行进主题', 'theme-a-minor.mid'), 'joy': ('欢乐颂主题', 'ode-to-joy-theme.mid')}
+from curve_material_names import short_name
+SAMPLES = {'joy': ('欢乐颂', 'ode-to-joy-theme.mid')}
 
-def controller(sample='calm'):
+def controller(sample='joy'):
     value = workflow.Controller(model.new_project(16))
     job = value.capture_job('IMPORT')
     value.apply_batch(workflow.prepare_import(ROOT / 'assets/samples' / SAMPLES[sample][1]), job['token'])

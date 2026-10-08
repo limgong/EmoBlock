@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
-from .core import ROOT, SAMPLES, model, workflow, controller
+from .core import ROOT, SAMPLES, model, workflow, controller, short_name
 from runtime_config import find_lmms
 
 DATA = Path(os.environ.get('EMOBLOCKS_WEB_DATA', str(ROOT / 'data/web-demo'))).resolve()
@@ -82,8 +82,16 @@ def session(request):
         return sid, SESSIONS[sid]
 
 
-def public_material(item):
+def public_material(item, library=()):
+    parent=next((m for m in library if m['id']==item.get('phrase_id')),None)
+    duplicate=bool(parent and not parent['generation'] and any(
+        m['kind']=='block' and not m['phrase_id'] and not m['generation']
+        and m['provenance'].get('source_id')==item['provenance'].get('source_id')
+        and m['provenance'].get('source_start_tick')==item['provenance'].get('source_start_tick')
+        and m['length_ticks']==item['length_ticks'] for m in library))
     return {**{k:item[k] for k in ('id','label','kind','length_ticks')},
+        'display_name':short_name(item),
+        'library_visible':item['kind']!='phrase' and not duplicate,
         'notes':[{k:n[k] for k in ('pitch','start_tick','duration_tick','velocity')} for n in item['notes']]}
 
 
@@ -92,7 +100,7 @@ def view(c):
     placements = [{**{k:x[k] for k in ('id','material_id','start_tick','length_ticks','emotion')},
                    'base_snapshot':public_material(x['base_snapshot'])} for x in p['placements']]
     return dict(fingerprint=model.fingerprint(p), ppq=p['ppq'], bpm=p['bpm'], grid_count=p['grid_count'],
-        total_ticks=p['total_ticks'], materials=[public_material(m) for m in p['materials']], placements=placements,
+        total_ticks=p['total_ticks'], materials=[public_material(m,p['materials']) for m in p['materials']], placements=placements,
         intensity_points=p['intensity_points'], protections=[{k:x[k] for k in ('kind','start_tick','end_tick')} for x in p['protections']], blanks=[{k:b[k] for k in ('id','start_tick','end_tick')} for b in p['blank_regions']],
         memory=c.state()['memory_info'], can_undo=c.session.can_undo, can_redo=c.session.can_redo,
         candidates=candidates(c))
@@ -225,7 +233,7 @@ async def project_error(request, exc):
 
 class NewSession(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    sample:str='calm'
+    sample:str='joy'
 class Mutation(BaseModel):
     model_config=ConfigDict(extra='forbid')
     fingerprint:str=Field(max_length=128)

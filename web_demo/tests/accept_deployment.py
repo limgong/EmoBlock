@@ -53,7 +53,7 @@ def wait_job(client, jid):
 
 
 def arrange(client):
-    project = post(client, '/api/session', {'sample': 'calm'})
+    project = post(client, '/api/session', {'sample': 'joy'})
 
     def edit(action, args):
         nonlocal project
