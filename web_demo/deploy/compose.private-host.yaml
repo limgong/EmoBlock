@@ -1,0 +1,25 @@
+# Private Linux fallback when existing host firewall rules prevent Docker bridge creation.
+# Host networking is NOT network isolation. Bind explicitly to loopback; SSH access only.
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: web_demo/deploy/Dockerfile
+      network: host
+    network_mode: host
+    command: [python, -m, uvicorn, 'web_demo.api.app:app', --host, '127.0.0.1', --port, '8765', --workers, '1']
+    restart: unless-stopped
+    init: true
+    mem_limit: 2300m
+    cpus: 3
+    pids_limit: 128
+    environment:
+      EMOBLOCKS_SECURE_COOKIE: '0'
+    volumes: [music_data:/var/lib/emoblocks]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  music_data:

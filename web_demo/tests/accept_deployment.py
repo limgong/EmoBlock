@@ -158,13 +158,61 @@ def after_restart():
                 check(state['mode'] + ' restart download ' + file, hashlib.sha256(response.content).hexdigest() == digest)
 
 
+def music_check():
+    evidence = []
+    for state in json.loads((OUT / 'private-restart-state.json').read_text()):
+        mode = state['mode']
+        with httpx.Client(base_url=URL, cookies=state['cookies'], timeout=90) as client:
+            project = client.get('/api/project').json()
+            def notes(content):
+                root = ET.fromstring(content)
+                result = []
+                for track in root.findall('.//trackcontainer/track'):
+                    if track.get('name', '').startswith('melody:'):
+                        for pattern in track.findall('pattern'):
+                            for note in pattern.findall('note'):
+                                result.append(((int(pattern.get('pos', 0))+int(note.get('pos', 0)))*10,
+                                               int(note.get('key'))+12,int(note.get('len'))*10))
+                return sorted(result), root
+            final, xml = notes((OUT / mode / 'final.mmp').read_bytes())
+            memory = project['memory']
+            placement = next(p for p in project['placements'] if p['id'] == memory['placement_id'])
+            region = memory['range']
+            expected = [(placement['start_tick']+n['start_tick'], n['pitch'], n['duration_tick'])
+                        for n in placement['base_snapshot']['notes']
+                        if placement['start_tick']+n['start_tick'] < region['end_tick'] and
+                           placement['start_tick']+n['start_tick']+n['duration_tick'] > region['start_tick']]
+            actual = [n for n in final if n[0] < region['end_tick'] and n[0]+n[2] > region['start_tick']]
+            check(mode+' memory exported pitch and rhythm preserved', sorted(expected)==actual)
+            check(mode+' bridge protection retained', any(p['kind']=='bridge' for p in project['protections']))
+            melodies = []
+            for candidate in project['candidates']:
+                response = client.get(f'/api/assets/{candidate["id"]}/final/mmp')
+                response.raise_for_status()
+                melodies.append(notes(response.content)[0])
+            check(mode+' candidates have actual music differences', len(melodies)>=2 and len({tuple(n) for n in melodies})==len(melodies))
+            drums = xml.findall('.//audiofileprocessor')
+            if mode=='arranged':
+                check('arranged real drum layers', len(drums)>=3)
+            else:
+                check('melody only has no accompaniment', len(xml.findall('.//trackcontainer/track'))==1 and not drums)
+            evidence.append(dict(mode=mode,candidate_count=len(melodies),memory_notes=len(expected),
+                                 bridge_regions=[p for p in project['protections'] if p['kind']=='bridge'],
+                                 drum_layers=len(drums)))
+    (OUT / 'music-evidence.json').write_text(json.dumps(evidence,indent=2))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--after-restart', action='store_true')
+    parser.add_argument('--music-check', action='store_true')
     args = parser.parse_args()
-    if args.after_restart:
+    if args.music_check:
+        music_check()
+    elif args.after_restart:
         after_restart()
     else:
         prepare()
-    (OUT / ('restart-report.json' if args.after_restart else 'acceptance-report.json')).write_text(json.dumps({'checks': REPORT}, indent=2))
+    report = 'music-report.json' if args.music_check else 'restart-report.json' if args.after_restart else 'acceptance-report.json'
+    (OUT / report).write_text(json.dumps({'checks': REPORT}, indent=2))
     print('DEPLOYMENT_ACCEPTANCE_PASS', len(REPORT), flush=True)
