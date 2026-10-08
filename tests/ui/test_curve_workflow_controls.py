@@ -246,6 +246,30 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                         self.assertTrue(button.winfo_ismapped());self.assertGreaterEqual(button.winfo_height(),44)
                         self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
 
+    def test_advanced_private_review_keeps_canvas_and_focus_reaches_actions(self):
+        self.app.advanced=True
+        self.ready();self.select();self.root.update()
+        before=self.music_state();selected=self.rec.selected_id;preview=copy.deepcopy(self.rec.preview)
+        for theme in ('light','dark'):
+            self.app.theme.set(theme);self.app.refresh()
+            for size in ('1020x700','1280x800','1440x900'):
+                self.root.geometry(size)
+                for collapsed in (False,True):
+                    self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
+                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                    self.assertTrue(self.app.page.timeline.readonly)
+                    self.assertFalse(self.app.page.creation_row.winfo_ismapped())
+                    tools=self.app.page.secondary_tools
+                    for widget in (self.rec.final_button,self.rec.confirm_button,self.rec.back_button):
+                        widget.focus_force();self.root.update()
+                        self.assertGreaterEqual(widget.winfo_height(),44)
+                        self.assertGreaterEqual(widget.winfo_rooty(),tools.canvas.winfo_rooty())
+                        self.assertLessEqual(widget.winfo_rooty()+widget.winfo_height(),
+                                             tools.canvas.winfo_rooty()+tools.canvas.winfo_height())
+                    self.assertTrue(self.app.stop_button.winfo_ismapped())
+                    self.assertEqual(before,self.music_state());self.assertEqual(selected,self.rec.selected_id)
+                    self.assertEqual(preview,self.rec.preview)
+
     def test_stale_suspended_preview_cannot_restore_foreign_selection(self):
         self.ready();self.select();self.app.page.timeline.selected_id='place:0'
         self.app.show_curve_stage('Bridge')

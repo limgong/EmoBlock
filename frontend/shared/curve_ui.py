@@ -551,7 +551,9 @@ class CurveApplication:
             page.gap_label.configure(text=f'空缺 {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
         else:page.gap_panel.pack_forget()
         if self.advanced and not empty:
-            page.advanced_row.pack(fill='x',before=page.stage_anchor)
+            first=next(w for w in page.secondary_tools.content.pack_slaves()
+                       if w not in (page.creation_row,page.advanced_row))
+            page.advanced_row.pack(fill='x',before=first)
             page.timeline.stage_selector.pack(side='right')
             page.timeline.mode_buttons['gaps'].pack(side='left')
             self.recommendation.auto_button.pack(side='left') if self.recommendation.available() else self.recommendation.auto_button.pack_forget()
@@ -589,7 +591,9 @@ class CurveApplication:
         else:
             page.empty_workspace.place_forget();page.timeline.empty_import.place_forget()
             if self.private_preview() or self.recommendation.visible or any(j['kind']=='RECOMMENDATION' for j in self.jobs.values()):page.creation_row.pack_forget()
-            else:page.creation_row.pack(fill='x',before=page.timeline)
+            elif self.advanced and not self.jobs:
+                page.creation_row.pack(in_=page.secondary_tools.content,fill='x',before=page.advanced_row if page.advanced_row.winfo_manager() else page.stage_anchor)
+            else:page.creation_row.pack(in_=page.right,fill='x',before=page.timeline)
             preview=self.private_preview()
             info=preview.get('memory_info') if preview else self.state_data.get('memory_info')
             if (info or {}).get('state')=='BOUND' and page.timeline.memory_overlay():
@@ -603,6 +607,7 @@ class CurveApplication:
             page.source_notes.pack(fill='x',pady=8);page.source_audition.pack(fill='x')
             page.source_reminder.pack(anchor='w',pady=8)
         page.timeline.canvas.configure(takefocus=not empty)
+        page.secondary_tools.set_compact(self.advanced and not empty and not self.jobs)
 
     def preview_memory_description(self,preview=None):
         preview = self.private_preview() if preview is None else preview
@@ -1459,6 +1464,9 @@ class CurveApplication:
     def wheel(self, event):
         widget = self.root.winfo_containing(event.x_root,event.y_root)
         units = ui_platform.wheel_units(event.delta)
+        if self.page.secondary_tools.contains(widget) and not isinstance(widget,(tk.Text,ttk.Combobox,ttk.Entry)):
+            self.page.secondary_tools.canvas.yview_scroll(units*24,'units')
+            return 'break'
         if widget==self.page.timeline.canvas:
             widget.xview_scroll(units*24,'units')
             return 'break'
@@ -1473,6 +1481,9 @@ class CurveApplication:
     def touchpad(self, event):
         widget = self.root.winfo_containing(event.x_root,event.y_root)
         dx,dy = touchpad_deltas(event)
+        if self.page.secondary_tools.contains(widget) and not isinstance(widget,(tk.Text,ttk.Combobox,ttk.Entry)):
+            scroll_canvas_pixels(self.page.secondary_tools.canvas,'y',dy)
+            return 'break'
         if widget==self.page.timeline.canvas:
             scroll_canvas_pixels(widget,'x',dx if abs(dx)>abs(dy) else dy)
             return 'break'

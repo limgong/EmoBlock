@@ -9,6 +9,85 @@ from curve_raster import pixels
 from curve_scrollbar import TransientScrollbar
 
 
+class SecondaryTools(ttk.Frame):
+    """Bound advanced controls without changing the single musical viewport."""
+    def __init__(self, parent, app):
+        super().__init__(parent, style='Curve.Panel.TFrame')
+        self.pack_propagate(False)
+        self.app = app
+        self.compact = False
+        self.saved_position = 0.
+        self.pending_position = None
+        self.canvas = tk.Canvas(self, width=1, height=1, highlightthickness=0,
+                                takefocus=True, yscrollincrement=1)
+        self.scrollbar = TransientScrollbar(self, app, self.canvas.yview)
+        self.scrollbar.pack(side='right', fill='y')
+        self.canvas.pack(side='left', fill='both', expand=True)
+        self.content = ttk.Frame(self.canvas, style='Curve.Panel.TFrame')
+        self.window = self.canvas.create_window(0, 0, anchor='nw', window=self.content)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.scrollbar.attach(self.canvas)
+        self.canvas.bind('<Configure>', self.layout)
+        self.content.bind('<Configure>', self.layout)
+        for event, fraction in (('<Home>', 0), ('<End>', 1)):
+            self.canvas.bind(event, lambda _, f=fraction: self.canvas.yview_moveto(f))
+        for event, delta in (('<Up>', -1), ('<Down>', 1), ('<Prior>', -6), ('<Next>', 6)):
+            self.canvas.bind(event, lambda _, d=delta: self.canvas.yview_scroll(d*8, 'units'))
+        self.focus_binding = app.root.bind('<FocusIn>', self.focused, add='+')
+        self.bind('<Destroy>', self.destroyed)
+
+    def layout(self, event=None):
+        width = max(1, self.canvas.winfo_width())
+        self.canvas.itemconfigure(self.window, width=width)
+        requested = max(1, self.content.winfo_reqheight())
+        height = min(requested, pixels(self.app.root, 68)) if self.compact else requested
+        self.configure(height=height)
+        self.canvas.configure(height=height, bg=self.app.theme.colors['panel'],
+                              scrollregion=(0, 0, width, requested), takefocus=requested>height)
+        self.scrollbar.configure(takefocus=requested>height)
+        if self.pending_position is not None and requested>height:
+            self.canvas.yview_moveto(self.pending_position)
+            self.pending_position = None
+
+    def set_compact(self, compact):
+        if self.compact and not compact: self.saved_position = self.canvas.yview()[0]
+        elif compact and not self.compact: self.pending_position = self.saved_position
+        self.compact = compact
+        self.layout()
+
+    def contains(self, widget):
+        # pack(in_=...) retains a widget's original Tk parent, so inspect the
+        # managed roots as well as the content frame's normal descendants.
+        if not isinstance(widget, tk.Misc): return False
+        members = set(self.content.pack_slaves()) | {self.content, self.canvas, self.scrollbar}
+        while widget:
+            if widget in members: return True
+            widget = widget.master
+        return False
+
+    def focused(self, event):
+        # Tk also emits FocusIn for ancestors. Revealing an entire tall panel
+        # after its child would scroll the actual focused control out again.
+        if (self.contains(event.widget) and str(event.widget) == str(self.app.root.tk.call('focus'))
+                and event.widget not in (self.canvas, self.scrollbar)):
+            self.reveal(event.widget)
+
+    def reveal(self, widget):
+        if not self.canvas.winfo_ismapped(): return
+        top = self.canvas.canvasy(0)
+        start = top + widget.winfo_rooty() - self.canvas.winfo_rooty()
+        end = start + widget.winfo_height()
+        height = self.canvas.winfo_height()
+        target = start if start < top else end - height if end > top + height else top
+        total = max(1, float(self.canvas.cget('scrollregion').split()[3]))
+        if target != top: self.canvas.yview_moveto(max(0, target) / total)
+
+    def destroyed(self, event):
+        if event.widget == self:
+            try: self.app.root.unbind('<FocusIn>', self.focus_binding)
+            except tk.TclError: pass  # Root teardown can retire the binding first.
+
+
 def button(parent, text, command, style='Curve.TButton', **kw):
     return ttk.Button(parent, text=text, command=command, style=style, **kw)
 
@@ -68,9 +147,11 @@ def build_page(page, parent, app, methods, emotions):
     page.footer.pack(side='bottom',fill='x',pady=(6,0));page.footer.pack_propagate(False)
     page.stage_area=ttk.Frame(page.right,style='Curve.Panel.TFrame')
     page.stage_area.pack(side='bottom',fill='x')
+    page.secondary_tools=SecondaryTools(page.stage_area,app)
+    page.secondary_tools.pack(fill='x')
     page.advanced_row=ttk.Frame(page.stage_area,style='Curve.Panel.TFrame')
     page.stage_anchor=ttk.Frame(page.stage_area,style='Curve.Panel.TFrame',height=1)
-    page.stage_anchor.pack(fill='x')
+    page.stage_anchor.pack(in_=page.secondary_tools.content,fill='x')
     page.history_panel=ttk.Frame(page.stage_area,style='Curve.Panel.TFrame')
     page.history_list=tk.Listbox(page.history_panel,height=2,exportselection=False,font=font(),borderwidth=0)
     page.history_list.pack(fill='x');page.history_list.bind('<<ListboxSelect>>',app.history_selected)
@@ -155,7 +236,7 @@ def build_player(app):
     app.status_text=tk.StringVar(value='导入旋律，开始创作。')
     app.detail_text=tk.StringVar(value='点击仅选择；明确试听才播放。')
     app.status_label=ttk.Label(app.page.stage_area,textvariable=app.status_text,style='Curve.Panel.TLabel',takefocus=True)
-    app.status_label.pack(fill='x',before=app.page.stage_anchor)
+    app.status_label.pack(fill='x',before=app.page.secondary_tools)
     hint(app.status_label,app.status_description,app.show_detail)
     app.detail_row=ttk.Frame(app.page.stage_area,style='Curve.Panel.TFrame')
     app.detail_label=tk.Text(app.detail_row,height=2,wrap='word',font=font(),borderwidth=0,highlightthickness=0,state='disabled')

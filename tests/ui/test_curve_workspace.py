@@ -1,6 +1,7 @@
 """Mapped layout checks; these exercise shared widgets, not physical input."""
 import unittest
 import copy
+from types import SimpleNamespace
 from unittest.mock import patch
 import curve_project
 import curve_workflow
@@ -8,6 +9,105 @@ from test_curve_ui import MappedUIFixture, FakeController, fixture
 
 
 class WorkspaceLayoutTests(MappedUIFixture):
+    def click_at(self, widget, x=None, y=None):
+        self.root.update()
+        x=widget.winfo_width()//2 if x is None else int(x)
+        y=widget.winfo_height()//2 if y is None else int(y)
+        rootx=widget.winfo_rootx()+x;rooty=widget.winfo_rooty()+y
+        self.assertIs(self.root.winfo_containing(rootx,rooty),widget)
+        for event in ('<Enter>','<Motion>','<ButtonPress-1>','<ButtonRelease-1>'):
+            widget.event_generate(event,x=x,y=y,rootx=rootx,rooty=rooty)
+        self.root.update()
+
+    def test_advanced_selected_actual_gap_keeps_canvas_and_scroll_reaches_tools(self):
+        controller=curve_workflow.Controller(fixture())
+        controller.edit('place',material_id='block',start_tick=0)
+        self.app.controller=controller;self.app._switched();self.root.update()
+        before=copy.deepcopy(controller.state());calls=list(self.app.player.calls)
+        self.root.geometry('1020x700');self.root.update()
+        self.click_at(self.app.page.advanced_button)
+        self.click_at(self.app.page.timeline.mode_buttons['gaps'])
+        gap=self.app.completion.gaps[0];timeline=self.app.page.timeline;canvas=timeline.canvas
+        total=float(canvas.cget('scrollregion').split()[2])
+        canvas.xview_moveto(max(0,gap['start_tick']*timeline.scale/total-.15));self.root.update()
+        a,t,b,d=timeline.gap_boxes[gap['id']]
+        left=max(a,canvas.canvasx(0)+12);right=min(b,canvas.canvasx(canvas.winfo_width())-12)
+        self.assertGreater(right,left)
+        self.click_at(canvas,(left+right)/2-canvas.canvasx(0),(t+d)/2)
+        self.assertEqual(self.app.completion.selected_gap_id,gap['id'])
+        state=(self.app.selected_target,self.app.selected_source_id,self.app.source_filter_id,
+               self.app.playing_target,copy.deepcopy(self.app.combo_inputs))
+        for theme in ('light','dark'):
+            self.app.theme.set(theme);self.app.refresh()
+            for size in ('1020x700','1280x800','1440x900'):
+                self.root.geometry(size)
+                for collapsed in (False,True):
+                    with self.subTest(theme=theme,size=size,collapsed=collapsed):
+                        self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
+                        self.assertTrue(self.app.advanced);self.assertTrue(self.app.page.gap_panel.winfo_ismapped())
+                        self.assertGreaterEqual(canvas.winfo_height(),320)
+                        tools=self.app.page.secondary_tools
+                        self.assertLess(tools.canvas.winfo_height(),tools.content.winfo_height())
+                        # First and last native controls receive focus through the
+                        # real clipped viewport. No invocation changes music here.
+                        for widget in (self.app.page.plus_button,timeline.stage_selector,
+                                       self.app.completion.start_button):
+                            widget.focus_force();self.root.update()
+                            self.assertGreaterEqual(widget.winfo_rooty(),tools.canvas.winfo_rooty())
+                            self.assertLessEqual(widget.winfo_rooty()+widget.winfo_height(),
+                                                 tools.canvas.winfo_rooty()+tools.canvas.winfo_height())
+                            self.assertIs(self.root.winfo_containing(widget.winfo_rootx()+widget.winfo_width()//2,
+                                                                   widget.winfo_rooty()+widget.winfo_height()//2),widget)
+                        tools.canvas.yview_moveto(0);self.root.update();first=tools.canvas.yview()
+                        event=SimpleNamespace(x_root=tools.canvas.winfo_rootx()+2,y_root=tools.canvas.winfo_rooty()+2,delta=-120)
+                        self.assertEqual(self.app.wheel(event),'break');self.root.update()
+                        self.assertGreater(tools.canvas.yview()[0],first[0])
+                        tools.canvas.yview_moveto(1);self.root.update()
+                        self.assertAlmostEqual(tools.canvas.yview()[1],1,places=2)
+                        for widget in (self.app.play_button,self.app.stop_button,self.app.page.gap_panel.winfo_children()[1]):
+                            self.assertTrue(widget.winfo_ismapped());self.assertGreaterEqual(widget.winfo_height(),44)
+                            self.assertLessEqual(widget.winfo_rooty()+widget.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
+                        canvas.focus_force();self.root.update()
+                        self.assertGreaterEqual(canvas.winfo_height(),320)
+                        self.assertEqual(before,controller.state());self.assertEqual(calls,self.app.player.calls)
+                        self.assertEqual(state,(self.app.selected_target,self.app.selected_source_id,self.app.source_filter_id,
+                                                self.app.playing_target,self.app.combo_inputs))
+
+    def test_advanced_collapse_expand_restores_view_and_length_actions_one_undo(self):
+        controller=curve_workflow.Controller(fixture())
+        controller.edit('place',material_id='block',start_tick=0)
+        self.app.controller=controller;self.app._switched();self.root.geometry('1020x700');self.root.update()
+        timeline=self.app.page.timeline
+        self.click_at(self.app.page.advanced_button)
+        self.app.completion.select_gap(self.app.completion.gaps[0]['id'])
+        before=copy.deepcopy(controller.state());gap_id=self.app.completion.selected_gap_id
+        timeline.canvas.xview_moveto(.3);self.root.update();scroll=timeline.canvas.xview()
+        self.app.page.cards.expanded.add('phrase');self.app.refresh();self.root.update()
+        selected=self.app.selected_target;playing=self.app.playing_target;calls=list(self.app.player.calls)
+        tools=self.app.page.secondary_tools;tools.canvas.yview_moveto(1);self.root.update()
+        secondary_scroll=tools.canvas.yview()
+        self.app.toggle_advanced();self.root.update();self.app.toggle_advanced();self.root.update()
+        self.assertEqual(secondary_scroll,tools.canvas.yview())
+        for _ in range(2):
+            tools=self.app.page.secondary_tools
+            tools.reveal(self.app.page.advanced_button);self.root.update()
+            self.click_at(self.app.page.advanced_button)
+            self.assertFalse(self.app.advanced)
+            self.assertEqual(str(self.app.page.creation_row.pack_info()['in']),str(self.app.page.right))
+            self.click_at(self.app.page.advanced_button)
+            self.assertTrue(self.app.advanced)
+            self.assertEqual(str(self.app.page.creation_row.pack_info()['in']),str(tools.content))
+            self.assertEqual(before,controller.state());self.assertEqual(gap_id,self.app.completion.selected_gap_id)
+            self.assertEqual(selected,self.app.selected_target);self.assertEqual(playing,self.app.playing_target)
+            self.assertEqual(calls,self.app.player.calls);self.assertIn('phrase',self.app.page.cards.expanded)
+            self.assertEqual(scroll,timeline.canvas.xview())
+        tools.reveal(self.app.page.plus_button);self.root.update()
+        self.click_at(self.app.page.plus_button)
+        self.assertEqual(controller.state()['project']['grid_count'],before['project']['grid_count']+1)
+        self.assertTrue(controller.undo());self.app.refresh();self.root.update()
+        self.assertEqual(controller.state()['project'],before['project'])
+        self.assertEqual(playing,self.app.playing_target);self.assertEqual(calls,self.app.player.calls)
+
     def test_real_selected_placement_and_gap_keep_minimum_canvas_and_direct_memory_errors(self):
         for memory in ('BOUND','PENDING_GAP','PRESERVE_BLANK'):
             controller=curve_workflow.Controller(fixture())
