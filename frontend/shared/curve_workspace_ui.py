@@ -68,12 +68,9 @@ class SecondaryTools(ttk.Frame):
         self.layout()
 
     def contains(self, widget):
-        # pack(in_=...) retains a widget's original Tk parent, so inspect the
-        # managed roots as well as the content frame's normal descendants.
         if not isinstance(widget, tk.Misc): return False
-        members = set(self.content.pack_slaves()) | {self.content, self.canvas, self.scrollbar}
         while widget:
-            if widget in members: return True
+            if widget in (self.content, self.canvas, self.scrollbar): return True
             widget = widget.master
         return False
 
@@ -102,6 +99,35 @@ class SecondaryTools(ttk.Frame):
 
 def button(parent, text, command, style='Curve.TButton', **kw):
     return ttk.Button(parent, text=text, command=command, style=style, **kw)
+
+
+def creation_tools(parent, page, app):
+    """Native view controls share variables and commands, never music state."""
+    row=ttk.Frame(parent,style='Curve.Panel.TFrame')
+    ttk.Label(row,text='创作画布',style='Curve.Title.TLabel').pack(side='left')
+    ttk.Label(row,text='四拍格',style='Curve.Muted.TLabel').pack(side='left',padx=(8,3))
+    minus=IconButton(row,app,'minus','减一格',lambda:app.adjust_grid(-1),tip='减少一个四拍格；不会裁切音乐、留白或保护。')
+    minus.pack(side='left',padx=2)
+    ttk.Label(row,textvariable=page.grid_summary,style='Curve.Muted.TLabel').pack(side='left')
+    plus=IconButton(row,app,'plus','加一格',lambda:app.adjust_grid(1),tip='增加一个四拍格；一次撤销可恢复。')
+    plus.pack(side='left',padx=2)
+    entry=ttk.Entry(row,textvariable=page.grid_count,style='Curve.TEntry')
+    final=IconButton(row,app,'generate','生成方案',lambda:app.safe(app.generate_recommendations),style='Curve.Primary.TButton',label=True)
+    final.pack(side='right')
+    advanced=button(row,'高级',app.toggle_advanced,style='Curve.TButton')
+    advanced.pack(side='right',padx=4)
+    return dict(creation_row=row,minus_button=minus,plus_button=plus,
+                grid_entry=entry,resize_button=minus,final_button=final,advanced_button=advanced)
+
+
+def select_creation_tools(page, advanced):
+    selected=page.creation_views[bool(advanced)]
+    for view in page.creation_views.values():
+        if view is not selected:
+            view['creation_row'].pack_forget()
+            for name in ('minus_button','plus_button','final_button','advanced_button'):
+                view[name].state(['!active','!hover','!pressed'])
+    for name,widget in selected.items():setattr(page,name,widget)
 
 
 def build_page(page, parent, app, methods, emotions):
@@ -157,35 +183,25 @@ def build_page(page, parent, app, methods, emotions):
     # Packed bottom first: the player always retains its own space.
     page.footer=ttk.Frame(page.right,style='Curve.Panel.TFrame',height=pixels(app.root,138))
     page.footer.pack(side='bottom',fill='x',pady=(6,0));page.footer.pack_propagate(False)
-    page.stage_area=ttk.Frame(page.right,style='Curve.Panel.TFrame')
-    page.stage_area.pack(side='bottom',fill='x')
-    page.secondary_tools=SecondaryTools(page.stage_area,app)
+    page.fixed_stage_area=ttk.Frame(page.right,style='Curve.Panel.TFrame')
+    page.fixed_stage_area.pack(side='bottom',fill='x')
+    page.secondary_tools=SecondaryTools(page.fixed_stage_area,app)
     page.secondary_tools.pack(fill='x')
+    # Every stage constructor uses this actual native parent, not pack(in_).
+    page.stage_area=page.secondary_tools.content
     page.advanced_row=ttk.Frame(page.stage_area,style='Curve.Panel.TFrame')
     page.stage_anchor=ttk.Frame(page.stage_area,style='Curve.Panel.TFrame',height=1)
-    page.stage_anchor.pack(in_=page.secondary_tools.content,fill='x')
+    page.stage_anchor.pack(fill='x')
     page.history_panel=ttk.Frame(page.stage_area,style='Curve.Panel.TFrame')
     page.history_list=tk.Listbox(page.history_panel,height=2,exportselection=False,font=font(),borderwidth=0)
     page.history_list.pack(fill='x');page.history_list.bind('<<ListboxSelect>>',app.history_selected)
     history_bar=TransientScrollbar(page.history_panel,app,page.history_list.yview);history_bar.pack(side='right',fill='y',before=page.history_list);page.history_list.configure(yscrollcommand=history_bar.set);history_bar.attach(page.history_list)
-    row=page.creation_row=ttk.Frame(page.right,style='Curve.Panel.TFrame');row.pack(fill='x')
-    ttk.Label(row,text='创作画布',style='Curve.Title.TLabel').pack(side='left')
-    ttk.Label(row,text='四拍格',style='Curve.Muted.TLabel').pack(side='left',padx=(8,3))
     page.grid_count=tk.StringVar(value='8')
     page.grid_summary=tk.StringVar(value='8格 · 32拍')
-    page.minus_button=IconButton(row,app,'minus','减一格',lambda:app.adjust_grid(-1),tip='减少一个四拍格；不会裁切音乐、留白或保护。')
-    page.minus_button.pack(side='left',padx=2)
-    ttk.Label(row,textvariable=page.grid_summary,style='Curve.Muted.TLabel').pack(side='left')
-    page.plus_button=IconButton(row,app,'plus','加一格',lambda:app.adjust_grid(1),tip='增加一个四拍格；一次撤销可恢复。')
-    page.plus_button.pack(side='left',padx=2)
-    # Legacy callable resize uses grid_count; there is no editable count field.
-    page.grid_entry=ttk.Entry(row,textvariable=page.grid_count,style='Curve.TEntry')
-    page.resize_button=page.minus_button
-    page.final_button=IconButton(row,app,'generate','生成方案',lambda:app.safe(app.generate_recommendations),style='Curve.Primary.TButton',label=True)
-    page.final_button.pack(side='right')
-    # Advanced is always reachable, independently of gap selection.
-    page.advanced_button=button(row,'高级',app.toggle_advanced,style='Curve.TButton')
-    page.advanced_button.pack(side='right',padx=4)
+    page.creation_views={False:creation_tools(page.right,page,app),
+                         True:creation_tools(page.stage_area,page,app)}
+    select_creation_tools(page,False)
+    page.creation_row.pack(fill='x')
     page.memory_label=ttk.Label(page.right,style='Curve.Muted.TLabel',takefocus=True)
     page.memory_label.pack(fill='x',pady=(2,0))
     hint(page.memory_label,app.current_memory_description,app.show_detail)
@@ -247,7 +263,7 @@ def build_player(app):
     footer=app.page.footer
     app.status_text=tk.StringVar(value='导入旋律，开始创作。')
     app.detail_text=tk.StringVar(value='点击仅选择；明确试听才播放。')
-    app.status_label=ttk.Label(app.page.stage_area,textvariable=app.status_text,style='Curve.Panel.TLabel',takefocus=True)
+    app.status_label=ttk.Label(app.page.fixed_stage_area,textvariable=app.status_text,style='Curve.Panel.TLabel',takefocus=True)
     app.status_label.pack(fill='x',before=app.page.secondary_tools)
     hint(app.status_label,app.status_description,app.show_detail)
     app.detail_row=ttk.Frame(app.page.stage_area,style='Curve.Panel.TFrame')
@@ -255,7 +271,7 @@ def build_player(app):
     app.detail_label.pack(side='left',fill='both',expand=True)
     detail_bar=TransientScrollbar(app.detail_row,app,app.detail_label.yview)
     detail_bar.pack(side='right',fill='y');app.detail_label.configure(yscrollcommand=detail_bar.set);detail_bar.attach(app.detail_label)
-    app.detail_button=button(app.page.stage_area,'详情',app.toggle_details,style='Curve.Small.TButton')
+    app.detail_button=button(app.page.fixed_stage_area,'详情',app.toggle_details,style='Curve.Small.TButton')
     app.detail_button.place(relx=1.,y=0,anchor='ne')
     from curve_player_ui import build_transport
     build_transport(app,footer)

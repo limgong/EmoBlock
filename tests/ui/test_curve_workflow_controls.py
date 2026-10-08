@@ -9,6 +9,20 @@ import curve_ui
 
 
 class RecommendationControlTests(p7.RecommendationMappedTests):
+    def assert_fixed_regions_clear(self):
+        tools=self.app.page.secondary_tools
+        for widget in (self.app.status_label,self.app.detail_button,self.app.stop_button,self.app.play_button):
+            self.assertTrue(widget.winfo_ismapped())
+            x=widget.winfo_rootx()+widget.winfo_width()//2
+            y=widget.winfo_rooty()+widget.winfo_height()//2
+            self.assertIs(self.root.winfo_containing(x,y),widget)
+        top=tools.canvas.winfo_rooty();bottom=top+tools.canvas.winfo_height()
+        for widget in (self.rec.selector,self.rec.retry_button,self.rec.final_button,self.rec.back_button):
+            x=widget.winfo_rootx()+widget.winfo_width()//2
+            y=widget.winfo_rooty()+widget.winfo_height()//2
+            if widget.winfo_ismapped() and not top<=y<bottom:
+                self.assertIsNot(self.root.winfo_containing(x,y),widget)
+
     def click(self, widget):
         self.root.update()
         coords=dict(x=8,y=8,rootx=widget.winfo_rootx()+8,rooty=widget.winfo_rooty()+8)
@@ -179,6 +193,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                         self.app.refresh();self.root.update()
                         self.assertTrue(self.app.jobs)
                         self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        self.assert_fixed_regions_clear()
                         self.assertTrue(self.app.status_label.winfo_ismapped())
                         self.assertIn('补全计算中',self.app.status_label.cget('text'))
                         self.assertIn('秒',self.app.status_label.cget('text'))
@@ -204,6 +219,53 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.assertEqual(gap,self.app.completion.selected_gap_id)
         self.assertEqual(self.controller.rec['status'],'CANCELLED')
         self.assertTrue(self.app.stop_button.winfo_ismapped())
+
+    def test_review_native_end_home_wheel_drag_and_focus_cannot_cover_fixed_details(self):
+        self.ready();self.select();self.app.advanced=True;self.app.refresh();self.root.update()
+        before=self.music_state();preview=copy.deepcopy(self.rec.preview);selected=self.rec.selected_id
+        tools=self.app.page.secondary_tools
+        for theme in ('light','dark'):
+            if self.app.theme.name!=theme:self.app.toggle_theme()
+            for size in ('1020x700','1280x800','1440x900'):
+                self.root.geometry(size)
+                for collapse in (False,True):
+                    with self.subTest(theme=theme,size=size,collapse=collapse):
+                        self.app.source_user_collapsed=collapse;self.app.layout_sources();self.root.update()
+                        self.app.tell('此错误在滚动时必须保持可见',True)
+                        for key in ('Home','End'):
+                            tools.canvas.focus_force();self.root.update()
+                            tools.canvas.event_generate('<KeyPress-'+key+'>');self.root.update()
+                            self.assert_fixed_regions_clear()
+                            self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                            self.assertIn('此错误',self.app.status_label.cget('text'))
+                        for delta in (-120,120):
+                            tools.canvas.event_generate('<MouseWheel>',delta=delta,x=2,y=2,
+                                rootx=tools.canvas.winfo_rootx()+2,rooty=tools.canvas.winfo_rooty()+2)
+                            self.root.update();self.assert_fixed_regions_clear()
+                        bar=tools.scrollbar
+                        for y in (2,bar.winfo_height()-2):
+                            coords=dict(x=bar.winfo_width()//2,y=y,
+                                        rootx=bar.winfo_rootx()+bar.winfo_width()//2,rooty=bar.winfo_rooty()+y)
+                            bar.event_generate('<ButtonPress-1>',**coords)
+                            bar.event_generate('<B1-Motion>',**coords)
+                            bar.event_generate('<ButtonRelease-1>',**coords)
+                            self.root.update();self.assert_fixed_regions_clear()
+                        for widget in (self.rec.retry_button,self.rec.back_button):
+                            widget.focus_force();self.root.update()
+                            self.assertGreaterEqual(widget.winfo_rooty(),tools.canvas.winfo_rooty())
+                            self.assertLessEqual(widget.winfo_rooty()+widget.winfo_height(),
+                                                 tools.canvas.winfo_rooty()+tools.canvas.winfo_height())
+                            self.assert_fixed_regions_clear()
+                        tools.canvas.focus_force();self.root.update()
+                        tools.canvas.event_generate('<KeyPress-End>');self.root.update()
+                        with patch.object(self.rec,'prepare_mode') as retry:
+                            self.click(self.app.detail_button)
+                            self.assertTrue(self.app.details_expanded);retry.assert_not_called()
+                            self.assert_fixed_regions_clear()
+                            self.click(self.app.detail_button)
+                            self.assertFalse(self.app.details_expanded);retry.assert_not_called()
+                        self.assertEqual(before,self.music_state())
+                        self.assertEqual(preview,self.rec.preview);self.assertEqual(selected,self.rec.selected_id)
 
     def test_mapped_boundary_labels_avoid_dense_neighbors_and_scrolled_edges(self):
         self.ready();self.select()

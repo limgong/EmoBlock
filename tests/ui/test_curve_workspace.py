@@ -9,6 +9,30 @@ from test_curve_ui import MappedUIFixture, FakeController, fixture
 
 
 class WorkspaceLayoutTests(MappedUIFixture):
+    def test_native_creation_views_share_commands_and_hide_inactive_controls(self):
+        controller=curve_workflow.Controller(fixture())
+        self.app.controller=controller;self.app._switched();self.root.update()
+        page=self.app.page;before=controller.state()['project']
+        for advanced in (True,False,True,False):
+            self.click_at(page.advanced_button)
+            self.assertEqual(self.app.advanced,advanced)
+            current=page.creation_views[advanced];other=page.creation_views[not advanced]
+            self.assertIs(page.creation_row,current['creation_row'])
+            self.assertIs(page.creation_row.master,page.stage_area if advanced else page.right)
+            self.assertTrue(page.creation_row.winfo_ismapped());self.assertFalse(other['creation_row'].winfo_ismapped())
+            self.assertIs(self.app.recommendation.calculate_button,page.final_button)
+            for name in ('plus_button','minus_button','final_button'):
+                self.assertEqual(current[name].instate(['disabled']),other[name].instate(['disabled']))
+                self.assertFalse(set(other[name].state())&{'active','hover','pressed'})
+            for view in page.creation_views.values():
+                self.assertEqual(str(view['grid_entry'].cget('textvariable')),str(page.grid_count))
+            if advanced:page.secondary_tools.reveal(page.plus_button);self.root.update()
+            self.click_at(page.plus_button)
+            self.assertEqual(controller.state()['project']['grid_count'],before['grid_count']+1)
+            controller.undo();self.app.refresh();self.root.update()
+            self.assertEqual(controller.state()['project'],before)
+        self.assertEqual(self.app.player.calls,[])
+
     def click_at(self, widget, x=None, y=None):
         self.root.update()
         x=widget.winfo_width()//2 if x is None else int(x)

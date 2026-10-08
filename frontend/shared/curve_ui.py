@@ -21,7 +21,7 @@ from scroll_input import touchpad_deltas, scroll_canvas_pixels
 from curve_theme import Theme, font, hint, EMOTION_NAMES
 from curve_play_intent import PlayIntent
 from curve_cards import MaterialCards
-from curve_workspace_ui import build_page, build_chrome, build_player
+from curve_workspace_ui import build_page, build_chrome, build_player, select_creation_tools
 from curve_canvas import CurveCanvas, snap_tick
 from curve_completion_ui import CompletionUI
 from curve_bridge_ui import BridgeUI
@@ -278,7 +278,6 @@ class CurveApplication:
 
     def toggle_advanced(self):
         self.advanced=not self.advanced
-        self.page.advanced_button.configure(text='收起高级' if self.advanced else '高级')
         if self.advanced:
             self.show_curve_stage(self.workspace_stage if self.workspace_stage!='编辑' else '补全')
         else:
@@ -415,6 +414,7 @@ class CurveApplication:
 
     def refresh(self):
         self.state_data = self.controller.state()
+        select_creation_tools(self.page,self.advanced)
         project = self.state_data['project']
         self.accepted_music = (self.controller.effective_music() if project is not None
             and self.state_data['capabilities'].get('recommendation',False) else None)
@@ -439,8 +439,10 @@ class CurveApplication:
         self.connection.refresh()
         self.recommendation.refresh()
         self.theme_button.set_icon('sun' if self.theme.name=='dark' else 'moon')
-        self.page.final_button.configure(text='生成方案' if self.recommendation.available() else '尚未接通')
-        self.page.final_button.state(['!disabled'] if self.recommendation.available() and self.has_generation_input() and not self.jobs else ['disabled'])
+        for view in self.page.creation_views.values():
+            view['final_button'].configure(text='生成方案' if self.recommendation.available() else '尚未接通')
+            view['final_button'].state(['!disabled'] if self.recommendation.available() and self.has_generation_input() and not self.jobs else ['disabled'])
+            view['advanced_button'].configure(text='收起高级' if self.advanced else '高级')
         sources = project['sources'] if project else []
         materials = project['materials'] if project else []
         if self.source_filter_id:
@@ -520,10 +522,13 @@ class CurveApplication:
             if text=='撤销':enabled = enabled and self.state_data['can_undo']
             if text=='重做':enabled = enabled and self.state_data['can_redo']
             button.state(['!disabled'] if enabled else ['disabled'])
-        for button in (self.page.derive_button,self.page.grid_entry,self.page.resize_button):
+        for button in (self.page.derive_button,):
             button.state(['!disabled'] if self.editable else ['disabled'])
         if not materials:self.page.derive_button.state(['disabled'])
-        self.page.minus_button.state(['!disabled'] if self.editable and project and project['grid_count']>1 else ['disabled'])
+        for view in self.page.creation_views.values():
+            for name in ('grid_entry','plus_button'):
+                view[name].state(['!disabled'] if self.editable else ['disabled'])
+            view['minus_button'].state(['!disabled'] if self.editable and project and project['grid_count']>1 else ['disabled'])
         for text,button in self.file_actions:
             enabled=not self.jobs if text!='保存快照' else self.state_data['access_mode']=='editable' and all(j['kind'] in ('COMPLETION','BRIDGE','CONNECTION','RECOMMENDATION','RECOMMENDATION_MODE') for j in self.jobs.values())
             button.state(['!disabled'] if enabled else ['disabled'])
@@ -594,8 +599,8 @@ class CurveApplication:
             page.empty_workspace.place_forget();page.timeline.empty_import.place_forget()
             if self.private_preview() or self.recommendation.visible or self.jobs:page.creation_row.pack_forget()
             elif self.advanced and not self.jobs:
-                page.creation_row.pack(in_=page.secondary_tools.content,fill='x',before=page.advanced_row if page.advanced_row.winfo_manager() else page.stage_anchor)
-            else:page.creation_row.pack(in_=page.right,fill='x',before=page.timeline)
+                page.creation_row.pack(fill='x',before=page.advanced_row if page.advanced_row.winfo_manager() else page.stage_anchor)
+            else:page.creation_row.pack(fill='x',before=page.timeline)
             preview=self.private_preview()
             info=preview.get('memory_info') if preview else self.state_data.get('memory_info')
             if (info or {}).get('state')=='BOUND' and page.timeline.memory_overlay():

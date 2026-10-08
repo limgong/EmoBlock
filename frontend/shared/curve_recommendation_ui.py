@@ -76,7 +76,6 @@ class RecommendationUI:
         self.confirm_button.pack(side='right')
         self.back_button=ttk.Button(row,text='返回编辑',style='Curve.Compact.TButton',command=self.exit_preview)
         self.back_button.pack(side='right',padx=3)
-        self.calculate_button=app.page.final_button
         self.auto_button=ttk.Button(app.page.advanced_row,text='自动补全并应用',style='Curve.TButton',command=lambda:app.safe(lambda:self.start(automatic=True)))
         self.cancel_button=app.cancel_button
         self.label=ttk.Label(self.panel,style='Curve.Muted.TLabel',takefocus=True)
@@ -87,6 +86,10 @@ class RecommendationUI:
         self.label.bind('<Button-1>', lambda _: app.show_detail(self.description()))
         self.label.bind('<Return>', lambda _: app.show_detail(self.description()))
         hint(self.retry_button, '只重新编配/准备所选模式的双侧资产，不重新作曲。', app.show_detail)
+
+    @property
+    def calculate_button(self):
+        return self.app.page.final_button
 
     def available(self):
         return self.app.state_data['capabilities'].get('recommendation', False)
