@@ -18,6 +18,8 @@ class SecondaryTools(ttk.Frame):
         self.compact = False
         self.saved_position = 0.
         self.pending_position = None
+        self.busy = False
+        self.before_busy_position = 0.
         self.canvas = tk.Canvas(self, width=1, height=1, highlightthickness=0,
                                 takefocus=True, yscrollincrement=1)
         self.scrollbar = TransientScrollbar(self, app, self.canvas.yview)
@@ -53,6 +55,16 @@ class SecondaryTools(ttk.Frame):
         if self.compact and not compact: self.saved_position = self.canvas.yview()[0]
         elif compact and not self.compact: self.pending_position = self.saved_position
         self.compact = compact
+        self.layout()
+
+    def set_busy(self, busy):
+        if busy == self.busy: return
+        if busy:
+            self.before_busy_position = self.canvas.yview()[0]
+            self.pending_position = 0.
+        else:
+            self.pending_position = self.before_busy_position
+        self.busy = busy
         self.layout()
 
     def contains(self, widget):

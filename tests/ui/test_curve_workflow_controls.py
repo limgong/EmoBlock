@@ -151,6 +151,60 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.assertTrue(self.rec.final_button.winfo_ismapped());self.assertTrue(self.rec.confirm_button.winfo_ismapped())
         self.assertEqual(before,self.music_state());self.assertEqual(draft,self.app.combo_inputs)
 
+    def test_advanced_gap_generation_keeps_canvas_phase_and_cancel_reachable(self):
+        self.app.edit('resize',grid_count=8)
+        self.app.advanced=True;self.app.refresh();self.root.update()
+        self.app.completion.select_gap(self.app.completion.gaps[0]['id'])
+        self.app.refresh();self.root.update()
+        tools=self.app.page.secondary_tools
+        tools.canvas.yview_moveto(1);self.root.update()
+        previous_scroll=tools.canvas.yview()[0];gap=self.app.completion.selected_gap_id
+        before=self.music_state();gate=threading.Event()
+        self.addCleanup(gate.set)
+
+        def waiting(request, source_facts=None, should_cancel=None, on_progress=None):
+            # Controlled provider wait is a layout fixture, never real generation.
+            gate.wait(15)
+            return self.prepare(request,source_facts,should_cancel,on_progress)
+
+        with patch.object(p7.ui,'prepare_recommendations',side_effect=waiting):
+            self.start()
+            self.controller.rec.update(phase='BASE_COMPLETION',message='完整建议: RUNNING')
+            for theme in ('light','dark'):
+                if self.app.theme.name!=theme:self.app.toggle_theme()
+                for size in ('1020x700','1280x800','1440x900'):
+                    self.root.geometry(size)
+                    for collapse in (False,True):
+                        self.app.source_user_collapsed=collapse;self.app.layout_sources()
+                        self.app.refresh();self.root.update()
+                        self.assertTrue(self.app.jobs)
+                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        self.assertTrue(self.app.status_label.winfo_ismapped())
+                        self.assertIn('补全计算中',self.app.status_label.cget('text'))
+                        self.assertIn('秒',self.app.status_label.cget('text'))
+                        self.assertIn('RUNNING',self.rec.description())
+                        self.assertIn('BASE_COMPLETION',self.rec.description())
+                        self.assertGreaterEqual(self.rec.label.winfo_rooty(),tools.canvas.winfo_rooty())
+                        self.assertLessEqual(self.rec.label.winfo_rooty()+self.rec.label.winfo_height(),
+                                             tools.canvas.winfo_rooty()+tools.canvas.winfo_height())
+                        for button in (self.app.cancel_button,self.app.stop_button):
+                            self.assertTrue(button.winfo_ismapped())
+                            self.assertGreaterEqual(button.winfo_height(),44)
+                            self.assertGreaterEqual(button.winfo_rooty(),self.root.winfo_rooty())
+                            self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),
+                                                 self.root.winfo_rooty()+self.root.winfo_height())
+                        self.assertFalse(self.app.cancel_button.instate(['disabled']))
+                        self.assertEqual(before,self.music_state())
+                        self.assertEqual(gap,self.app.completion.selected_gap_id)
+            self.click(self.app.cancel_button)
+            self.assertTrue(self.rec.active_job()['cancel'].is_set())
+            gate.set();self.finish_jobs();self.root.update()
+        self.assertFalse(self.app.jobs);self.assertEqual(before,self.music_state())
+        self.assertAlmostEqual(previous_scroll,tools.canvas.yview()[0],places=2)
+        self.assertEqual(gap,self.app.completion.selected_gap_id)
+        self.assertEqual(self.controller.rec['status'],'CANCELLED')
+        self.assertTrue(self.app.stop_button.winfo_ismapped())
+
     def test_mapped_boundary_labels_avoid_dense_neighbors_and_scrolled_edges(self):
         self.ready();self.select()
         timeline=self.app.page.timeline;canvas=timeline.canvas
