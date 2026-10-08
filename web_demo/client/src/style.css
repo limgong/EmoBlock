@@ -5,3 +5,5 @@
 @media(max-width:950px){.sources{display:none}.workspace{grid-template-columns:196px minmax(0,1fr)}.studio>.sectionhead{flex-wrap:wrap}.save-state{display:none}}
 @media(max-width:650px){header{padding:0 14px}.brand{font-size:21px}.workspace{display:flex;flex-direction:column;height:auto}.library{height:260px;flex-shrink:0;border-right:0}.cards{display:flex;gap:12px;flex:1;overflow:auto}.material{min-width:175px;margin:0}.derive{display:none}.studio{overflow:visible}.canvas-tools{gap:8px}.memory-label{font-size:10px}.selection{flex-wrap:wrap}.generation .spacer{display:none}.player{margin-top:8px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.source-note a{color:var(--accent);overflow-wrap:anywhere}.source-note summary{cursor:pointer}

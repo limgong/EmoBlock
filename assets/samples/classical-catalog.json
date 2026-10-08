@@ -1,0 +1,97 @@
+[
+  {
+    "id": "joy",
+    "label": "欢乐颂",
+    "file": "ode-to-joy-theme.mid",
+    "composer": "Ludwig van Beethoven",
+    "source": "EmoBlocks builtin: assets/samples/ode-to-joy-theme.mid",
+    "credit": "EmoBlocks built-in theme",
+    "license": "Original composition in public domain; builtin note sequence",
+    "license_url": "",
+    "adaptation": "单旋律主题节选；统一力度与BPM，音符按LMMS时间网格对齐。",
+    "source_meter": [
+      4,
+      4
+    ],
+    "bpm": 110,
+    "beats": 32,
+    "notes": 30,
+    "sha256": "bb9501a1ee6bd3c5f3e058cf8151fdb96cd114dc599cbf79e8186eedc786e5a7"
+  },
+  {
+    "id": "canon-simple",
+    "label": "卡农 · 简易主题（8小节）",
+    "file": "canon-d-simple.mid",
+    "composer": "Johann Pachelbel",
+    "source": "https://www.mutopiaproject.org/ftp/PachelbelJ/CanonInD/",
+    "credit": "Jim Paterson (mfiles.co.uk); Mutopia-2009/09/07-1700; Anonymous typesetter",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0/",
+    "adaptation": "单旋律主题节选；统一力度与BPM，音符按LMMS时间网格对齐。",
+    "source_meter": [
+      4,
+      4
+    ],
+    "bpm": 72,
+    "beats": 32,
+    "notes": 16,
+    "sha256": "641e6341caa0dd7a8823341015ce8b818629521d0ed860c468283fb6619cde28"
+  },
+  {
+    "id": "canon-developed",
+    "label": "卡农 · 发展主题（16小节）",
+    "file": "canon-d-developed.mid",
+    "composer": "Johann Pachelbel",
+    "source": "https://www.mutopiaproject.org/ftp/PachelbelJ/CanonInD/",
+    "credit": "Jim Paterson (mfiles.co.uk); Mutopia-2009/09/07-1700; Anonymous typesetter",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0/",
+    "adaptation": "单旋律主题节选；统一力度与BPM，音符按LMMS时间网格对齐。",
+    "source_meter": [
+      4,
+      4
+    ],
+    "bpm": 72,
+    "beats": 64,
+    "notes": 57,
+    "sha256": "cd484afdd969997f3e5da9bbfe649b770088c3013f1e39583f6068ebbe5ef8fb"
+  },
+  {
+    "id": "minuet-g",
+    "label": "G大调小步舞曲 · 前16小节",
+    "file": "minuet-g-theme.mid",
+    "composer": "Christian Petzold (formerly attributed to J. S. Bach)",
+    "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=75",
+    "credit": "Allen Garvin; Mutopia-2017/01/19-75",
+    "license": "Public Domain",
+    "license_url": "",
+    "adaptation": "单旋律主题节选；统一力度与BPM，音符按LMMS时间网格对齐。使用4/4导入容器，保留原旋律与时值；标题小节数按原曲拍号计。",
+    "source_meter": [
+      3,
+      4
+    ],
+    "bpm": 100,
+    "beats": 48,
+    "notes": 65,
+    "sha256": "d09ef358d7b69539db583358918485d24f553f1fa5d7d6e20f8be5bf3ce555fe"
+  },
+  {
+    "id": "fur-elise",
+    "label": "致爱丽丝 · 开头主题",
+    "file": "fur-elise-theme.mid",
+    "composer": "Ludwig van Beethoven",
+    "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=931",
+    "credit": "Stelios Samelis; Mutopia-2015/08/18-931",
+    "license": "Public Domain",
+    "license_url": "",
+    "adaptation": "单旋律主题节选；统一力度与BPM，音符按LMMS时间网格对齐。使用4/4导入容器，保留原旋律与时值；标题小节数按原曲拍号计。",
+    "source_meter": [
+      3,
+      8
+    ],
+    "bpm": 72,
+    "beats": 12,
+    "notes": 35,
+    "sha256": "13970a3c8c57d705feaf98144e7c842fb2f17638d211dd305dffbd120453d156"
+  }
+]

@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
-from .core import ROOT, SAMPLES, model, workflow, controller, short_name
+from .core import ROOT, SAMPLES, SAMPLE_CATALOG, model, workflow, controller, short_name
 from runtime_config import find_lmms
 
 DATA = Path(os.environ.get('EMOBLOCKS_WEB_DATA', str(ROOT / 'data/web-demo'))).resolve()
@@ -254,7 +254,7 @@ def health():
 
 @app.get('/api/samples')
 def samples():
-    return [{'id':key,'label':v[0]} for key,v in SAMPLES.items()]
+    return [{key:item[key] for key in ('id','label','composer','source','credit','license','license_url','adaptation')} for item in SAMPLE_CATALOG]
 
 @app.post('/api/session')
 def create_session(data:NewSession, response:Response, request:Request):

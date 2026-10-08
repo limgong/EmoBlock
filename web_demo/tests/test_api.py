@@ -65,8 +65,12 @@ class API(unittest.TestCase):
         self.assertEqual(self.edit('place',{'material_id':self.p['materials'][0]['id'],'start_tick':0}).status_code,422)
         self.assertEqual(self.edit('delete_blank',{'blank_id':self.p['blanks'][0]['id']}).status_code,200)
 
-    def test_official_names_and_joy_only(self):
-        self.assertEqual(self.client.get('/api/samples').json(),[{'id':'joy','label':'欢乐颂'}])
+    def test_official_names_and_catalog(self):
+        samples=self.client.get('/api/samples').json()
+        self.assertEqual([s['id'] for s in samples],['joy','canon-simple','canon-developed','minuet-g','fur-elise'])
+        self.assertEqual(sum(s['label']=='欢乐颂' for s in samples),1)
+        self.assertEqual(samples[1]['license'],'CC BY 3.0')
+        self.assertIn('Jim Paterson',samples[1]['credit'])
         self.assertEqual(self.client.post('/api/session',json={'sample':'calm'}).status_code,422)
         visible=[m for m in self.p['materials'] if m['library_visible']]
         names=[m['display_name'] for m in visible]
@@ -80,5 +84,37 @@ class API(unittest.TestCase):
         self.assertEqual(self.p['materials'][-1]['display_name'],'A1′')
         self.assertEqual(self.edit('place',{'material_id':target,'start_tick':0}).status_code,200)
         self.assertEqual(self.p['placements'][0]['base_snapshot']['display_name'],'A1')
+
+    def test_classical_midi_imports(self):
+        import hashlib
+        import mido
+        from web_demo.api.core import ROOT, SAMPLE_CATALOG
+        for item in SAMPLE_CATALOG:
+            with self.subTest(sample=item['id']):
+                path=ROOT/'assets/samples'/item['file']
+                self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),item['sha256'])
+                response=self.client.post('/api/session',json={'sample':item['id']})
+                self.assertEqual(response.status_code,200,response.text)
+                project=response.json()
+                sid=self.client.cookies.get(service.COOKIE)
+                source=service.SESSIONS[sid].project['sources'][0]
+                self.assertEqual(len(source['notes']),item['notes'])
+                self.assertEqual(source['length_ticks'],item['beats']*480)
+                self.assertEqual(round(source['provenance']['original_bpm']),item['bpm'])
+                midi=mido.MidiFile(path);tick=0;starts={};expected=[]
+                for message in mido.merge_tracks(midi.tracks):
+                    tick+=message.time
+                    if message.type=='note_on' and message.velocity:
+                        starts[message.note]=tick
+                    elif message.type=='note_off' or (message.type=='note_on' and not message.velocity):
+                        start=starts.pop(message.note)
+                        expected.append((message.note,start*480//midi.ticks_per_beat,(tick-start)*480//midi.ticks_per_beat))
+                actual=[(n['pitch'],n['start_tick'],n['duration_tick']) for n in source['notes']]
+                self.assertEqual(sorted(actual),sorted(expected))
+                self.assertFalse(project['placements'])
+                originals=[m for m in project['materials'] if m['display_name'].startswith('A') and m['library_visible']]
+                self.assertEqual(len(originals),item['beats']//4)
+                self.assertEqual(originals[0]['notes'][0]['pitch'],source['notes'][0]['pitch'])
+                self.assertEqual(self.client.get('/api/project').json()['fingerprint'],project['fingerprint'])
 
 if __name__=='__main__':unittest.main()

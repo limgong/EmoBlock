@@ -63,6 +63,8 @@ The smoke test uses a running server and actual LMMS; never substitute mocked au
 
 ## Desktop naming alignment (2026-10-08)
 
-The browser Demo exposes only `joy` (欢乐颂) in `/api/samples` and uses it for new sessions. Previously saved private sessions remain intact; loading the new experience explicitly creates an Ode to Joy session.
+The browser Demo reads `assets/samples/classical-catalog.json` for its built-in MIDI list: `joy` (欢乐颂, latest eight-bar package version), `canon-simple`, `canon-developed`, `minuet-g`, and `fur-elise`. New sessions default to `joy`; the source selector loads another theme only when the user clicks “载入旋律 · 新体验”. Existing sessions remain intact. There is one Ode to Joy catalog entry, and its stable MIDI filename is replaced by the latest package bytes.
+
+The catalog records file hashes, note counts, original BPM, attribution and adaptation. Canon derives from Jim Paterson's single-violin arrangement, Mutopia-2009/09/07-1700, under CC BY 3.0; the selected source's credit, source link and license are available in the source panel. Minuet and Für Elise use the package's 4/4 import containers: original pitches and tick durations are preserved, without claiming a musical meter rearrangement. The workflow's existing fixed 120 BPM remains unchanged.
 
 Labels match desktop main commit 3383929: 旋律原料 / 音乐积木库 / 情绪搭建画板 / 智能加工; emotions are 平静／安定, 温暖／希望, 悲伤／失落, 悬疑／不安, 紧张／危机, 振奋／坚定. The API derives `display_name` from the existing pure `curve_material_names.short_name` helper. A/B/C, prime derivations and combinations therefore follow stored desktop identities, rather than parsing the terminal M index. Source labels, IDs, note snapshots and fingerprints are not rewritten. Original phrase aliases and phrase containers follow the desktop library visibility rules; independent new-melody blocks remain visible.

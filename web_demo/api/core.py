@@ -1,5 +1,6 @@
 """Backend-only entrypoint. Does not configure or import the desktop UI."""
 import sys
+import json
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 for part in ('backend/step1', 'backend/step2', 'backend/core'):
@@ -9,7 +10,8 @@ import curve_workflow as workflow
 import curve_recommendations as recommendations
 import curve_store
 from curve_material_names import short_name
-SAMPLES = {'joy': ('欢乐颂', 'ode-to-joy-theme.mid')}
+SAMPLE_CATALOG = json.loads((ROOT / 'assets/samples/classical-catalog.json').read_text(encoding='utf-8'))
+SAMPLES = {item['id']: (item['label'], item['file']) for item in SAMPLE_CATALOG}
 
 def controller(sample='joy'):
     value = workflow.Controller(model.new_project(16))
