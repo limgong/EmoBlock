@@ -22,7 +22,8 @@ class Tooltip:
             self.timer=self.widget.after(500,self.show)
 
     def show(self):
-        self.timer=None
+        if self.timer:
+            self.widget.after_cancel(self.timer);self.timer=None
         if not self.widget.winfo_exists() or not self.value:return
         self.popup=tk.Toplevel(self.widget);self.popup.withdraw();self.popup.overrideredirect(True)
         tk.Label(self.popup,text=self.value,bg=theme_color('#263746'),fg=theme_color('#edf2f7'),justify='left',

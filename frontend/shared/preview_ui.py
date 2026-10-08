@@ -154,7 +154,8 @@ class PreviewAudio:
         self.draw_history()
 
     def hide_history_scroll(self):
-        self.history_scroll_timer=None
+        if self.history_scroll_timer:
+            self.history_canvas.after_cancel(self.history_scroll_timer);self.history_scroll_timer=None
         if self.history_drag is not None:
             self.history_scroll_timer=self.history_canvas.after(900,self.hide_history_scroll);return
         self.history_scroll_visible=False;self.draw_history()
