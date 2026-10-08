@@ -250,8 +250,27 @@ class CurveP8MappedTests(MappedUIFixture):
         before=self.invariant()
         self.assertLess(self.app.transport_label.winfo_height(),80)
         self.assertNotIn(name,self.app.transport_label.cget('text'))
+        import time
+        persistent=self.app.detail_text.get()
         self.app.transport_label.focus_force();self.root.update()
-        self.app.transport_label.event_generate('<Return>');self.root.update()
+        tip=self.app.transport_label.curve_tooltip
+        observed=[]
+        observer=self.root.after(500,lambda:observed.append(True))
+        deadline=time.monotonic()+2
+        try:
+            while not observed and time.monotonic()<deadline:self.root.update()
+            self.assertTrue(observed)
+            self.assertIsNotNone(tip.window)
+            self.assertIn(name,tip.window.winfo_children()[0].cget('text'))
+            self.assertEqual(self.app.detail_text.get(),persistent)
+        finally:
+            if not observed:self.root.after_cancel(observer)
+            tip.hide()
+        label=self.app.transport_label
+        x,y=label.winfo_width()//2,label.winfo_height()//2
+        rx,ry=label.winfo_rootx()+x,label.winfo_rooty()+y
+        self.assertIs(self.root.winfo_containing(rx,ry),label)
+        label.event_generate('<Button-1>',x=x,y=y,rootx=rx,rooty=ry);self.root.update()
         self.assertIn(name,self.app.detail_text.get())
         self.assertEqual(self.invariant(),before)
 
