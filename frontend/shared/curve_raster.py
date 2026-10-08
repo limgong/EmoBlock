@@ -39,6 +39,17 @@ def blurred_shadow():
 SHADOW=blurred_shadow()
 
 
+def transport_surface(root,palette,state):
+    size=pixels(root,44)
+    fill=palette['selected'] if state in ('active','pressed') else palette['inset']
+    line=palette['accent'] if state=='focus' else palette['line']
+    def color(x,y):
+        distance=math.hypot((x+.5)*44/size-22,(y+.5)*44/size-22)-21
+        if distance<0:return blend(line,fill,min(1,-distance))
+        return blend(palette['panel'],line,max(0,1-distance))
+    return bitmap(root,size,color)
+
+
 def surface_image(root,palette,role,state):
     background=palette['bg'] if role=='Header' else palette['panel']
     normal=palette['accent'] if role=='Primary' and palette['bg']!='#1c1c1e' else palette['inset']

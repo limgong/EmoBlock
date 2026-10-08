@@ -60,16 +60,44 @@ class MaterialCards(ttk.Frame):
         self.scrolled(*self.canvas.yview())
 
     def visible_materials(self):
-        ids = {m['id'] for m in self.materials}
+        parents={m['id']:m for m in self.materials if m['kind']=='phrase'}
+        originals={(m['provenance'].get('source_id'),m['provenance'].get('source_start_tick'),m['length_ticks'])
+                   for m in self.materials if m['kind']=='block' and not m['phrase_id'] and not m['generation']}
         for m in self.materials:
-            if m['phrase_id'] in ids:
-                continue
-            yield m,False
-            if m['id'] in self.expanded:
-                children = sorted((v for v in self.materials if v['phrase_id']==m['id']),
-                                  key=lambda v:v['provenance']['relative_start_tick'])
-                for child in children:
-                    yield child,True
+            if m['kind']=='phrase':continue
+            parent=parents.get(m['phrase_id'])
+            if parent and not parent['generation']:
+                key=(m['provenance'].get('source_id'),m['provenance'].get('source_start_tick'),m['length_ticks'])
+                if key in originals:continue
+            yield m,bool(parent and parent['generation'])
+
+    def locate(self, ident):
+        visible=list(self.visible_materials())
+        index=next((i for i,(m,_) in enumerate(visible) if m['id']==ident),None)
+        if index is not None:
+            total=max(1,len(visible)*(self.CARD_HEIGHT+self.gap))
+            self.canvas.yview_moveto(index*(self.CARD_HEIGHT+self.gap)/total)
+            self.render()
+
+    def context_menu(self, event, material):
+        from curve_ui import METHODS
+        keyboard=getattr(event,'keysym','')=='F10'
+        x=event.widget.winfo_rootx()+12 if keyboard else event.x_root
+        y=event.widget.winfo_rooty()+event.widget.winfo_height() if keyboard else event.y_root
+        self.select(material)
+        previous=getattr(self,'context',None)
+        if previous and previous.winfo_exists():previous.destroy()
+        menu=tk.Menu(self.app.root,tearoff=False)
+        generation=tk.Menu(menu,tearoff=False)
+        for method,label in METHODS:
+            generation.add_command(label=label,state='normal' if self.app.editable else 'disabled',
+                command=lambda ident=material['id'],method=method:self.app.derive_selected(ident,method))
+        menu.add_cascade(label='生成新旋律',menu=generation)
+        menu.add_command(label='试听',command=lambda:self.app.safe(lambda:self.app.audition_target('material',material['id'])))
+        self.context=menu
+        menu.tk_popup(x,y)
+        menu.grab_release()
+        return 'break'
 
     def render(self, materials=None):
         if materials is not None:
@@ -107,7 +135,8 @@ class MaterialCards(ttk.Frame):
             ident = material['id']
             selected = ident==self.app.selected_material_id
             expandable = material['kind']=='phrase' and any(v['phrase_id']==ident for v in self.materials)
-            version = (material,child,self.app.theme.name,selected,expandable,ident in self.expanded)
+            parent=next((v for v in self.materials if v['id']==material['phrase_id']),None)
+            version = (material,child,self.app.theme.name,selected,expandable,ident in self.expanded,parent)
             left = 4
             old_version = self.row_versions.get(ident)
             dragging = drag and ident==drag['material']['id'] and ident in self.rows
@@ -132,8 +161,8 @@ class MaterialCards(ttk.Frame):
                         p['accent'] if selected else p['line'],tags='surface')
                 canvas.tag_lower('surface')
             card.bind('<Configure>',background)
-            prefix = '子块 · ' if child else ''
-            label = stable_number(material)+' · '+material['label']
+            prefix = ''
+            label = stable_number(material)
             title = tk.Canvas(content,height=pixels(self.app.root,28),width=1,bg=surface,highlightthickness=0,takefocus=True,cursor='hand2')
             content.columnconfigure(0,weight=1)
             title.grid(row=0,column=0,sticky='ew',padx=(4,2))
@@ -146,10 +175,12 @@ class MaterialCards(ttk.Frame):
                 widget.create_text(1,widget.winfo_height()/2,anchor='w',text=value+('…' if value!=text else ''),fill=DATA_INK,font=font(12,True),tags='card-title')
                 if widget.focus_get()==widget:widget.create_rectangle(0,0,max(1,widget.winfo_width()-1),max(1,widget.winfo_height()-1),outline=self.app.theme.colors['accent'],width=1,tags='card-focus')
             title.bind('<Configure>',shorten);title.bind('<FocusIn>',shorten,add='+');title.bind('<FocusOut>',shorten,add='+')
-            kind=TYPE_NAMES[category]+(' · 子块' if child else '')
+            kind=TYPE_NAMES[category]
+            parent=next((v for v in self.materials if v['id']==material['phrase_id']),None)
+            group=('Bridge' if category=='bridge' else '新旋律')+' · '+stable_number(parent) if child and parent else ''
             info=tk.Canvas(content,height=pixels(self.app.root,24),width=1,bg=surface,highlightthickness=0)
             info.grid(row=1,column=0,sticky='ew',padx=4)
-            def type_label(event,widget=info,text=f'{kind} · {material["length_ticks"]/480:g} 拍'):
+            def type_label(event,widget=info,text=f'{material["length_ticks"]/480:g}拍'+(' · '+group if group else '')):
                 widget.delete('all');widget.create_text(1,widget.winfo_height()/2,anchor='w',text=text,fill=DATA_INK,font=font(10),tags='card-type')
             info.bind('<Configure>',type_label)
             controls=tk.Frame(content,bg=surface);controls.grid(row=0,column=1,rowspan=3,sticky='ns',padx=2)
@@ -172,18 +203,23 @@ class MaterialCards(ttk.Frame):
                 widget.bind('<B1-Motion>',self.app.material_motion)
                 widget.bind('<ButtonRelease-1>',self.app.material_release)
                 widget.bind('<Escape>',self.app.cancel_interaction)
+            import ui_platform
+            for widget in (card,title,info,thumb):
+                for event in ui_platform.CONTEXT_EVENTS:
+                    widget.bind(event,lambda e,m=material:self.context_menu(e,m))
+                widget.bind('<Shift-F10>',lambda e,m=material:self.context_menu(e,m))
             title.bind('<Return>',lambda _,m=material:self.select(m))
             hint(title,lambda m=material:self.describe(m),self.app.show_detail)
         if not visible:
             self.canvas.itemconfigure(self.window,height=max(100,self.canvas.winfo_height()))
             if self.empty_label is None:
-                self.empty_label = tk.Label(self.body,text='导入原始旋律后，分块、乐句和新旋律会出现在这里。',font=font())
+                self.empty_label = tk.Label(self.body,text='导入旋律，开始逐块创作。',font=font())
             self.empty_label.configure(wraplength=max(1,width-24),bg=p['panel'],fg=p['muted'])
             self.empty_label.place(x=12,y=30,width=max(1,width-24))
 
     def describe(self, material):
         source = material['provenance'].get('source_id','')
-        parent = material['phrase_id'] or ''
+        parent = next((m['label'] for m in self.materials if m['id']==material['phrase_id']),material['phrase_id'] or '')
         method = (material['generation'] or {}).get('method','原始')
         return f'{material["label"]} · {material["length_ticks"]/480:g} 拍 · 来源 {source or "见保存的来源快照"} · 乐句 {parent or "独立素材"} · 方法 {method}'
 

@@ -361,7 +361,8 @@ class CurveP3Tests(MappedUIFixture):
             self.assertIn('实际音频',self.app.status_text.get())
             self.assertIsNone(self.app.playing_target);self.assertFalse(self.app.player.calls)
             self.app.play_selected()
-            self.assertIn('预计正文',self.app.transport_label.cget('text'))
+            self.assertIn('预计正文',self.app.transport_description())
+            self.assertIn('实际音频',self.app.transport_description())
             player = copy.deepcopy((self.app.playing_target,self.app.player.calls))
             self.app.add_combo(self.app.resolve('material','block'),'phrase','right')
             self.app.prepare_combo();self.finish_jobs()
@@ -392,7 +393,7 @@ class CurveP3Tests(MappedUIFixture):
         self.assertIn('历史版本 2026 [H]',receipt);self.assertIn('MID',receipt);self.assertIn(str(destination),receipt)
         self.assertIn(('export',('H','mid',str(destination))),self.controller.calls)
         with patch('curve_ui.ui_platform.open_folder') as opened:
-            self.app.open_export_folder();opened.assert_called_once_with(destination.parent)
+            self.app.open_export_folder();opened.assert_called_once_with(destination.parent.resolve())
         with patch('curve_ui.filedialog.asksaveasfilename',return_value=''):
             self.app.export_history('wav')
         self.app.toggle_theme();self.app.refresh();self.root.update()

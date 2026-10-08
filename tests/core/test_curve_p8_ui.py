@@ -236,10 +236,10 @@ class CurveP8MappedTests(MappedUIFixture):
         self.controller.edit('resize',grid_count=64)
         self.app.refresh();self.root.update()
         self.assertEqual(self.app.page.cards.rows,rows)
-        self.controller._project['materials'][0]['label']='changed fixture DTO'
+        self.controller._project['materials'][1]['label']='changed fixture DTO'
         self.app.refresh();self.root.update()
         self.assertNotEqual(self.app.page.cards.rows,rows)
-        ident=self.controller._project['materials'][0]['id']
+        ident=self.controller._project['materials'][1]['id']
         self.assertIn('changed',self.app.page.cards.rows[ident].winfo_children()[0].winfo_children()[0].curve_tooltip.text())
 
     def test_long_transport_name_is_compact_but_focus_displays_full_object(self):

@@ -68,7 +68,7 @@ class CurveCanvas(ttk.Frame):
         hint(self.mode_buttons['points'],'点击空白添加控制点；拖动控制点调整时间与强度，Esc 取消。',app.show_detail)
         hint(self.mode_buttons['trace'],'局部手绘保留区外控制点；释放一次提交，Esc 或拖出取消。',app.show_detail)
         hint(self.mode_buttons['gaps'],'只选择后端查询的精确空缺；默认补全全部，点击不会计算或播放。',app.show_detail)
-        self.all_gaps_button = ttk.Button(tools,text='全部',width=0,padding=(-pixels(app.root,5),0),style='Curve.TButton',
+        self.all_gaps_button = ttk.Button(tools,text='全部空缺',width=0,padding=(-pixels(app.root,5),0),style='Curve.TButton',
             command=lambda:app.completion.select_gap(None))
         self.all_gaps_button.pack(side='left')
         hint(self.all_gaps_button,'回到全部空缺；不会计算或播放。',app.show_detail)
@@ -199,7 +199,7 @@ class CurveCanvas(ttk.Frame):
         cursor = 0
         for a,b in occupied+[(total,total)]:
             if a>cursor:
-                c.create_text((self.x(cursor)+self.x(a))/2,height-48,text='待补全',fill=p['muted'],font=font(8))
+                c.create_text((self.x(cursor)+self.x(a))/2,height-48,text=f'空缺·{(a-cursor)/480:g}拍',fill=p['muted'],font=font(8))
             cursor = b
         completion = getattr(self.app,'completion',None)
         if completion and not self.readonly:
@@ -207,7 +207,7 @@ class CurveCanvas(ttk.Frame):
                 a,b = self.x(gap['start_tick']),self.x(gap['end_tick'])
                 self.gap_boxes[gap['id']] = (a,45,b,height-37)
                 selected = completion.selected_gap_id==gap['id']
-                if self.mode=='gaps' or selected:
+                if self.mode in ('arrange','gaps') or selected:
                     c.create_rectangle(a,45,b,height-37,outline=p['accent'] if selected else p['line'],
                                        width=1,dash=() if selected else (3,3),tags='gap-range')
         coords = []

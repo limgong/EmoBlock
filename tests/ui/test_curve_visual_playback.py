@@ -313,7 +313,10 @@ class VisualPlaybackTests(unittest.TestCase):
             self.assertEqual(playing['context'],captured)
 
     def test_native_material_button_name_keyboard_disabled_and_no_card_activation(self):
-        self.root.update()
+        import curve_melody
+        phrase=self.controller._project['materials'][0]
+        self.controller._project['materials'].extend(curve_melody.split_phrase(phrase))
+        self.app.refresh();self.root.update()
         cards=self.app.page.cards;row=next(iter(cards.rows.values()))
         controls=[w for w in row.winfo_children()[0].winfo_children() if w.winfo_class()=='Frame'][0]
         button=controls.winfo_children()[0]

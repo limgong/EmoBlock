@@ -10,6 +10,7 @@ import curve_memory
 import curve_candidates
 import curve_bridges
 import curve_connections
+from curve_material_names import assign_material_names
 from curve_audition import render_audition
 from export_safe import atomic_export
 from curve_recommendations import RecommendationFacade, prepare_recommendations, prepare_candidate_mode
@@ -263,6 +264,8 @@ class Controller(RecommendationFacade):
             model.reject('生成或组合不能引入新的来源。')
         project = self.session.project
         before = copy.deepcopy(project)
+        named=assign_material_names(project,list(materials.values()),context['kind'],context['snapshot']['target'])
+        materials={m['id']:m for m in named}
         for name, additions in (('sources', sources), ('materials', materials)):
             existing = {item['id'] for item in project[name]}
             if existing & set(additions):

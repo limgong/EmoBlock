@@ -85,7 +85,7 @@ class PlaybackIntentTests(MappedUIFixture):
     def test_combo_cancel_is_inert_and_fresh_explicit_combo_audition_uses_shared_player(self):
         before=copy.deepcopy(self.controller.state()['project'])
         self.app.add_combo(self.app.resolve('material','block'),'phrase','left')
-        self.click(self.app.page.combo_panel.winfo_children()[-1].winfo_children()[-1])
+        self.app.cancel_combo()
         self.assertEqual(before,self.controller.state()['project']);self.assertFalse(self.app.combo_inputs)
         self.app.add_combo(self.app.resolve('material','block'),'phrase','right')
         self.app.audition_combo();self.finish_jobs()

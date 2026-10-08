@@ -1,5 +1,7 @@
 # EmoBlocks Windows 主线验证与开发交接
 
+本文件保留旧 Windows 验证候选的历史交接。新 UI 分支请先阅读 [本轮主线实现与验收](ui-mainline-implementation-20261008.md)；Windows 实机当前暂缓。
+
 日期：2026-10-08。对象：`codex/windows-validation-20261008` 分支。代码来源：`14df7e8c3fe3e803e1aa53deef210057bd4fb73c`。本分支用于 Windows 实机验证，包含已知问题，不代表 UI 或音乐听感验收通过。验收前记录本次实际下载的完整提交 SHA；PR 中的验证提交为版本依据。
 
 ## 主线范围与责任

@@ -710,12 +710,15 @@ class RecommendationMappedTests(MappedUIFixture):
                 self.assertFalse(self.rec.calculate_button.winfo_ismapped())  # Edit length/generate row is hidden in private review.
                 for button in (self.rec.auto_button,self.rec.cancel_button,
                                self.rec.confirm_button,self.rec.final_button,self.rec.comparison_button,self.rec.back_button):
+                    if button is not self.rec.cancel_button:
+                        self.app.page.secondary_tools.reveal(button);self.root.update()
                     self.assertTrue(button.winfo_ismapped())
                     self.assertGreaterEqual(button.winfo_height(),44)
                     self.assertGreaterEqual(button.winfo_rootx(),self.app.page.right.winfo_rootx())
                     self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.app.page.right.winfo_rootx()+self.app.page.right.winfo_width())
                     if button is self.rec.cancel_button:
-                        self.assertEqual(button.master,self.app.play_button.master)
+                        self.assertIs(button.master,self.app.transport_secondary)
+                        self.assertIs(button.master.master,self.app.page.footer)
                     else:self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),self.app.play_button.winfo_rooty())
 
     def test_one_tick_tail_and_neighbor_preview_no_music_quantization(self):

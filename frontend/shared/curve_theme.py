@@ -55,6 +55,14 @@ def install_surfaces(root, style, palette, name):
         style.element_create('CurveSurfaceSmall'+resource,'image',small[0],('disabled',small[4]),('pressed',small[2]),('focus',small[3]),('selected',small[5]),('active',small[1]),border=pixels(root,1),sticky='nsew')
         images.extend(small)
         cache[resource]=images;root.curve_surface_images=cache
+    from curve_raster import transport_surface
+    transport_key='Transport'+resource
+    if transport_key not in cache:
+        images=[transport_surface(root,palette,state) for state in ('normal','active','pressed','focus','disabled')]
+        style.element_create(transport_key,'image',images[0],('disabled',images[4]),('pressed',images[2]),('focus',images[3]),('active',images[1]),width=pixels(root,44),height=pixels(root,44),sticky='nsew')
+        cache[transport_key]=images
+    style.layout('Curve.Transport.TButton',[(transport_key,dict(sticky='nsew',children=[('Button.label',dict(sticky='nsew'))]))])
+    style.configure('Curve.Transport.TButton',borderwidth=0,relief='flat',padding=0)
     for suffix,role in (('TButton','Button'),('Primary.TButton','Primary'),('Header.TButton','Header'),
                         ('Compact.TButton','Button'),('Small.TButton','Small'),('TMenubutton','Button')):
         label='Menubutton.label' if suffix=='TMenubutton' else 'Button.label'

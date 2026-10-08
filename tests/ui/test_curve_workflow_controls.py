@@ -35,6 +35,23 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         self.mode_outcome=dict(candidate_id='candidate-A',mode='arranged',final_score={},comparison_score={},
             assets={k:self.controller.asset('candidate-A',k,'arranged') for k in ('comparison','final')},error=None)
 
+    def test_regular_candidate_summary_and_actions_are_reachable_without_scrolling(self):
+        self.ready();self.select()
+        self.app.advanced=False;self.app.details_expanded=False
+        self.app.source_user_collapsed=True
+        self.root.geometry('1020x700')
+        before=self.music_state()
+        for theme in ('light','dark'):
+            self.app.theme.set(theme);self.app.refresh();self.root.update()
+            self.assertIn('方案1',self.app.status_label.cget('text'))
+            self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+            for widget in (self.rec.selector,self.rec.final_button,self.rec.comparison_button,self.rec.confirm_button,self.rec.back_button):
+                x=widget.winfo_rootx()+widget.winfo_width()//2
+                y=widget.winfo_rooty()+widget.winfo_height()//2
+                self.assertTrue(widget.winfo_ismapped())
+                self.assertIs(self.root.winfo_containing(x,y),widget)
+            self.assertEqual(before,self.music_state())
+
     def test_cold_mode_audition_binds_side_and_plays_only_after_ack(self):
         self.ready();self.select();self.mode_fixture();before=self.controller.state()['project']
         self.click(self.rec.comparison_button)

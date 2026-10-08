@@ -112,17 +112,18 @@ class Waveform(tk.Canvas):
             self.draw()
 
     def draw(self,event=None):
-        p=self.app.theme.colors;self.configure(bg=p['inset']);self.delete('all')
+        p=self.app.theme.colors;self.configure(bg=p['panel']);self.delete('all')
         w,h=self.winfo_width(),self.winfo_height()
         if not self.values:
             text=self.error or ('读取实际 WAV…' if self.pending else '尚未播放 · 无音频波形')
             self.create_text(8,h/2,anchor='w',text=text,fill=p['muted'],font=font(10),tags='wave-empty');return
-        count=max(1,w-12)
+        count=max(1,(w-12)//3)
+        progress=min(1,self.app.seek_value.get()/self.app.play_duration) if self.app.play_duration else 0
         for x in range(count):
             a=x*len(self.values)//count;b=max(a+1,(x+1)*len(self.values)//count)
             level=max(self.values[a:b],default=0)
             amplitude=min(h/2-4,level*(h/2-4))
-            self.create_line(x+6,h/2-amplitude,x+6,h/2+amplitude,fill=p['muted'],width=1,tags='pcm-wave')
+            self.create_line(x*3+6,h/2-amplitude,x*3+6,h/2+amplitude,fill=p['accent'] if x/count<=progress else p['muted'],width=2,tags='pcm-wave')
         if self.app.play_duration:
             x=6+(w-12)*min(1,self.app.seek_value.get()/self.app.play_duration)
             self.create_line(x,3,x,h-3,fill=p['accent'],width=2,tags='wave-position')
@@ -145,6 +146,11 @@ class Waveform(tk.Canvas):
         return 'break'
 
 
+def clock(seconds):
+    seconds=max(0,int(seconds))
+    return f'{seconds//60:02d}:{seconds%60:02d}'
+
+
 def build_transport(app,footer):
     top=app.footer_top=ttk.Frame(footer,style='Curve.Panel.TFrame');top.pack(fill='x')
     top.columnconfigure(0,weight=1)
@@ -152,31 +158,38 @@ def build_transport(app,footer):
     app.transport_label.grid(row=0,column=0,sticky='ew')
     hint(app.transport_label,app.transport_description,app.show_detail)
     app.transport_label.bind('<Button-1>',lambda _:app.show_detail(app.transport_description()))
+    app.transport_secondary=ttk.Frame(footer,style='Curve.Panel.TFrame')
     app.player_version=tk.StringVar()
-    app.version_selector=ttk.Combobox(top,textvariable=app.player_version,state='readonly',width=15,style='Curve.TCombobox',takefocus=True)
-    app.version_selector.grid(row=0,column=1,sticky='e',ipady=pixels(app.root,7))
+    app.version_selector=ttk.Combobox(app.transport_secondary,textvariable=app.player_version,state='readonly',width=15,style='Curve.TCombobox',takefocus=True)
+    # Version selection lives with the other secondary controls, below.
     app.version_selector.bind('<<ComboboxSelected>>',lambda _:select_version(app))
     hint(app.version_selector,'选择导出版本；不改变当前播放对象。完整名称见详情。',app.show_detail)
     app.version_ids=[]
     row=ttk.Frame(footer,style='Curve.Panel.TFrame');row.pack(fill='x')
+    app.play_button=IconButton(row,app,'play','播放或暂停',lambda:app.safe(app.transport_action),style='Curve.Transport.TButton')
+    app.prepare_button=app.pause_button=app.play_button
+    app.play_button.pack(side='left',padx=(0,5))
+    app.stop_button=IconButton(row,app,'stop','停止',app.stop,style='Curve.Transport.TButton')
+    app.stop_button.pack(side='left',padx=(0,8))
+    app.clock_label=ttk.Label(row,text='00:00 / 00:00',style='Curve.Muted.TLabel')
+    app.clock_label.pack(side='right',padx=(8,0))
     app.waveform=Waveform(row,app);app.waveform.pack(side='left',fill='x',expand=True)
+    row=app.transport_secondary;row.pack(fill='x',pady=(2,0))
+    app.version_selector.pack(side='left',ipady=pixels(app.root,7),padx=(0,4))
+    app.version_selector.configure(width=8)
     app.navigation=tk.StringVar(value='积木导航不可用')
-    app.block_selector=ttk.Combobox(row,textvariable=app.navigation,width=12,state='disabled',style='Curve.TCombobox',takefocus=True)
-    app.block_selector.pack(side='right',ipady=pixels(app.root,7))
-    app.block_selector.bind('<<ComboboxSelected>>',lambda _:navigate(app,app.block_selector.current()))
-    hint(app.block_selector,lambda:getattr(app,'navigation_reason','请明确播放有可信映射的对象。'),app.show_detail)
-    row=ttk.Frame(footer,style='Curve.Panel.TFrame');row.pack(fill='x',pady=(2,0))
     app.previous_button=IconButton(row,app,'previous','上一积木',lambda:app.safe(lambda:adjacent(app,-1)))
     app.previous_button.pack(side='left')
-    app.play_button=IconButton(row,app,'play','试听所选对象',lambda:app.safe(app.audition_selected),style='Curve.Primary.TButton')
-    app.prepare_button=app.play_button;app.play_button.pack(side='left',padx=1)
-    app.pause_button=IconButton(row,app,'pause','暂停或继续',lambda:app.safe(app.toggle_pause));app.pause_button.pack(side='left',padx=1)
-    app.stop_button=IconButton(row,app,'stop','停止',app.stop);app.stop_button.pack(side='left',padx=1)
-    app.next_button=IconButton(row,app,'next','下一积木',lambda:app.safe(lambda:adjacent(app,1)));app.next_button.pack(side='left',padx=1)
+    app.next_button=IconButton(row,app,'next','下一积木',lambda:app.safe(lambda:adjacent(app,1)))
+    app.next_button.pack(side='left',padx=(0,3))
+    app.block_selector=ttk.Combobox(row,textvariable=app.navigation,width=8,state='disabled',style='Curve.TCombobox',takefocus=True)
+    app.block_selector.pack(side='left',ipady=pixels(app.root,7))
+    app.block_selector.bind('<<ComboboxSelected>>',lambda _:navigate(app,app.block_selector.current()))
+    hint(app.block_selector,lambda:getattr(app,'navigation_reason','请明确播放有可信映射的对象。'),app.show_detail)
     app.seek_value=tk.DoubleVar(value=0.)
-    # Retain callable Scale contract; the actual interactive surface is the PCM waveform.
     app.seek=ttk.Scale(row,variable=app.seek_value,from_=0,to=1,style='Curve.Horizontal.TScale')
-    app.cancel_button=IconButton(row,app,'cancel','取消',app.cancel_jobs,label=True);app.cancel_button.pack(side='right')
+    app.cancel_button=IconButton(row,app,'cancel','取消',app.cancel_jobs,label=True)
+    app.cancel_button.pack(side='right')
     app.export_menu=tk.Menu(app.root,tearoff=False)
     app.page.export_buttons={}
     for fmt,text in (('wav','WAV'),('mid','MIDI'),('mmp','MMP')):

@@ -1,5 +1,5 @@
 """Presentation geometry and material identity; never changes musical data."""
-import re
+from curve_material_names import short_name
 
 TYPE_COLORS = dict(original='#d4e8ec', derived='#e4ddf2', phrase='#eee3c8',
                    combination='#d6e7de', bridge='#ead9de')
@@ -19,9 +19,7 @@ def material_type(material, materials=()):
 
 
 def stable_number(material):
-    # Only the terminal assignment made by the persisted import transaction.
-    match = re.search(r' · ([MS]\d+)$',material['label'])
-    return match.group(1) if match else '#'+material['id'][:8]
+    return short_name(material)
 
 
 def note_segments(box, notes, start_tick, length_ticks, stroke=2):

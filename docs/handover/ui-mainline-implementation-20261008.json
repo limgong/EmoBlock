@@ -1,0 +1,31 @@
+{
+  "status": "TECHNICAL_READY",
+  "baseline": "7e5bcfb6360575175a036689933be7d763f9ffa6",
+  "product_origin": "14df7e8c3fe3e803e1aa53deef210057bd4fb73c",
+  "branch": "codex/ui-mainline-20261008",
+  "full_tests": {
+    "result": "PASS",
+    "tests": 1058,
+    "seconds": 351.513,
+    "command": "python scripts/test.py"
+  },
+  "paired_frontends": "PASS",
+  "diff_check": "PASS",
+  "fingerprint_before": "6361df794cb26b482aa04497fb27dbdace9a2decc5cbedfbbd3d7e8f8e27d7a0",
+  "fingerprint_after": "6361df794cb26b482aa04497fb27dbdace9a2decc5cbedfbbd3d7e8f8e27d7a0",
+  "fingerprint_files": 185,
+  "fingerprint_scope": "backend, frontend, tests, scripts, run.py, emoblocks_bootstrap.py, launch_current_ui.command; docs and runtime artifacts excluded",
+  "mapped_tk": "PASS; physical input and visual taste not certified",
+  "canvas_minimum_logical_pixels": 320,
+  "historical_r8_f1": "CLOSED_BY_MAPPED_REGRESSION; manual visual pending",
+  "historical_r8_f2": "NOT_REPRODUCED; cause remains unconfirmed, original assertions retained with event facts",
+  "mac_screenshot": "NOT_CAPTURED: Computer Use timeout",
+  "physical_input": "NOT_TESTED",
+  "windows_physical": "DEFERRED_BY_USER",
+  "device_render_listening": "NOT_TESTED",
+  "isolated_features_integrated": false,
+  "herdr_dispatch": "NOT_SENT: HERDR_ENV unset in this chat; resume prompt provided",
+  "legacy_project_compatibility": "OUT_OF_SCOPE_BY_USER",
+  "remote_push": "NOT_PERFORMED_THIS_ROUND",
+  "evidence_run": "ui-mainline-20261008"
+}

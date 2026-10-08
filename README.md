@@ -91,3 +91,9 @@ docs/                            设计与迁移记录
 - [开发约定：每次前端改动必须同步两平台](AGENTS.md)
 
 原发布包、旧 `outputs/`、`work/`、用户生成音频及虚拟环境均保留本地，不纳入 Git。默认主题来源见 [素材说明](assets/samples/DEFAULT-MELODY.md)。项目许可证尚待所有者选择；第三方工具遵循各自许可证。
+
+## 当前主线 UI（2026-10-08）
+
+Herdr R8 基础上的新 UI 实现见 [主线 UI 交付](docs/handover/ui-mainline-implementation-20261008.md)。Mac 可使用根目录 `launch_current_ui.command` 复用已有开发环境并启动独立数据目录。来源图标切换、逐块素材、右键新旋律、简单组合确认、统一播放/暂停和完整补全候选共用三栏画布。
+
+Windows 实机验收稍后进行；隔离额外功能不在本轮主线中。后续开发不再要求旧版工程文件兼容，当前格式保存重开和撤销回归继续。

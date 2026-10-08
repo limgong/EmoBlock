@@ -68,9 +68,9 @@ class RecommendationUI:
         self.retry_button=ttk.Button(row,text='重试',style='Curve.Compact.TButton',command=lambda:app.safe(self.prepare_mode))
         self.retry_button.pack(side='right')
         row=self.audition_row=ttk.Frame(self.panel,style='Curve.Panel.TFrame');row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=2)
-        self.comparison_button=ttk.Button(row,text='试听基础',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('comparison')))
+        self.comparison_button=ttk.Button(row,text='对比原拼接',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('comparison')))
         self.comparison_button.pack(side='left')
-        self.final_button=ttk.Button(row,text='试听处理后',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('final')))
+        self.final_button=ttk.Button(row,text='试听方案',style='Curve.Compact.TButton',command=lambda:app.safe(lambda:self.play('final')))
         self.final_button.pack(side='left',padx=3)
         self.confirm_button=ttk.Button(row,text='采用方案',style='Curve.Compact.TButton',command=lambda:app.safe(self.confirm))
         self.confirm_button.pack(side='right')
@@ -111,13 +111,26 @@ class RecommendationUI:
         text = dict(IDLE='尚未计算完整建议', RUNNING='完整建议计算中', READY='完整建议已准备',
             FAILED='完整建议失败', CANCELLED='完整建议已取消', INTERRUPTED='已中断 · 请明确重试',
             STALE='建议已失效 · 请重新计算', APPLIED='已接受同一份试听谱')[self.state['status']]
-        if self.state['status']=='RUNNING':text = PHASES.get(self.state['phase'],text)
+        if self.state['status']=='RUNNING':
+            phase=self.state['phase']
+            step='补全' if phase=='BASE_COMPLETION' else '试听准备' if phase in ('ARRANGEMENT','VALIDATION','RENDERING','AUDITION_READY') else '连接'
+            text=step+' · '+PHASES.get(phase,text) if phase else '正在准备候选'
         job = self.active_job()
         if job:
             if job['kind']=='RECOMMENDATION_MODE':text = MODES[job['captured']['mode']]+'资产准备中'
             text += f' · {int(time.monotonic()-job["started"])}秒'
         if self.state['error']:text += ' · '+self.state['error']['message']
         if self.state['insufficient_reason']:text += ' · '+str(self.state['insufficient_reason'])
+        candidate=self.candidate()
+        if candidate and self.state['status'] in ('READY','APPLIED') and not self.state['error'] and not self.state['insufficient_reason']:
+            mode=self.mode_data(candidate)
+            if mode.get('error'):
+                text='试听准备失败 · '+mode['error']['message']
+            else:
+                from curve_candidate_summary import candidate_difference
+                index=next(i for i,c in enumerate(self.state['candidates']) if c['id']==candidate['id'])
+                text=f'方案{index+1} · '+candidate_difference(candidate,self.state['candidates'])
+
         return text
 
     def update_elapsed(self):
@@ -134,7 +147,7 @@ class RecommendationUI:
             return
         self.state = app.controller.recommendation_state()
         candidates = self.state['candidates']
-        values = [f'{i+1} · {c["title"]} · {SCOPE_LABELS.get(c["scope"],"阶段版本")}' for i,c in enumerate(candidates)]
+        values = [f'方案{i+1} · {SCOPE_LABELS.get(c["scope"],"阶段版本")}' for i,c in enumerate(candidates)]
         self.selector.configure(values=values)
         candidate = self.candidate()
         self.choice.set(values[next(i for i,c in enumerate(candidates) if c['id']==candidate['id'])] if candidate else '')
@@ -222,6 +235,9 @@ class RecommendationUI:
             return False
         cap = 'can_auto_complete' if automatic else 'can_calculate'
         if not self.state['capabilities'].get(cap,False):return False
+        # Capture before show() changes the ordinary tools into review controls.
+        if app.page.secondary_tools.next_busy_position is None:
+            app.page.secondary_tools.next_busy_position=app.page.secondary_tools.canvas.yview()[0]
         self.show()
         captured = app.controller.capture_recommendations(selected_gap_id=app.completion.selected_gap_id,
                                                          mode=self.mode_key())

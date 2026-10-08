@@ -53,7 +53,7 @@ class VisualInteractionTests(MappedUIFixture):
         self.controller=FakeController(fixture(200))
         self.app=curve_ui.CurveApplication(self.root,self.controller)
         self.root.geometry('1440x900');self.root.update()
-        cards=self.app.page.cards;row=cards.rows['phrase']
+        cards=self.app.page.cards;row=cards.rows['child0']
         self.assertEqual(row.winfo_height(),cards.CARD_HEIGHT)
         self.assertGreaterEqual(cards.CARD_HEIGHT,144)
         content=row.winfo_children()[0];controls=[w for w in content.winfo_children() if w.winfo_class()=='Frame'][0]
@@ -85,7 +85,7 @@ class VisualInteractionTests(MappedUIFixture):
     def test_repeated_hint_reuses_one_tip_and_latest_focus_detail_then_cleans_up(self):
         import tkinter as tk
         from curve_theme import hint
-        content=self.app.page.cards.rows['phrase'].winfo_children()[0]
+        content=self.app.page.cards.rows['child0'].winfo_children()[0]
         controls=next(w for w in content.winfo_children() if w.winfo_class()=='Frame')
         button=controls.winfo_children()[0]
         tip=button.curve_tooltip

@@ -205,7 +205,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
         self.assertFalse(self.app.page.empty_workspace.winfo_ismapped())
         self.assertFalse(self.app.page.timeline.empty_import.winfo_ismapped())
         self.assertTrue(self.app.page.timeline.tools.winfo_ismapped())
-        self.assertTrue(self.app.page.derive_button.winfo_ismapped())
+        self.assertFalse(self.app.page.derive_button.winfo_ismapped())
         self.assertFalse(self.app.page.derive_button.instate(['disabled']))
         self.assertTrue(self.app.has_generation_input())
         self.assertNotIn('导入旋律，开始创作',self.app.status_label.cget('text'))
@@ -232,7 +232,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
                     self.assertEqual(before,self.controller.state()['project'])
 
     def test_card_geometry_notes_and_real_focus_tooltip(self):
-        cards=self.app.page.cards;card=cards.rows['phrase']
+        cards=self.app.page.cards;card=cards.rows['child0']
         self.assertEqual(card.winfo_height(),96)
         content=card.winfo_children()[0]
         thumbnails=[w for w in content.winfo_children() if w.winfo_class()=='Canvas' and getattr(w,'material_thumbnail',False)]
@@ -241,7 +241,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
         tip=title.curve_tooltip
         title.focus_force();self.root.update();tip.show();self.root.update()
         self.assertTrue(tip.window.winfo_ismapped())
-        self.assertIn('完整乐句',tip.window.winfo_children()[0].cget('text'))
+        self.assertIn('四拍子块',tip.window.winfo_children()[0].cget('text'))
         tip.hide();self.root.update();self.assertIsNone(tip.window)
 
     def test_source_threshold_respects_explicit_choice_and_merged_action_is_single(self):

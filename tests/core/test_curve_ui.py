@@ -343,8 +343,9 @@ class CurveApplicationTests(MappedUIFixture):
             self.app.page.method.set(label)
             self.app.derive_selected();self.finish_jobs()
             self.assertIn('derived-'+method,{m['id'] for m in self.controller.state()['project']['materials']})
-            self.assertEqual(self.app.selected_material_id,'block')
+            self.assertEqual(self.app.selected_material_id,'derived-'+method)
             self.app.undo()
+            self.app.select_target('material','block')
             self.assertNotIn('derived-'+method,{m['id'] for m in self.controller.state()['project']['materials']})
         self.assertEqual(self.provider.methods,[m for m,_ in curve_ui.METHODS])
 

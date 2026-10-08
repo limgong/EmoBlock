@@ -62,6 +62,8 @@ class CurveCanvasTests(MappedUIFixture):
                     widget.insert('1.0', 'AB'); widget.mark_set('insert', '1.2')
                 else:
                     widget.insert(0, 'AB'); widget.icursor('end')
+                events=[]
+                widget.bind('<KeyPress>',lambda e:events.append((e.keysym,e.char,e.keycode,e.send_event)),add='+')
                 widget.focus_force(); self.root.update()
                 self.assertTrue(widget.winfo_viewable())
                 self.assertEqual(self.root.focus_get(), widget)
@@ -74,7 +76,7 @@ class CurveCanvasTests(MappedUIFixture):
                 widget.event_generate('<KeyRelease-BackSpace>', state=0)
                 self.root.update()
                 content = widget.get('1.0','end-1c') if isinstance(widget, tk.Text) else widget.get()
-                self.assertEqual(content, 'A')
+                self.assertEqual(content, 'A',f'widget={widget_type.__name__}; keys={events}; focus={self.root.focus_get()}')
                 self.assertEqual(self.controller.state(), before)
                 widget.destroy()
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 
 import ui_platform
 from audio_player import WavePlayer
@@ -95,6 +95,7 @@ class CurveApplication:
         self.ready_contexts = {}
         self.card_view_flags = None
         self.playing_target = None
+        self.playback_selection = None
         self.play_intent = PlayIntent()
         self.play_duration = 0.
         self.seek_active = False
@@ -184,6 +185,7 @@ class CurveApplication:
         if not self.has_generation_input():
             self.tell('请先导入旋律或添加有音符的素材。')
             return False
+        self.page.secondary_tools.next_busy_position=self.page.secondary_tools.canvas.yview()[0]
         self.show_curve_stage('完整建议')
         return self.recommendation.start()
 
@@ -440,7 +442,7 @@ class CurveApplication:
         self.recommendation.refresh()
         self.theme_button.set_icon('sun' if self.theme.name=='dark' else 'moon')
         for view in self.page.creation_views.values():
-            view['final_button'].configure(text='生成方案' if self.recommendation.available() else '尚未接通')
+            view['final_button'].configure(text=('生成候选' if self.completion.gaps else '生成成品') if self.recommendation.available() else '尚未接通')
             view['final_button'].state(['!disabled'] if self.recommendation.available() and self.has_generation_input() and not self.jobs else ['disabled'])
             view['advanced_button'].configure(text='收起高级' if self.advanced else '高级')
         sources = project['sources'] if project else []
@@ -547,13 +549,13 @@ class CurveApplication:
         page=self.page
         empty=(not self.has_workspace_content() and not self.private_preview() and not self.jobs
                and not self.history_expanded and self.state_data['access_mode']=='editable')
-        if self.state_data['project'] and self.state_data['project']['materials']:
-            page.derive_row.pack(fill='x',before=page.combo_panel if page.combo_panel.winfo_manager() else page.cards)
-        else:page.derive_row.pack_forget()
+        page.derive_row.pack_forget()
+        page.combo_panel.pack_forget()
         gap=self.selected_gap()
+        page.timeline.all_gaps_button.configure(text='全部范围' if gap else f'全部空缺·{len(self.completion.gaps)}处')
         if gap and not empty and not self.private_preview() and not self.jobs:
             page.gap_panel.pack(side='right')
-            page.gap_label.configure(text=f'空缺 {(gap["end_tick"]-gap["start_tick"])/480:g}拍')
+            page.gap_label.configure(text=f'当前空缺·{(gap["end_tick"]-gap["start_tick"])/480:g}拍')
         else:page.gap_panel.pack_forget()
         if self.advanced and not empty:
             first=next(w for w in page.secondary_tools.content.pack_slaves()
@@ -842,7 +844,13 @@ class CurveApplication:
 
     def apply_batch(self, batch, token, snapshot=None):
         self.invalidate_play_intent()
-        self.controller.apply_batch(batch,token)
+        result=self.controller.apply_batch(batch,token)
+        if snapshot and snapshot.get('target') and result.get('added_material_ids'):
+            ident=next((m['id'] for m in batch['materials'] if m['kind']!='phrase'),None)
+            if ident:
+                self.selected_material_id=ident;self.selected_target=('material',ident)
+                self.page.cards.render((self.controller.state()['project'] or {}).get('materials',[]))
+                self.page.cards.locate(ident)
         warnings = batch['warnings']
         self.tell('素材已加入 · 一次撤销可恢复。'+(' '+ '；'.join(w['message'] for w in warnings) if warnings else ''))
 
@@ -859,14 +867,15 @@ class CurveApplication:
             return
         self.safe(lambda:self.import_file(paths[0]))
 
-    def derive_selected(self):
-        if not self.editable or not self.selected_material_id:
+    def derive_selected(self, material_id=None, method=None):
+        if not self.editable or not (material_id or self.selected_material_id):
             self.tell('请先选择中栏素材。')
             return
-        ident = self.selected_material_id
-        method = next(k for k,v in METHODS if v==self.page.method.get())
+        ident = material_id or self.selected_material_id
+        method = method or next(k for k,v in METHODS if v==self.page.method.get())
+        if method not in dict(METHODS):raise ValueError('尚未接入该生成方法。')
         self.safe(lambda:self._start_job('DERIVE',dict(kind='material',id=ident),
-                  lambda snap:_provider().prepare_generation(snap['project'],ident,method),self.apply_batch))
+                  lambda snap:_provider().prepare_generation(snap['project'],ident,method,seed=31+snap['project']['label_counters'].get('materials',0)),self.apply_batch))
 
     def _discard_asset_path(self, path):
         for key,asset in list(self.ready_assets.items()):
@@ -1011,6 +1020,7 @@ class CurveApplication:
         self.playing_target = dict(target=target,label=label,asset=copy.deepcopy(asset),context=copy.deepcopy(context) or {},
             wav_digest=expected or digest,segments=copy.deepcopy((context or {}).get('segments',[])),
             bpm=(context or {}).get('bpm'),mapping_reason=(context or {}).get('mapping_reason') or (None if context else '无可信音符映射；仅显示实际音频与时间。'))
+        self.playback_selection=self.selected_target
         self.play_duration = duration
         self.seek.configure(to=duration)
         self.update_transport()
@@ -1045,6 +1055,19 @@ class CurveApplication:
             self.tell('组合草稿尚未就绪，请先准备试听。')
             return False
         return self.play_target(kind,ident)
+
+    def transport_action(self):
+        if self.player.status()[1] in ('playing','paused'):
+            self.toggle_pause()
+            return True
+        if self.playing_target and self.selected_target==self.playback_selection:
+            self.validate_playing()
+            self._play_checked(self.playing_target['asset']['wav_path'],self.playing_target['wav_digest'])
+            self.update_transport()
+            return True
+        if self.selected_target:return self.audition_selected()
+        self.tell('请选择试听对象。')
+        return False
 
     def toggle_pause(self):
         _,mode = self.player.status()
@@ -1096,32 +1119,29 @@ class CurveApplication:
         if not self.seek_active:
             self.seek_value.set(position)
         playing = self.playing_target['label'] if self.playing_target else '尚未播放'
-        selected = self.selected_target
-        label = '未选择试听对象'
-        if selected:
-            if selected[0]=='draft':label = '组合草稿'
-            else:
-                target = self.resolve(*selected)
-                label = target['label'] if target else '选择已失效'
+        context=(self.playing_target or {}).get('context',{})
+        if context.get('neutral') and context['kind'] in ('material','placement'):
+            from curve_material_names import short_name
+            playing=short_name(context['snapshot'])
         # Full names remain available inline on click/focus, without growing the footer.
         limit = max(12,min(36,(self.root.winfo_width()-320)//28))
         playing = playing[:limit]+('…' if len(playing)>limit else '')
-        label = label[:limit]+('…' if len(label)>limit else '')
         prefix = {'playing':'播放中','paused':'已暂停','stopped':'已结束','closed':'已停止'}.get(mode,mode)
         asset = self.playing_target['asset'] if self.playing_target else None
-        durations = f'\n预计正文 {asset["body_seconds"]:.1f} 秒 / 实际音频 {asset["audio_seconds"]:.1f} 秒' if asset else ''
         mode_label=('编配' if asset.get('mode')=='arranged' else '单旋律') if asset else ''
         side_label=('基础' if asset.get('kind')=='comparison' else '处理后' if asset.get('kind')=='final' else '') if asset else ''
         from tkinter import font as tkfont
         width=max(90,self.transport_label.winfo_width())
         measure=tkfont.Font(root=self.root,font=font()).measure
-        name=playing[:9];clock=f' · {position:.1f}/{self.play_duration:.1f}秒'
+        name=playing[:9]
         suffix=(f' · {mode_label} {side_label}' if asset else '')
-        while len(name)>1 and measure(prefix+' · '+name+clock+suffix)>width:name=name[:-1]
-        self.transport_label.configure(text=prefix+' · '+name+('…' if name!=playing else '')+clock+suffix+durations,wraplength=0)
+        while len(name)>1 and measure(prefix+' · '+name+suffix)>width:name=name[:-1]
+        self.transport_label.configure(text=prefix+' · '+name+('…' if name!=playing else '')+suffix,wraplength=0)
         self.cancel_button.state(['!disabled'] if self.jobs else ['disabled'])
-        self.pause_button.set_icon('play' if mode=='paused' else 'pause')
-        self.pause_button.state(['!disabled'] if mode in ('playing','paused') else ['disabled'])
+        self.play_button.set_icon('pause' if mode=='playing' else 'play')
+        self.play_button.state(['!disabled'] if mode in ('playing','paused') or self.selected_target or self.playing_target else ['disabled'])
+        from curve_player_ui import clock
+        self.clock_label.configure(text=clock(position)+' / '+clock(self.play_duration))
         from curve_player_ui import update_navigation
         update_navigation(self)
         self.page.timeline.draw_playing()
@@ -1221,7 +1241,7 @@ class CurveApplication:
             canvas.set_mode('arrange')
             self.edit('place',material_id=d['material']['id'],start_tick=snap_tick(raw))
         elif hit:
-            self.add_combo(d['material'],hit[0],hit[1])
+            self.propose_combo(d['material'],hit[0],hit[1])
         else:
             self.tell('拖放已取消 · 工程未改变。')
 
@@ -1240,6 +1260,18 @@ class CurveApplication:
         if event is not None:self.exit_private_preview()
         return 'break' if event else None
 
+    def propose_combo(self, source, target_id, side):
+        if not self.editable:return False
+        self.add_combo(source,target_id,side)
+        from curve_material_names import short_name
+        name='+'.join(short_name(m) for m in self.combo_inputs)
+        beats=sum(m['length_ticks'] for m in self.combo_inputs)/480
+        self.page.combo_name.set(name)
+        if messagebox.askokcancel('组合素材',f'合并为 {name}？\n{beats:g}拍',parent=self.root):
+            return self.confirm_combo()
+        self.cancel_combo()
+        return False
+
     def add_combo(self, source, target_id, side):
         self.invalidate_play_intent()
         target = self.resolve('material',target_id)
@@ -1253,8 +1285,9 @@ class CurveApplication:
                 self.combo_inputs.append(copy.deepcopy(target))
                 index = len(self.combo_inputs)-1
             self.combo_inputs.insert(index if side=='left' else index+1,copy.deepcopy(source))
-        self.page.combo_panel.pack(fill='x',before=self.page.cards,pady=6)
-        self.page.combo_text.configure(text='组合草稿 · '+str(len(self.combo_inputs))+' 个组件')
+        self.page.combo_panel.pack_forget()
+        from curve_material_names import short_name
+        self.page.combo_name.set('+'.join(short_name(m) for m in self.combo_inputs))
         self.show_detail('组合草稿：'+' → '.join(m['label'] for m in self.combo_inputs))
         self.selected_target = ('draft',snapshot_key('draft',self.combo_inputs))
         self.update_transport()
@@ -1376,9 +1409,7 @@ class CurveApplication:
                 self.export_receipt.insert('1.0',f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.export_receipt.configure(state='disabled')
                 self.export_summary.configure(text=f'{display_format} 已导出')
-                self.export_row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(1,0))
-                from curve_raster import pixels
-                self.page.footer.configure(height=pixels(self.root,162))
+                self.export_row.pack(fill='x',before=self.page.stage_anchor,pady=(1,0))
                 self.show_detail(f'已导出版本：{label} [{ident}]{version} · {display_format}\n{path}')
                 self.tell('导出成功 · '+display_format+' · 完整位置见详情。')
                 return path
@@ -1451,7 +1482,7 @@ class CurveApplication:
         collapsed = self.source_user_collapsed if self.source_user_collapsed is not None else self.root.winfo_width()<1180
         if collapsed:self.page.source_panel.grid_remove()
         else:self.page.source_panel.grid()
-        self.collapse_button.configure(text='展开来源' if collapsed else '收起来源')
+        self.collapse_button.state(['selected'] if not collapsed else ['!selected'])
 
     def resized(self, event):
         if event.widget!=self.root:
@@ -1461,6 +1492,7 @@ class CurveApplication:
         self.status_label.configure(wraplength=0)
         self.page.memory_label.configure(wraplength=0)
         self.page.draw_source()
+        self.root.after_idle(self.page.secondary_tools.layout)
 
     def toggle_theme(self):
         self.cancel_interaction()

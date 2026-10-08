@@ -41,6 +41,7 @@ def icon_image(root, name, ink, background):
         f=lambda x:22-x if name=='redo' else x
         line([(f(3),10),(f(8),5),(f(8),9),(f(13),9),(f(18),12),(f(18),18)])
         line([(f(3),10),(f(8),15)])
+    elif name=='sidebar':rect((3,3,19,19));line([(9,3),(9,19)])
     elif name=='combine':rect((2,5,9,17));rect((13,5,20,17));line([(9,11),(13,11)])
     elif name=='complete':line([(3,12),(8,17),(19,5)])
     elif name=='phrase':line([(3,17),(3,5),(19,5),(19,17)]);line([(7,10),(7,16),(15,10),(15,16)])

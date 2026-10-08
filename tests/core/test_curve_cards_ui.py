@@ -1,7 +1,7 @@
 """Phrase children, real cross-widget drag/drop, and inline combination commits."""
 import copy
 import tkinter as tk
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from test_curve_ui import MappedUIFixture, fixture
 
 
@@ -9,10 +9,10 @@ class CurveCardsTests(MappedUIFixture):
     def test_large_library_mounts_viewport_and_hits_first_last_real_coordinates(self):
         self.controller._project=fixture(extra=198)
         self.app.refresh();self.root.update();cards=self.app.page.cards
-        self.assertEqual(len(list(cards.visible_materials())),200)
+        self.assertEqual(len(list(cards.visible_materials())),201)
         self.assertLess(len(cards.rows),12)
         before=copy.deepcopy(self.controller.state())
-        for fraction,ident in ((0,'phrase'),(1,'extra197')):
+        for fraction,ident in ((0,'child0'),(1,'extra197')):
             cards.canvas.yview_moveto(fraction);self.root.update()
             row=cards.rows[ident]
             y=max(cards.canvas.winfo_rooty()+1,row.winfo_rooty()+10)
@@ -50,28 +50,32 @@ class CurveCardsTests(MappedUIFixture):
         self.app.refresh();self.root.update();cards=self.app.page.cards
         for use_title in (False,True):
             cards.canvas.yview_moveto(0);self.root.update()
-            card=cards.rows['phrase']
+            card=cards.rows['child0']
             widget=card.winfo_children()[0].winfo_children()[0] if use_title else card
             start=self.event(widget,18,18)
-            self.app.begin_material_drag(start,self.app.resolve('material','phrase'),card)
+            self.app.begin_material_drag(start,self.app.resolve('material','child0'),card)
             self.app.material_motion(self.event(widget,40,40))
             cards.canvas.yview_moveto(1);self.root.update()
-            self.assertIs(cards.rows['phrase'],card)
+            self.assertIs(cards.rows['child0'],card)
             self.assertTrue(widget.winfo_exists())
             self.assertEqual(self.root.grab_current(),widget)
             self.app.cancel_interaction();cards.render();self.root.update()
-            self.assertNotIn('phrase',cards.rows)
+            self.assertNotIn('child0',cards.rows)
             self.assertIsNone(self.root.grab_current())
 
-    def test_phrase_expands_equal_cards_and_child_remains_independent(self):
+    def test_only_leaf_cards_and_generated_phrase_children_remain_independent(self):
         cards=self.app.page.cards
         self.assertIsInstance(cards.canvas,tk.Canvas)
+        self.assertNotIn('phrase',cards.rows)
+        # child1 duplicates the independent standard block and is hidden.
         self.assertNotIn('child1',cards.rows)
-        cards.toggle('phrase');self.root.update()
+        self.assertIn('child0',cards.rows)
+        self.controller._project['materials'][0]['generation']={'method':'answer'}
+        self.app.refresh();self.root.update()
+        self.assertNotIn('phrase',cards.rows)
         self.assertIn('child1',cards.rows)
         self.assertEqual({row.winfo_height() for row in cards.rows.values()},{cards.CARD_HEIGHT})
-        child=self.app.resolve('material','child1')
-        cards.select(child)
+        child=self.app.resolve('material','child1');cards.select(child)
         self.assertEqual(self.app.selected_material_id,'child1')
         self.assertEqual(child['phrase_id'],'phrase')
         self.assertEqual(child['provenance']['relative_start_tick'],1920)
@@ -91,14 +95,14 @@ class CurveCardsTests(MappedUIFixture):
         canvas=self.app.page.timeline
         x=canvas.canvas.winfo_rootx()+canvas.x(960)+18
         y=canvas.canvas.winfo_rooty()+canvas.y(.25)
-        self.drag('phrase',x,y)
+        self.drag('child0',x,y)
         project=self.controller.state()['project']
         self.assertEqual(project['placements'][0]['start_tick'],960)
-        self.assertEqual(project['placements'][0]['length_ticks'],4080)
+        self.assertEqual(project['placements'][0]['length_ticks'],1920)
         before=copy.deepcopy(project)
-        card=cards.rows['phrase']
+        card=cards.rows['child0']
         start=self.event(card,18,18)
-        self.app.begin_material_drag(start,self.app.resolve('material','phrase'),card)
+        self.app.begin_material_drag(start,self.app.resolve('material','child0'),card)
         self.app.material_motion(self.event(card,100,100))
         self.app.cancel_interaction()
         self.app.material_release(self.event(card,150,100))
@@ -106,7 +110,8 @@ class CurveCardsTests(MappedUIFixture):
 
     def test_expanded_child_real_drag_retains_parent_and_note_origin(self):
         cards=self.app.page.cards
-        cards.toggle('phrase');self.root.update()
+        self.controller._project['materials'][0]['generation']={'method':'answer'}
+        self.app.refresh();self.root.update()
         row=cards.rows['child1']
         cards.canvas.yview_moveto(row.winfo_y()/cards.body.winfo_height());self.root.update()
         self.assertGreaterEqual(row.winfo_rooty(),cards.canvas.winfo_rooty()-2)
@@ -119,25 +124,24 @@ class CurveCardsTests(MappedUIFixture):
         self.assertEqual(placed['base_snapshot']['notes'][0]['origin']['source_note_id'],'long')
         self.assertEqual(placed['base_snapshot']['notes'][0]['slice']['offset_tick'],120)
 
-    def test_left_right_draft_cancel_confirm_and_one_undo(self):
-        cards=self.app.page.cards
+    def test_left_right_modal_cancel_confirm_and_one_undo(self):
+        cards=self.app.page.cards;before=self.controller.state()['project']
         target=cards.rows['block'];self.root.update()
-        before=self.controller.state()['project']
-        self.drag('phrase',target.winfo_rootx()+8,target.winfo_rooty()+30)
-        self.assertEqual([m['id'] for m in self.app.combo_inputs],['phrase','block'])
+        with patch('curve_ui.messagebox.askokcancel',return_value=False) as confirm:
+            self.drag('child0',target.winfo_rootx()+8,target.winfo_rooty()+30)
         self.assertEqual(before,self.controller.state()['project'])
-        self.app.cancel_combo();self.assertEqual(before,self.controller.state()['project'])
-        cards.canvas.yview_moveto(0);self.root.update()
-        target=cards.rows['block']
-        self.drag('phrase',target.winfo_rootx()+target.winfo_width()-8,target.winfo_rooty()+30)
-        self.assertEqual([m['id'] for m in self.app.combo_inputs],['block','phrase'])
-        self.app.prepare_combo();self.finish_jobs()
-        self.assertFalse(self.app.player.calls)
-        self.assertEqual(before,self.controller.state()['project'])
-        self.app.confirm_combo();self.finish_jobs()
-        after=self.controller.state()['project']
+        self.assertFalse(self.app.combo_inputs)
+        self.assertFalse(self.app.page.combo_panel.winfo_ismapped())
+        self.assertIn('8拍',confirm.call_args.args[1])
+        cards.canvas.yview_moveto(0);self.root.update();target=cards.rows['block']
+        with patch('curve_ui.messagebox.askokcancel',return_value=True):
+            self.drag('child0',target.winfo_rootx()+target.winfo_width()-8,target.winfo_rooty()+30)
+        self.finish_jobs();after=self.controller.state()['project']
         self.assertEqual(len(after['materials']),len(before['materials'])+1)
-        self.assertEqual(after['materials'][-1]['kind'],'combination')
+        combo=after['materials'][-1]
+        self.assertEqual(combo['kind'],'combination')
+        self.assertEqual([c['snapshot']['id'] for c in combo['children']],['block','child0'])
+        self.assertFalse(self.app.player.calls)
         self.app.undo();self.assertEqual(before,self.controller.state()['project'])
 
     def test_repeated_nested_draft_keeps_snapshots_and_cancelled_job_is_inert(self):
@@ -156,7 +160,7 @@ class CurveCardsTests(MappedUIFixture):
 
     def test_tk_generated_drag_events_and_edge_scroll(self):
         cards=self.app.page.cards
-        source=cards.rows['phrase']
+        source=cards.rows['child0']
         canvas=self.app.page.timeline
         source.event_generate('<ButtonPress-1>',x=18,y=18)
         x=int(canvas.canvas.winfo_rootx()+canvas.x(960)+18-source.winfo_rootx())
@@ -165,9 +169,9 @@ class CurveCardsTests(MappedUIFixture):
         source.event_generate('<ButtonRelease-1>',x=x,y=y)
         self.root.update()
         self.assertEqual(self.controller.state()['project']['placements'][0]['start_tick'],960)
-        source=cards.rows['phrase']
+        source=cards.rows['child0']
         start=self.event(source,18,18)
-        self.app.begin_material_drag(start,self.app.resolve('material','phrase'),source)
+        self.app.begin_material_drag(start,self.app.resolve('material','child0'),source)
         x=cards.canvas.winfo_rootx()+30
         y=cards.canvas.winfo_rooty()+cards.canvas.winfo_height()-5
         self.app.material_motion(self.event(source,x-source.winfo_rootx(),y-source.winfo_rooty()))

@@ -20,6 +20,8 @@ class SecondaryTools(ttk.Frame):
         self.pending_position = None
         self.busy = False
         self.before_busy_position = 0.
+        self.restore_timer = None
+        self.next_busy_position = None
         self.canvas = tk.Canvas(self, width=1, height=1, highlightthickness=0,
                                 takefocus=True, yscrollincrement=1)
         self.scrollbar = TransientScrollbar(self, app, self.canvas.yview)
@@ -42,7 +44,14 @@ class SecondaryTools(ttk.Frame):
         width = max(1, self.canvas.winfo_width())
         self.canvas.itemconfigure(self.window, width=width)
         requested = max(1, self.content.winfo_reqheight())
-        height = min(requested, pixels(self.app.root, 68)) if self.compact else requested
+        # Both ordinary details and candidate review have a bounded native viewport.
+        height = min(requested, pixels(self.app.root, 68 if self.compact else 96))
+        page=getattr(self.app,'page',None)
+        musical_canvas=getattr(getattr(page,'timeline',None),'canvas',None)
+        if musical_canvas is not None and musical_canvas.winfo_ismapped() and musical_canvas.winfo_height()>1:
+            # Bound context growth against actual settled musical viewport size.
+            budget=self.winfo_height()+musical_canvas.winfo_height()-pixels(self.app.root,320)
+            height=min(height,max(1,budget))
         self.configure(height=height)
         self.canvas.configure(height=height, bg=self.app.theme.colors['panel'],
                               scrollregion=(0, 0, width, requested), takefocus=requested>height)
@@ -60,12 +69,23 @@ class SecondaryTools(ttk.Frame):
     def set_busy(self, busy):
         if busy == self.busy: return
         if busy:
-            self.before_busy_position = self.canvas.yview()[0]
+            self.before_busy_position = self.canvas.yview()[0] if self.next_busy_position is None else self.next_busy_position
+            self.next_busy_position=None
             self.pending_position = 0.
         else:
             self.pending_position = self.before_busy_position
         self.busy = busy
         self.layout()
+        if self.restore_timer is not None:self.after_cancel(self.restore_timer)
+        self.restore_timer=None
+        if not busy:self.restore_timer=self.after_idle(self.restore_busy_scroll)
+
+    def restore_busy_scroll(self):
+        self.restore_timer=None
+        # Settle newly restored rows before applying the normalized bookmark.
+        self.content.update_idletasks()
+        self.layout()
+        self.canvas.yview_moveto(self.before_busy_position)
 
     def contains(self, widget):
         if not isinstance(widget, tk.Misc): return False
@@ -93,6 +113,7 @@ class SecondaryTools(ttk.Frame):
 
     def destroyed(self, event):
         if event.widget == self:
+            if self.restore_timer is not None:self.after_cancel(self.restore_timer)
             try: self.app.root.unbind('<FocusIn>', self.focus_binding)
             except tk.TclError: pass  # Root teardown can retire the binding first.
 
@@ -163,7 +184,8 @@ def build_page(page, parent, app, methods, emotions):
     page.middle = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=pixels(app.root,252))
     page.middle.grid(row=0, column=1, sticky='nsew', padx=(0,8));page.middle.pack_propagate(False)
     ttk.Label(page.middle,text='旋律素材',style='Curve.Title.TLabel').pack(anchor='w',pady=(2,6))
-    row=page.derive_row=ttk.Frame(page.middle,style='Curve.Panel.TFrame');row.pack(fill='x')
+    # Kept as an unmounted compatibility holder; creation is in block menus.
+    row=page.derive_row=ttk.Frame(page.middle,style='Curve.Panel.TFrame')
     page.method=tk.StringVar(value=methods[0][1])
     ttk.Combobox(row,textvariable=page.method,values=[v for _,v in methods],state='readonly',width=8,
                  style='Curve.TCombobox').pack(side='left',fill='x',expand=True)
@@ -181,7 +203,7 @@ def build_page(page, parent, app, methods, emotions):
     page.cards.pack(fill='both',expand=True,pady=(6,0))
     page.right=ttk.Frame(page,style='Curve.Panel.TFrame',padding=8);page.right.grid(row=0,column=2,sticky='nsew')
     # Packed bottom first: the player always retains its own space.
-    page.footer=ttk.Frame(page.right,style='Curve.Panel.TFrame',height=pixels(app.root,138))
+    page.footer=ttk.Frame(page.right,style='Curve.Panel.TFrame',height=pixels(app.root,116))
     page.footer.pack(side='bottom',fill='x',pady=(6,0));page.footer.pack_propagate(False)
     page.fixed_stage_area=ttk.Frame(page.right,style='Curve.Panel.TFrame')
     page.fixed_stage_area.pack(side='bottom',fill='x')
@@ -255,7 +277,8 @@ def build_chrome(app):
     hint(app.save_label,lambda:getattr(app,'saved_description',app.save_label.cget('text')),app.show_detail)
     app.theme_button=IconButton(header,app,'moon','深色',app.toggle_theme,tip=lambda:'切换为浅色模式' if app.theme.name=='dark' else '切换为深色模式',style='Curve.Header.TButton')
     app.theme_button.pack(side='right',padx=2)
-    app.collapse_button=button(header,'收起来源',app.toggle_sources);app.collapse_button.pack(side='right',padx=2)
+    app.collapse_button=IconButton(header,app,'sidebar','素材来源',app.toggle_sources,tip=lambda:'展开素材来源' if app.source_user_collapsed or not app.page.source_panel.winfo_manager() else '收起素材来源')
+    app.collapse_button.pack(side='left',before=app.brand_button,padx=(0,4))
     app.history_button=button(header,'历史',app.toggle_history);app.history_button.pack(side='right',padx=2)
 
 
@@ -275,7 +298,7 @@ def build_player(app):
     app.detail_button.place(relx=1.,y=0,anchor='ne')
     from curve_player_ui import build_transport
     build_transport(app,footer)
-    app.export_row=ttk.Frame(app.footer_top,style='Curve.Panel.TFrame')
+    app.export_row=ttk.Frame(app.page.stage_area,style='Curve.Panel.TFrame')
     app.export_receipt=tk.Text(app.export_row,height=1,width=1,wrap='none',font=font(),borderwidth=0,highlightthickness=0,state='disabled')
     app.export_summary=ttk.Label(app.export_row,style='Curve.Muted.TLabel')
     app.export_summary.pack(side='left',fill='x',expand=True)

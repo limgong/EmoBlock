@@ -47,7 +47,7 @@ class CurveThemeTests(MappedUIFixture):
             # Preparation is now part of one explicit audition; cancellation is
             # conditional on an active job. Check the persistent transport here.
             for button in (self.app.play_button,self.app.pause_button,self.app.stop_button,
-                           self.app.page.final_button,self.app.page.derive_button,self.app.page.resize_button):
+                           self.app.page.final_button,self.app.page.resize_button):
                 self.assertTrue(button.winfo_ismapped())
                 self.assertGreaterEqual(button.winfo_height(),40)
                 self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),self.root.winfo_rooty()+height)
