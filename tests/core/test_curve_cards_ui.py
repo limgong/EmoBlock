@@ -127,14 +127,14 @@ class CurveCardsTests(MappedUIFixture):
     def test_left_right_modal_cancel_confirm_and_one_undo(self):
         cards=self.app.page.cards;before=self.controller.state()['project']
         target=cards.rows['block'];self.root.update()
-        with patch('curve_ui.messagebox.askokcancel',return_value=False) as confirm:
+        with patch('curve_dialogs.confirm_combination',return_value=False) as confirm:
             self.drag('child0',target.winfo_rootx()+8,target.winfo_rooty()+30)
         self.assertEqual(before,self.controller.state()['project'])
         self.assertFalse(self.app.combo_inputs)
         self.assertFalse(self.app.page.combo_panel.winfo_ismapped())
-        self.assertIn('8拍',confirm.call_args.args[1])
+        self.assertEqual(confirm.call_args.args[2],8)
         cards.canvas.yview_moveto(0);self.root.update();target=cards.rows['block']
-        with patch('curve_ui.messagebox.askokcancel',return_value=True):
+        with patch('curve_dialogs.confirm_combination',return_value=True):
             self.drag('child0',target.winfo_rootx()+target.winfo_width()-8,target.winfo_rooty()+30)
         self.finish_jobs();after=self.controller.state()['project']
         self.assertEqual(len(after['materials']),len(before['materials'])+1)

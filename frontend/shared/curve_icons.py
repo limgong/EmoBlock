@@ -7,15 +7,26 @@ from curve_raster import bitmap, blend, pixels
 
 
 def icon_image(root, name, ink, background):
-    segments=[];circles=[]
+    segments=[];circles=[];solids=[]
     def line(points):segments.extend(zip(points,points[1:]))
     def rect(box):
         a,b,c,d=box;line([(a,b),(c,b),(c,d),(a,d),(a,b)])
     if name=='blocks':
         for box in ((5,2,13,10),(2,12,10,20),(13,12,20,19)):rect(box)
-    elif name in ('play','generate','recommend'):line([(7,4),(18,11),(7,18),(7,4)])
-    elif name=='pause':line([(7,4),(7,18)]);line([(15,4),(15,18)])
-    elif name in ('stop','cancel'):rect((5,5,17,17))
+    elif name=='play':solids.append([(6,3),(19,11),(6,19)])
+    elif name=='pause':
+        for a in (5,13):solids.append([(a,3),(a+4,3),(a+4,19),(a,19)])
+    elif name=='stop':solids.append([(5,5),(17,5),(17,17),(5,17)])
+    elif name=='cancel':line([(5,5),(17,17)]);line([(17,5),(5,17)])
+    elif name in ('generate','recommend'):
+        line([(4,18),(14,8)]);line([(4,15),(7,18)])
+        for a,b,r in ((16,4,3),(5,5,2),(18,14,2)):
+            line([(a-r,b),(a+r,b)]);line([(a,b-r),(a,b+r)])
+    elif name=='details':
+        circles.append((11,11,9));line([(11,10),(11,16)]);circles.append((11,6,1))
+    elif name=='advanced':
+        for y,x in ((5,8),(11,15),(17,6)):
+            line([(3,y),(x-2,y)]);line([(x+2,y),(19,y)]);circles.append((x,y,2))
     elif name in ('previous','next'):
         flip=lambda x:22-x if name=='next' else x
         line([(flip(16),5),(flip(7),11),(flip(16),17),(flip(16),5)])
@@ -54,6 +65,11 @@ def icon_image(root, name, ink, background):
             u=max(0,min(1,((x-a)*(c-a)+(y-b)*(d-b))/max(.001,(c-a)**2+(d-b)**2)))
             distance=min(distance,math.hypot(x-a-u*(c-a),y-b-u*(d-b)))
         for a,b,r in circles:distance=min(distance,abs(math.hypot(x-a,y-b)-r))
+        for polygon in solids:
+            inside=False
+            for (a,b),(c,d) in zip(polygon,polygon[1:]+polygon[:1]):
+                if (b>y)!=(d>y) and x<(c-a)*(y-b)/(d-b)+a:inside=not inside
+            if inside:return ink
         return blend(background,ink,max(0,min(1,1.7-distance)))
     return bitmap(root,size,color)
 

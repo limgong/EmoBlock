@@ -64,10 +64,10 @@ class CurveThemeTests(MappedUIFixture):
 
     def test_wheel_routes_once_and_text_shortcuts_keep_text_undo(self):
         canvas=self.app.page.timeline.canvas
-        before=canvas.xview()[0]
+        before=canvas.yview()[0]
         event=self.event(canvas,200,100)
         self.assertEqual(self.app.wheel(event),'break')
-        self.assertGreater(canvas.xview()[0],before)
+        self.assertGreater(canvas.yview()[0],before)
         entry=self.app.page.grid_entry
         event=self.event(entry,1,1)
         self.assertIsNone(self.app.edit_shortcut(event))

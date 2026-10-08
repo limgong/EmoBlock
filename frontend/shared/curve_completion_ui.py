@@ -111,6 +111,8 @@ class CompletionUI:
         if self.app.private_preview() or self.app.jobs: return
         if ident is not None and ident not in {g['id'] for g in self.gaps}: return
         self.selected_gap_id = ident
+        if ident is not None and self.app.drawer_mode!='advanced':
+            self.app.drawer_mode='plan';self.app.details_expanded=False;self.app.advanced=False
         self.app.invalidate_play_intent()
         if ident is not None:
             self.app.page.timeline.selected_id=None
@@ -220,7 +222,7 @@ class CompletionUI:
         self.app.connection.restore_view()
         self.app.connection.visible = False
         if self.bookmark is None:
-            self.bookmark = dict(selected=canvas.selected_id, scroll=canvas.canvas.xview()[0], mode=canvas.mode)
+            self.bookmark = dict(selected=canvas.selected_id, scroll=canvas.canvas.xview()[0],yscroll=canvas.canvas.yview()[0], mode=canvas.mode)
         self.preview_candidate = copy.deepcopy(self.candidates[index])
         canvas.selected_id = None
         self.app.refresh()
@@ -233,6 +235,7 @@ class CompletionUI:
             canvas.selected_id = self.bookmark['selected']
             canvas.mode = self.bookmark['mode']
             canvas.canvas.xview_moveto(self.bookmark['scroll'])
+            canvas.canvas.yview_moveto(self.bookmark.get('yscroll',0))
             self.bookmark = None
 
     def exit_preview(self):

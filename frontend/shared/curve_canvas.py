@@ -8,7 +8,7 @@ from tkinter import ttk
 import intensity_curve
 import ui_platform
 from curve_theme import rounded, font, hint, EMOTION_COLORS, EMOTION_NAMES, EMOTION_INK
-from curve_visuals import stable_number, draw_notes
+from curve_visuals import stable_number, draw_notes, brick
 from curve_scrollbar import TransientScrollbar
 from curve_raster import pixels
 
@@ -45,6 +45,7 @@ class CurveCanvas(ttk.Frame):
         self.selected_bridge_id = None
         self.selected_connection_id = None
         self.selected_id = None
+        self.scene_height=pixels(app.root,400)
         self.scale = .085*pixels(app.root,100)/100
         self.half_block=pixels(app.root,28)
         self.margin = pixels(app.root,36)
@@ -61,7 +62,7 @@ class CurveCanvas(ttk.Frame):
         tools = self.tools = ttk.Frame(self,style='Curve.Panel.TFrame')
         tools.pack(fill='x',pady=(0,4))
         self.mode_buttons = {}
-        for mode,text in (('arrange','编排'),('points','控制点'),('trace','手绘'),('gaps','选空缺')):
+        for mode,text in (('arrange','搭建'),('points','控制点'),('trace','手绘'),('gaps','选空缺')):
             button = ttk.Button(tools,text=text,width=0,padding=(-pixels(app.root,5),0),style='Curve.TButton',command=lambda m=mode:self.set_mode(m))
             if mode!='gaps':button.pack(side='left',padx=(0,2))
             self.mode_buttons[mode] = button
@@ -77,11 +78,15 @@ class CurveCanvas(ttk.Frame):
             values=('补全','Bridge','连接','完整建议'),state='readonly',width=7,style='Curve.TCombobox')
         self.stage_selector.bind('<<ComboboxSelected>>',lambda _:app.show_curve_stage(self.stage_choice.get()))
         hint(self.stage_selector,'分阶段折叠：补全、Bridge、连接和完整建议共用唯一画布；切换不会修改工程或播放对象。',app.show_detail)
-        self.canvas = tk.Canvas(self, height=380, highlightthickness=0, takefocus=True, xscrollincrement=1)
-        self.canvas.pack(fill='both', expand=True)
+        self.viewport=ttk.Frame(self,style='Curve.Panel.TFrame')
+        self.viewport.pack(fill='both',expand=True)
+        self.canvas = tk.Canvas(self.viewport, height=380, highlightthickness=0, takefocus=True, xscrollincrement=1,yscrollincrement=1)
+        self.vscrollbar=TransientScrollbar(self.viewport,app,self.canvas.yview)
+        self.vscrollbar.pack(side='right',fill='y');self.vscrollbar.attach(self.canvas)
+        self.canvas.pack(side='left',fill='both', expand=True)
         self.scrollbar = TransientScrollbar(self,app,self.canvas.xview,orient='horizontal')
         self.scrollbar.pack(fill='x');self.scrollbar.attach(self.canvas)
-        self.canvas.configure(xscrollcommand=self.scrolled)
+        self.canvas.configure(xscrollcommand=self.scrolled,yscrollcommand=self.vscrollbar.set)
         self.empty_import=ttk.Button(self.canvas,text='导入旋律，开始创作',style='Curve.Primary.TButton',command=lambda:app.safe(app.import_file))
         self.canvas.bind('<Motion>',self.hover)
         for event, handler in (('<Configure>', self.draw), ('<ButtonPress-1>', self.press),
@@ -145,20 +150,18 @@ class CurveCanvas(ttk.Frame):
                                          for p in self.points()], tick)
 
     def y(self, level):
-        return 36 + (1-level) * max(1,self.canvas.winfo_height()-80)
+        return 36 + (1-level) * max(1,self.scene_height-80)
 
     def root_point(self, x_root, y_root):
         tick = min(self.project['total_ticks'],max(0,math.floor(self.root_tick(x_root)+.5)))
         y = self.canvas.canvasy(y_root-self.canvas.winfo_rooty())
-        level = min(1.,max(0.,1-(y-36)/max(1,self.canvas.winfo_height()-80)))
+        level = min(1.,max(0.,1-(y-36)/max(1,self.scene_height-80)))
         return dict(tick=tick,level=level)
 
     def draw(self, event=None):
-        if event is not None and self.intensity_draft:
-            self.cancel()
         c = self.canvas
         p = self.app.theme.colors
-        view = c.xview()[0]
+        view = c.xview()[0];yview=c.yview()[0]
         c.configure(bg=p['panel'])
         c.delete('all')
         self.boxes = {}
@@ -178,7 +181,7 @@ class CurveCanvas(ttk.Frame):
             c.create_text(24,80,anchor='nw',text='旧工程只读 · 请选择已有成品试听或导出',fill=p['muted'],font=font())
             return
         total = self.project['total_ticks']
-        height = max(1, c.winfo_height())
+        height = self.scene_height
         width = max(c.winfo_width(), self.x(total)+self.margin)
         c.configure(scrollregion=(0,0,width,height))
         for level in (0., .25, .5, .75, 1.):
@@ -224,7 +227,10 @@ class CurveCanvas(ttk.Frame):
             center = self.y(self.level(placement['start_tick']+placement['length_ticks']/2))
             box = (a,center-self.half_block,b,center+self.half_block)
             self.boxes[placement['id']] = box
-            rounded(c,box,EMOTION_COLORS[placement['emotion']],p['accent'] if placement['id']==self.selected_id else p['line'])
+            if self.drag and self.drag['active'] and self.drag['id']==placement['id']:
+                c.create_rectangle(*box,outline=p['line'],dash=(4,3),tags='drag-origin')
+                continue
+            brick(c,box,EMOTION_COLORS[placement['emotion']],self.app.theme,placement['id']==self.selected_id,tags='placement-body')
             snapshot = placement['emotion_variant'] or placement['base_snapshot']
             notes = self.display_notes()
             if notes is None:
@@ -263,8 +269,9 @@ class CurveCanvas(ttk.Frame):
         if self.connection_preview is not None:text = '连接阶段只读 · 尚未最终块间处理'
         if self.recommendation_preview is not None:text = '完整建议只读 · 点击仅选择，明确播放/确认'
         elif self.accepted_music and self.accepted_music['derived_layers_status']=='STALE':text = '已接受派生层失效 · 固定Bridge保留'
-        c.create_text(self.margin,height-16,anchor='w',text=text+' · 移动不搬动强度线',fill=p['muted'],font=font(8))
-        c.xview_moveto(view)
+        if self.readonly or (self.accepted_music and self.accepted_music['derived_layers_status']=='STALE'):
+            c.create_text(self.margin,height-16,anchor='w',text=text,fill=p['muted'],font=font(8))
+        c.xview_moveto(view);c.yview_moveto(yview)
         self.layout_boundary_labels()
 
     def draw_playing(self):
@@ -291,7 +298,7 @@ class CurveCanvas(ttk.Frame):
         text=label
         while text and measure(text+('…' if text!=label else ''))>b-a-8:text=text[:-1]
         if text:self.canvas.create_text(a+4,top+pixels(self.app.root,13),anchor='nw',text=text+('…' if text!=label else ''),fill=ink,font=font(10),tags='block-label')
-        draw_notes(self.canvas,(a+4,top+pixels(self.app.root,30),b-4,bottom-pixels(self.app.root,5)),notes,start,length,ink,stroke=2,tags=(tag,'final-note') if self.recommendation_preview is not None or self.accepted_music is not None else tag)
+        draw_notes(self.canvas,(a+4,top+pixels(self.app.root,30),b-4,bottom-pixels(self.app.root,5)),notes,start,length,ink,stroke=3,tags=(tag,'final-note') if self.recommendation_preview is not None or self.accepted_music is not None else tag)
 
     def draw_final_music(self):
         p = self.app.theme.colors
@@ -319,8 +326,8 @@ class CurveCanvas(ttk.Frame):
         if preview is not None:
             for overlay in preview['boundary_overlays']:
                 x = self.x(overlay['tick'])
-                self.boundary_boxes[overlay['id']] = (x-4,43,x+4,self.canvas.winfo_height()-38)
-                self.canvas.create_line(x,43,x,self.canvas.winfo_height()-38,fill=p['accent'],dash=(2,4),tags='final-boundary')
+                self.boundary_boxes[overlay['id']] = (x-4,43,x+4,self.scene_height-38)
+                self.canvas.create_line(x,43,x,self.scene_height-38,fill=p['accent'],dash=(2,4),tags='final-boundary')
                 label = self.canvas.create_text(x+4,50,anchor='nw',text='边界',fill=p['ink'],font=font(9),tags='final-boundary')
                 link = self.canvas.create_line(x,43,x,50,fill=p['accent'],tags='boundary-label-link')
                 self.boundary_labels[overlay['id']] = (label,link)
@@ -577,7 +584,7 @@ class CurveCanvas(ttk.Frame):
         return False
 
     def hover(self, event):
-        if not self.project or self.drag or self.intensity_draft:return
+        if not self.project or self.drag or self.intensity_draft or self.app.details_expanded:return
         x,y = (self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx()),
                self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty()))
         if any(abs(x-a)<=10 and abs(y-b)<=10 for _,a,b in self.point_boxes):
@@ -675,12 +682,12 @@ class CurveCanvas(ttk.Frame):
         if ident:self.selected_id = ident
         self.app.update_emotions()
         if ident:
-            self.app.select_target('placement', ident)
+            self.app.select_target('placement', ident,redraw=False)
             placement = next(p for p in self.project['placements'] if p['id']==ident)
-            self.app.show_detail(placement['base_snapshot']['label']+' · 点击仅选择；拖动移动，'+ui_platform.DELETE_LABEL+' 删除')
+            self.app.show_detail(self.app.completion.describe_placement(placement))
             if self.app.editable:
                 self.drag = dict(id=ident,start_root=(event.x_root,event.y_root),
-                                 offset=x-self.x(placement['start_tick']),length=placement['length_ticks'],active=False)
+                                 offset=x-self.x(placement['start_tick']),offset_y=y-self.boxes[ident][1],length=placement['length_ticks'],active=False)
         elif self.mode in ('arrange','gaps'):
             ident = self.hit_gap(x,y)
             if ident:self.app.completion.select_gap(ident)
@@ -713,7 +720,7 @@ class CurveCanvas(ttk.Frame):
             x = self.canvas.canvasx(event.x_root-self.canvas.winfo_rootx())
             y = self.canvas.canvasy(event.y_root-self.canvas.winfo_rooty())
             point = dict(tick=math.floor(points[index]['tick']+(x-draft['start_canvas'][0])/self.scale+.5),
-                         level=min(1.,max(0.,points[index]['level']-(y-draft['start_canvas'][1])/max(1,self.canvas.winfo_height()-80))))
+                         level=min(1.,max(0.,points[index]['level']-(y-draft['start_canvas'][1])/max(1,self.scene_height-80))))
             if index in (0,len(points)-1):point['tick'] = points[index]['tick']
             else:point['tick'] = max(points[index-1]['tick']+1,min(points[index+1]['tick']-1,point['tick']))
             points[index] = point
@@ -746,7 +753,7 @@ class CurveCanvas(ttk.Frame):
         result=self.app.ghost().check('move',placement_id=d['id'],start_tick=self.preview[0])
         if not self.contains_root(event.x_root,event.y_root) or raw<0 or raw+d['length']>self.project['total_ticks']:result=dict(allowed=False,error=dict(message='落点超出时间轴'))
         self.preview_state=result;self.preview_material=material
-        self.app.ghost().show(material,event.x_root,event.y_root,result)
+        self.app.ghost().show(material,event.x_root,event.y_root,result,offset=(d['offset'],d['offset_y']),emotion=place['emotion'])
         self.edge_scroll(event.x_root,event.y_root)
         self.draw()
 
@@ -780,6 +787,7 @@ class CurveCanvas(ttk.Frame):
         inside = self.contains_root(event.x_root,event.y_root)
         self.cancel()
         if not d['active']:
+            self.app.select_target('placement',d['id'])
             return
         if not inside or raw<0 or raw+d['length']>self.project['total_ticks']:
             self.app.tell('移动已取消：落点超出时间轴。',True)
@@ -796,21 +804,21 @@ class CurveCanvas(ttk.Frame):
         x,y = self.edge_pointer
         if not self.contains_root(x,y):
             return
-        local = x-self.canvas.winfo_rootx()
-        direction = -1 if local<28 else 1 if local>self.canvas.winfo_width()-28 else 0
-        if direction:
-            self.canvas.xview_scroll(direction*18,'units')
-            if self.drag and self.drag['active']:
-                self.motion(SimpleNamespace(x_root=x,y_root=y))
-            elif self.app.material_drag and self.app.material_drag['active']:
-                d = self.app.material_drag
-                self.app.material_preview(x,y)
-            elif self.intensity_draft and self.intensity_draft['active']:
-                self.preview_intensity(SimpleNamespace(x_root=x,y_root=y))
+        local=x-self.canvas.winfo_rootx();vertical=y-self.canvas.winfo_rooty()
+        threshold=pixels(self.app.root,28)
+        dx=-1 if local<threshold else 1 if local>self.canvas.winfo_width()-threshold else 0
+        dy=-1 if vertical<threshold else 1 if vertical>self.canvas.winfo_height()-threshold else 0
+        if dx or dy:
+            if dx:self.canvas.xview_scroll(dx*pixels(self.app.root,18),'units')
+            if dy:self.canvas.yview_scroll(dy*pixels(self.app.root,12),'units')
+            if self.drag and self.drag['active']:self.motion(SimpleNamespace(x_root=x,y_root=y))
+            elif self.app.material_drag and self.app.material_drag['active']:self.app.material_preview(x,y)
+            elif self.intensity_draft and self.intensity_draft['active']:self.preview_intensity(SimpleNamespace(x_root=x,y_root=y))
             self.draw()
-            if self.edge_timer is None:self.edge_timer = self.after(60,self._edge_step)
+            if self.edge_timer is None:self.edge_timer=self.after(60,self._edge_step)
 
     def cancel(self, event=None):
+        if event is not None:return self.app.cancel_interaction(event)
         if self.edge_timer is not None:
             self.after_cancel(self.edge_timer)
             self.edge_timer = None
@@ -822,7 +830,6 @@ class CurveCanvas(ttk.Frame):
         if self.canvas.grab_current()==self.canvas:
             self.canvas.grab_release()
         self.draw()
-        if event is not None and self.readonly:self.app.exit_private_preview()
         return 'break' if event else None
 
     def delete_selected(self, event=None):

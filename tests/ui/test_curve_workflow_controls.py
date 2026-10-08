@@ -44,7 +44,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
         for theme in ('light','dark'):
             self.app.theme.set(theme);self.app.refresh();self.root.update()
             self.assertIn('方案1',self.app.status_label.cget('text'))
-            self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+            self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
             for widget in (self.rec.selector,self.rec.final_button,self.rec.comparison_button,self.rec.confirm_button,self.rec.back_button):
                 x=widget.winfo_rootx()+widget.winfo_width()//2
                 y=widget.winfo_rooty()+widget.winfo_height()//2
@@ -209,7 +209,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                         self.app.source_user_collapsed=collapse;self.app.layout_sources()
                         self.app.refresh();self.root.update()
                         self.assertTrue(self.app.jobs)
-                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                         self.assert_fixed_regions_clear()
                         self.assertTrue(self.app.status_label.winfo_ismapped())
                         self.assertIn('补全计算中',self.app.status_label.cget('text'))
@@ -253,7 +253,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                             tools.canvas.focus_force();self.root.update()
                             tools.canvas.event_generate('<KeyPress-'+key+'>');self.root.update()
                             self.assert_fixed_regions_clear()
-                            self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                            self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                             self.assertIn('此错误',self.app.status_label.cget('text'))
                         for delta in (-120,120):
                             tools.canvas.event_generate('<MouseWheel>',delta=delta,x=2,y=2,
@@ -281,6 +281,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                             self.assert_fixed_regions_clear()
                             self.click(self.app.detail_button)
                             self.assertFalse(self.app.details_expanded);retry.assert_not_called()
+                            self.app.toggle_drawer('plan');self.root.update()
                         self.assertEqual(before,self.music_state())
                         self.assertEqual(preview,self.rec.preview);self.assertEqual(selected,self.rec.selected_id)
 
@@ -312,7 +313,7 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                     self.assertEqual(set(boxes),visible)
                     for ident,box in boxes.items():
                         self.assertGreaterEqual(box[0],left+4);self.assertLessEqual(box[2],right-4)
-                        self.assertGreaterEqual(box[1],43);self.assertLess(box[3],canvas.winfo_height()-38)
+                        self.assertGreaterEqual(box[1],43);self.assertLess(box[3],timeline.scene_height-38)
                         for other,other_box in boxes.items():
                             if other!=ident:
                                 self.assertFalse(max(box[0],other_box[0])<min(box[2],other_box[2]) and
@@ -369,12 +370,13 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                 self.root.geometry(size)
                 for collapsed in (False,True):
                     self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
-                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                     self.assertFalse(self.app.page.timeline.tools.winfo_ismapped())
                     self.app.toggle_details();self.root.update()
-                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                     self.assertTrue(self.app.detail_label.winfo_ismapped())
                     self.app.toggle_details();self.root.update()
+                    self.app.toggle_drawer('plan');self.root.update()
                     for button in (self.rec.confirm_button,self.rec.back_button,self.rec.final_button,self.app.stop_button):
                         self.assertTrue(button.winfo_ismapped());self.assertGreaterEqual(button.winfo_height(),44)
                         self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
@@ -389,9 +391,9 @@ class RecommendationControlTests(p7.RecommendationMappedTests):
                 self.root.geometry(size)
                 for collapsed in (False,True):
                     self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
-                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                    self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                     self.assertTrue(self.app.page.timeline.readonly)
-                    self.assertFalse(self.app.page.creation_row.winfo_ismapped())
+                    self.assertTrue(self.app.page.creation_row.winfo_ismapped())
                     tools=self.app.page.secondary_tools
                     for widget in (self.rec.final_button,self.rec.confirm_button,self.rec.back_button):
                         widget.focus_force();self.root.update()

@@ -53,6 +53,8 @@ class ConnectionUI:
         self.label.bind('<Return>',lambda _:app.show_detail(self.description()))
 
     def show(self):
+        if self.app.drawer_mode!='advanced':
+            self.app.drawer_mode='plan';self.app.details_expanded=False;self.app.advanced=False
         recommendation = getattr(self.app,'recommendation',None)
         if recommendation:
             recommendation.restore_view()
@@ -262,7 +264,7 @@ class ConnectionUI:
         self.app.completion.restore_view()
         self.app.bridge.restore_view()
         canvas = self.app.page.timeline
-        self.bookmark = dict(selected=canvas.selected_id,scroll=canvas.canvas.xview()[0],mode=canvas.mode)
+        self.bookmark = dict(selected=canvas.selected_id,scroll=canvas.canvas.xview()[0],yscroll=canvas.canvas.yview()[0],mode=canvas.mode)
         self.preview = copy.deepcopy(self.state['preview'])
         canvas.selected_id = canvas.selected_bridge_id = canvas.selected_connection_id = None
         self.app.refresh()
@@ -275,6 +277,7 @@ class ConnectionUI:
             canvas.selected_id = self.bookmark['selected']
             canvas.mode = self.bookmark['mode']
             canvas.canvas.xview_moveto(self.bookmark['scroll'])
+            canvas.canvas.yview_moveto(self.bookmark.get('yscroll',0))
             canvas.selected_bridge_id = canvas.selected_connection_id = None
             self.bookmark = None
 

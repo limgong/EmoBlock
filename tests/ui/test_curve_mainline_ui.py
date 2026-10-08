@@ -38,11 +38,11 @@ class MainlineUITests(MappedUIFixture):
                 self.app.details_expanded=expanded
                 self.app.show_detail('持久的情绪详情\n'*30);self.app.refresh();self.root.update()
                 canvas=self.app.page.timeline.canvas
-                self.assertGreaterEqual(canvas.winfo_height(),pixels(self.root,320))
+                self.assertGreaterEqual(canvas.winfo_height(),pixels(self.root,240 if expanded else 320))
                 self.assertEqual(bool(self.app.detail_row.winfo_ismapped()),expanded)
                 if expanded:
                     self.assertIs(self.app.detail_row.master,self.app.page.stage_area)
-                    self.assertLessEqual(self.app.page.secondary_tools.winfo_height(),pixels(self.root,96))
+                    self.assertLessEqual(self.app.page.secondary_tools.winfo_height(),pixels(self.root,220))
                 self.assertTrue(self.app.stop_button.winfo_ismapped())
                 for button in (self.app.play_button,self.app.stop_button,self.app.cancel_button):
                     self.assertGreaterEqual(button.winfo_height(),pixels(self.root,44))

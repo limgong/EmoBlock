@@ -22,6 +22,32 @@ def stable_number(material):
     return short_name(material)
 
 
+def source_badge(material, project):
+    """Only imported originals receive a badge; source order is persisted."""
+    parent=next((m for m in project['materials'] if m['id']==material.get('phrase_id')),None)
+    if material['kind']!='block' or material.get('generation') or (parent and parent.get('generation')):return ''
+    source_id=material['provenance'].get('source_id')
+    for index,source in enumerate(project['sources'],1):
+        if source['id']==source_id:return f'原素材·原料{index}'
+    return ''
+
+
+def brick(canvas, box, shade, theme, selected=False, tags=()):
+    """Static solid faces, adapted to each theme rather than legacy globals."""
+    from curve_theme import rounded
+    from curve_raster import blend,pixels
+    a,t,b,d=box;p=theme.colors;root=canvas.winfo_toplevel()
+    offset=pixels(root,3 if theme.name=='light' else 1)
+    rounded(canvas,(a+1,t+offset,b+1,d+offset),p['shadow'],radius=10,tags=tags)
+    rounded(canvas,box,shade,p['accent'] if selected else blend(shade,'#000000',.18),radius=10,tags=tags)
+    if b-a>pixels(root,16):
+        inset=pixels(root,7)
+        canvas.create_line(a+inset,t+pixels(root,3),b-inset,t+pixels(root,3),
+            fill=blend(shade,'#ffffff',.4 if theme.name=='light' else .18),width=1,tags=tags)
+        canvas.create_line(a+inset,d-pixels(root,2),b-inset,d-pixels(root,2),
+            fill=blend(shade,'#000000',.16),width=1,tags=tags)
+
+
 def note_segments(box, notes, start_tick, length_ticks, stroke=2):
     """Return contained visual strokes, clipping only display geometry."""
     x1,y1,x2,y2 = box

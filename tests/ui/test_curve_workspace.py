@@ -9,24 +9,19 @@ from test_curve_ui import MappedUIFixture, FakeController, fixture
 
 
 class WorkspaceLayoutTests(MappedUIFixture):
-    def test_native_creation_views_share_commands_and_hide_inactive_controls(self):
+    def test_single_creation_header_stays_above_canvas_and_dock_actions_below(self):
         controller=curve_workflow.Controller(fixture())
         self.app.controller=controller;self.app._switched();self.root.update()
         page=self.app.page;before=controller.state()['project']
         for advanced in (True,False,True,False):
             self.click_at(page.advanced_button)
             self.assertEqual(self.app.advanced,advanced)
-            current=page.creation_views[advanced];other=page.creation_views[not advanced]
-            self.assertIs(page.creation_row,current['creation_row'])
-            self.assertIs(page.creation_row.master,page.stage_area if advanced else page.right)
-            self.assertTrue(page.creation_row.winfo_ismapped());self.assertFalse(other['creation_row'].winfo_ismapped())
+            self.assertIs(page.creation_views[True],page.creation_views[False])
+            self.assertIs(page.creation_row.master,page.right)
+            self.assertTrue(page.creation_row.winfo_ismapped())
+            self.assertLess(page.plus_button.winfo_rooty(),page.timeline.canvas.winfo_rooty())
+            self.assertGreater(page.final_button.winfo_rooty(),page.timeline.canvas.winfo_rooty()+page.timeline.canvas.winfo_height())
             self.assertIs(self.app.recommendation.calculate_button,page.final_button)
-            for name in ('plus_button','minus_button','final_button'):
-                self.assertEqual(current[name].instate(['disabled']),other[name].instate(['disabled']))
-                self.assertFalse(set(other[name].state())&{'active','hover','pressed'})
-            for view in page.creation_views.values():
-                self.assertEqual(str(view['grid_entry'].cget('textvariable')),str(page.grid_count))
-            if advanced:page.secondary_tools.reveal(page.plus_button);self.root.update()
             self.click_at(page.plus_button)
             self.assertEqual(controller.state()['project']['grid_count'],before['grid_count']+1)
             controller.undo();self.app.refresh();self.root.update()
@@ -50,7 +45,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
         before=copy.deepcopy(controller.state());calls=list(self.app.player.calls)
         self.root.geometry('1020x700');self.root.update()
         self.click_at(self.app.page.advanced_button)
-        self.click_at(self.app.page.timeline.mode_buttons['gaps'])
+        self.click_at(self.app.page.timeline.mode_buttons['arrange'])
         gap=self.app.completion.gaps[0];timeline=self.app.page.timeline;canvas=timeline.canvas
         total=float(canvas.cget('scrollregion').split()[2])
         canvas.xview_moveto(max(0,gap['start_tick']*timeline.scale/total-.15));self.root.update()
@@ -69,12 +64,12 @@ class WorkspaceLayoutTests(MappedUIFixture):
                     with self.subTest(theme=theme,size=size,collapsed=collapsed):
                         self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
                         self.assertTrue(self.app.advanced);self.assertTrue(self.app.page.gap_panel.winfo_ismapped())
-                        self.assertGreaterEqual(canvas.winfo_height(),320)
+                        self.assertGreaterEqual(canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                         tools=self.app.page.secondary_tools
-                        self.assertLess(tools.canvas.winfo_height(),tools.content.winfo_height())
+                        self.assertLessEqual(tools.canvas.winfo_height(),tools.content.winfo_height())
                         # First and last native controls receive focus through the
                         # real clipped viewport. No invocation changes music here.
-                        for widget in (self.app.page.plus_button,timeline.stage_selector,
+                        for widget in (timeline.stage_selector,
                                        self.app.completion.start_button):
                             widget.focus_force();self.root.update()
                             self.assertGreaterEqual(widget.winfo_rooty(),tools.canvas.winfo_rooty())
@@ -85,14 +80,14 @@ class WorkspaceLayoutTests(MappedUIFixture):
                         tools.canvas.yview_moveto(0);self.root.update();first=tools.canvas.yview()
                         event=SimpleNamespace(x_root=tools.canvas.winfo_rootx()+2,y_root=tools.canvas.winfo_rooty()+2,delta=-120)
                         self.assertEqual(self.app.wheel(event),'break');self.root.update()
-                        self.assertGreater(tools.canvas.yview()[0],first[0])
+                        self.assertGreater(tools.canvas.yview()[0],first[0]) if first[1]-first[0]<.999 else self.assertEqual(tools.canvas.yview(),first)
                         tools.canvas.yview_moveto(1);self.root.update()
                         self.assertAlmostEqual(tools.canvas.yview()[1],1,places=2)
                         for widget in (self.app.play_button,self.app.stop_button,self.app.page.gap_panel.winfo_children()[1]):
                             self.assertTrue(widget.winfo_ismapped());self.assertGreaterEqual(widget.winfo_height(),44)
                             self.assertLessEqual(widget.winfo_rooty()+widget.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
                         canvas.focus_force();self.root.update()
-                        self.assertGreaterEqual(canvas.winfo_height(),320)
+                        self.assertGreaterEqual(canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                         self.assertEqual(before,controller.state());self.assertEqual(calls,self.app.player.calls)
                         self.assertEqual(state,(self.app.selected_target,self.app.selected_source_id,self.app.source_filter_id,
                                                 self.app.playing_target,self.app.combo_inputs))
@@ -120,7 +115,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
             self.assertEqual(str(self.app.page.creation_row.pack_info()['in']),str(self.app.page.right))
             self.click_at(self.app.page.advanced_button)
             self.assertTrue(self.app.advanced)
-            self.assertEqual(str(self.app.page.creation_row.pack_info()['in']),str(tools.content))
+            self.assertEqual(str(self.app.page.creation_row.pack_info()['in']),str(self.app.page.right))
             self.assertEqual(before,controller.state());self.assertEqual(gap_id,self.app.completion.selected_gap_id)
             self.assertEqual(selected,self.app.selected_target);self.assertEqual(playing,self.app.playing_target)
             self.assertEqual(calls,self.app.player.calls);self.assertIn('phrase',self.app.page.cards.expanded)
@@ -155,7 +150,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
                     self.root.geometry('1020x700')
                     for collapsed in (False,True):
                         self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
-                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                         for button in (list(self.app.page.emotion_buttons.values()) if selection=='placement' else self.app.page.gap_panel.winfo_children()[1:]):
                             self.assertTrue(button.winfo_ismapped())
                             self.assertGreaterEqual(button.winfo_width(),44);self.assertGreaterEqual(button.winfo_height(),44)
@@ -165,7 +160,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
                         self.app.tell('受控错误：已有保护仍保留',True);self.root.update()
                         self.assertTrue(self.app.status_label.winfo_ismapped())
                         self.assertIn('已有保护',self.app.status_label.cget('text'))
-                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),320)
+                        self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                         self.assertTrue(self.app.stop_button.winfo_ismapped());self.assertGreaterEqual(self.app.stop_button.winfo_height(),44)
                         self.app.tell(self.app.workspace_hint())
             self.assertEqual(before,controller.state())
@@ -221,7 +216,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
                 for collapsed in (False,True):
                     self.app.source_user_collapsed=collapsed;self.app.layout_sources();self.root.update()
                     canvas=self.app.page.timeline.canvas
-                    self.assertGreaterEqual(canvas.winfo_height(),320)
+                    self.assertGreaterEqual(canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                     self.assertEqual(bool(self.app.page.source_panel.winfo_ismapped()),not collapsed)
                     self.assertEqual(self.app.page.middle.winfo_width(),252)
                     for widget in (self.app.play_button,self.app.stop_button,self.app.pause_button):

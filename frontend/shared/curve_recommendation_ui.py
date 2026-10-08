@@ -178,6 +178,8 @@ class RecommendationUI:
         self.update_elapsed()
 
     def show(self):
+        if self.app.drawer_mode!='advanced':
+            self.app.drawer_mode='plan';self.app.details_expanded=False;self.app.advanced=False
         if not self.available():return False
         self.app.cancel_interaction()
         for stage in (self.app.completion, self.app.bridge, self.app.connection):
@@ -196,7 +198,7 @@ class RecommendationUI:
         if candidate['capabilities']['can_preview']:
             if self.bookmark is None:
                 canvas = self.app.page.timeline
-                self.bookmark = dict(selected=canvas.selected_id, scroll=canvas.canvas.xview()[0], mode=canvas.mode)
+                self.bookmark = dict(selected=canvas.selected_id, scroll=canvas.canvas.xview()[0],yscroll=canvas.canvas.yview()[0], mode=canvas.mode)
             self.app.cancel_interaction()
             for stage in (self.app.completion,self.app.bridge,self.app.connection):stage.restore_view()
             self.preview = copy.deepcopy(candidate['preview'])
@@ -219,6 +221,7 @@ class RecommendationUI:
             canvas.selected_id = self.bookmark['selected']
             canvas.mode = self.bookmark['mode']
             canvas.canvas.xview_moveto(self.bookmark['scroll'])
+            canvas.canvas.yview_moveto(self.bookmark.get('yscroll',0))
             canvas.selected_bridge_id = canvas.selected_connection_id = None
             self.bookmark = None
 

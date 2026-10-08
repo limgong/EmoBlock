@@ -4,8 +4,8 @@ from tkinter import ttk, font as tkfont
 import ui_platform
 
 PALETTES = {
-    'light': dict(bg='#f1f5f9', panel='#ffffff', inset='#f5f6fa', line='#dbe0ea',
-                  ink='#293244', muted='#626d80', accent='#6667b0', selected='#e7e7ff',
+    'light': dict(bg='#f1f5f9', panel='#ffffff', inset='#f6f9fd', line='#dbe0ea',
+                  ink='#293244', muted='#626d80', accent='#2563eb', selected='#e7f0ff',
                   shadow='#d9dfea', onaccent='#ffffff', error='#ac2336'),
     'dark': dict(bg='#1c1c1e', panel='#2c2c2e', inset='#3a3a3c', line='#66666a',
                  ink='#f5f5f7', muted='#c4c4cc', accent='#0a84ff', selected='#3a3a3c',
@@ -146,12 +146,22 @@ class Tooltip:
     def __init__(self, widget, text):
         self.widget,self.text=widget,text
         self.timer=self.window=None
+        self.hovered=self.focused=False
         for event in ('<Enter>','<FocusIn>'):widget.bind(event,self.schedule,add='+')
-        for event in ('<Leave>','<FocusOut>','<ButtonPress>','<Destroy>'):widget.bind(event,self.hide,add='+')
+        for event in ('<Leave>','<FocusOut>'):widget.bind(event,self.depart,add='+')
+        for event in ('<ButtonPress>','<Destroy>'):widget.bind(event,self.hide,add='+')
 
     def schedule(self,event=None):
+        if event is not None:
+            if event.type==tk.EventType.Enter:self.hovered=True  # Enter
+            elif event.type==tk.EventType.FocusIn:self.focused=True  # FocusIn
         self.hide()
         self.timer=self.widget.after(450,self.show)
+
+    def depart(self,event):
+        if event.type==tk.EventType.Leave:self.hovered=False  # Leave
+        elif event.type==tk.EventType.FocusOut:self.focused=False  # FocusOut
+        if not self.hovered and not self.focused:self.hide()
 
     def show(self):
         self.hide()

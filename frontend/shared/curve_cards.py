@@ -4,7 +4,7 @@ import math
 import tkinter as tk
 from tkinter import ttk
 from curve_theme import font, hint, rounded
-from curve_visuals import TYPE_COLORS, TYPE_NAMES, DATA_INK, material_type, stable_number, draw_notes
+from curve_visuals import TYPE_COLORS, TYPE_NAMES, DATA_INK, material_type, stable_number, draw_notes, source_badge
 from curve_icons import CardIconButton
 from curve_scrollbar import TransientScrollbar
 from curve_raster import pixels
@@ -92,7 +92,7 @@ class MaterialCards(ttk.Frame):
         for method,label in METHODS:
             generation.add_command(label=label,state='normal' if self.app.editable else 'disabled',
                 command=lambda ident=material['id'],method=method:self.app.derive_selected(ident,method))
-        menu.add_cascade(label='生成新旋律',menu=generation)
+        menu.add_cascade(label='拓展积木',menu=generation)
         menu.add_command(label='试听',command=lambda:self.app.safe(lambda:self.app.audition_target('material',material['id'])))
         self.context=menu
         menu.tk_popup(x,y)
@@ -180,7 +180,8 @@ class MaterialCards(ttk.Frame):
             group=('Bridge' if category=='bridge' else '新旋律')+' · '+stable_number(parent) if child and parent else ''
             info=tk.Canvas(content,height=pixels(self.app.root,24),width=1,bg=surface,highlightthickness=0)
             info.grid(row=1,column=0,sticky='ew',padx=4)
-            def type_label(event,widget=info,text=f'{material["length_ticks"]/480:g}拍'+(' · '+group if group else '')):
+            badge=source_badge(material,self.app.state_data['project'])
+            def type_label(event,widget=info,text=f'{material["length_ticks"]/480:g}拍'+(' · '+(group or badge) if group or badge else '')):
                 widget.delete('all');widget.create_text(1,widget.winfo_height()/2,anchor='w',text=text,fill=DATA_INK,font=font(10),tags='card-type')
             info.bind('<Configure>',type_label)
             controls=tk.Frame(content,bg=surface);controls.grid(row=0,column=1,rowspan=3,sticky='ns',padx=2)
@@ -219,6 +220,8 @@ class MaterialCards(ttk.Frame):
 
     def describe(self, material):
         source = material['provenance'].get('source_id','')
+        original=next((s for s in self.app.state_data['project']['sources'] if s['id']==source),None)
+        source=(original['label']+' · '+str(original.get('provenance',{}).get('path',''))) if original else source
         parent = next((m['label'] for m in self.materials if m['id']==material['phrase_id']),material['phrase_id'] or '')
         method = (material['generation'] or {}).get('method','原始')
         return f'{material["label"]} · {material["length_ticks"]/480:g} 拍 · 来源 {source or "见保存的来源快照"} · 乐句 {parent or "独立素材"} · 方法 {method}'

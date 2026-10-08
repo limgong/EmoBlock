@@ -459,7 +459,10 @@ class CurveP5Tests(MappedUIFixture):
         self.assertIsNone(self.app.bridge.preview);self.assertIsNotNone(self.app.completion.preview_candidate)
         self.app.bridge.show();self.app.bridge.toggle_preview();self.root.update()
         self.assertIsNone(self.app.completion.preview_candidate);self.assertIsNotNone(self.app.bridge.preview)
-        canvas.cancel(event);self.assertIsNone(self.app.bridge.preview)
+        canvas.cancel(event)
+        self.assertIsNotNone(self.app.bridge.preview)  # Esc collapses the dock, not its auditioned candidate.
+        self.assertIsNone(self.app.drawer_mode)
+        self.app.bridge.exit_preview();self.assertIsNone(self.app.bridge.preview)
 
     def test_late_decision_progress_wrong_token_and_sequence_cannot_paint(self):
         self.worker.generation_gate=threading.Event();self.app.bridge.start()

@@ -19,9 +19,12 @@ class CurveCanvasTests(MappedUIFixture):
         canvas.focus_force()
         self.root.update()
         self.assertEqual(self.root.focus_get(), canvas)
+        self.last_key_events=[]
+        binding=canvas.bind('<KeyPress>',lambda e:self.last_key_events.append((e.keysym,e.char,e.keycode)),add='+')
         canvas.event_generate(sequence, state=0)
         canvas.event_generate(sequence.replace('<','<KeyRelease-'), state=0)
         self.root.update()
+        canvas.unbind('<KeyPress>',binding)
 
     def test_native_delete_keys_delete_selected_once_and_undo_restores_saved_content(self):
         first = self.place(480); second = self.place(3840)
@@ -34,13 +37,15 @@ class CurveCanvasTests(MappedUIFixture):
             with self.subTest(sequence=sequence):
                 self.root.update()  # Read settled mapped geometry after undo/selection layout changes.
                 a,t,b,d = canvas.boxes[first]
-                click = self.event(canvas.canvas, int(a+20), int((t+d)/2))
+                click = self.event(canvas.canvas, int(a+20-canvas.canvas.canvasx(0)), int((t+d)/2-canvas.canvas.canvasy(0)))
                 self.assertTrue(canvas.contains_root(click.x_root,click.y_root))
                 canvas.press(click); canvas.release(click)
+                self.assertEqual(canvas.selected_id,first)
                 undo_count = len(self.controller._undo)
                 self.canvas_key(sequence)
                 after = self.controller.state()
-                self.assertEqual([p['id'] for p in after['project']['placements']], [second])
+                self.assertEqual([p['id'] for p in after['project']['placements']], [second],
+                    f'keys={self.last_key_events}; focus={self.root.focus_get()}; selected={canvas.selected_id}; mode={canvas.mode}; editable={self.app.editable}; yview={canvas.canvas.yview()}')
                 self.assertEqual(after['project']['placements'][0]['start_tick'], 3840)
                 self.assertEqual(after['project']['intensity_points'], before['intensity_points'])
                 self.assertEqual(after['project']['total_ticks'], before['total_ticks'])

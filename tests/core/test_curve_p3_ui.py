@@ -53,7 +53,7 @@ class CurveP3Tests(MappedUIFixture):
 
     def at(self,tick,level):
         c = self.app.page.timeline
-        return self.event(c.canvas,c.x(tick)-c.canvas.canvasx(0),c.y(level))
+        return self.event(c.canvas,c.x(tick)-c.canvas.canvasx(0),c.y(level)-c.canvas.canvasy(0))
 
     def state_bundle(self):
         return copy.deepcopy((self.controller.state(),self.controller.history_items(),self.app.playing_target,
@@ -199,7 +199,7 @@ class CurveP3Tests(MappedUIFixture):
             self.root.geometry(geometry);self.root.update()
             c.canvas.xview_moveto(.35);self.root.update()
             self.assertGreaterEqual(c.canvas.winfo_height(),160)
-            self.assertLessEqual(c.y(0),c.canvas.winfo_height())
+            self.assertLessEqual(c.y(0),c.scene_height)
             start = self.at(7200,self.controller.state()['project']['intensity_points'][1]['level'])
             before = self.controller.state()['project']['intensity_points']
             end = self.event(c.canvas,start.x+20,start.y+15)
@@ -405,7 +405,8 @@ class CurveP3Tests(MappedUIFixture):
         self.app.select_target('placement',ident)
         self.root.geometry('1020x700');self.app.refresh();self.root.update()
         self.assertGreaterEqual(self.app.page.timeline.canvas.winfo_height(),160)
-        self.app.toggle_details();self.root.update()
+        if not self.app.details_expanded:self.app.toggle_details()
+        self.root.update()
         for widget in (self.app.detail_label,self.app.export_folder_button,self.app.play_button):
             self.assertTrue(widget.winfo_ismapped())
             self.assertLessEqual(widget.winfo_rootx()+widget.winfo_width(),self.root.winfo_rootx()+self.root.winfo_width())
@@ -504,7 +505,10 @@ class CurveP3Tests(MappedUIFixture):
                 # The nearest integer pointer hits the visible 1px outline,
                 # even when no integer canvas coordinate is inside the geometry.
                 x = round((a+b)/2-c.canvas.canvasx(0))
-                y = int((t+d)/2+18)
+                # The scene may extend below the dock; reveal the short block
+                # before generating a real integer viewport event.
+                c.canvas.yview_moveto(max(0,((t+d)/2+18-c.canvas.winfo_height()/2)/c.scene_height));self.root.update()
+                y = int((t+d)/2+18-c.canvas.canvasy(0))
                 event = self.event(c.canvas,x,y)
                 canvas_x = c.canvas.canvasx(event.x_root-c.canvas.winfo_rootx())
                 self.assertFalse(a<=canvas_x<=b)
@@ -523,7 +527,7 @@ class CurveP3Tests(MappedUIFixture):
                 # that block; its ordinary hit bounds are never widened.
                 na,nt,nb,nd = c.boxes[next_id]
                 nx = round(na-c.canvas.canvasx(0))+2
-                ny = int((nt+nd)/2+18)
+                ny = int((nt+nd)/2+18-c.canvas.canvasy(0))
                 self.assertEqual(c.hit(c.canvas.canvasx(nx),c.canvas.canvasy(ny)),next_id)
                 c.canvas.event_generate('<ButtonPress-1>',x=nx,y=ny)
                 c.canvas.event_generate('<ButtonRelease-1>',x=nx,y=ny)

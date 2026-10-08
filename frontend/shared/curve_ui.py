@@ -120,6 +120,7 @@ class CurveApplication:
         root.geometry('1280x800')
         self.source_filter_id = None
         self.details_expanded = False
+        self.drawer_mode = None
         self.workspace_stage = '编辑'
         self.advanced = False
         self.view_bookmarks = {}
@@ -165,10 +166,20 @@ class CurveApplication:
         while len(value)>1 and actual.measure(value+'…')>width:value=value[:-1]
         return value+('…' if value!=str(text).replace('\n',' · ') else '')
 
-    def toggle_details(self):
-        self.details_expanded=not self.details_expanded
-        self.detail_button.configure(text='收起详情' if self.details_expanded else '详情')
+    def toggle_drawer(self, mode):
+        tools=self.page.secondary_tools
+        if self.drawer_mode:tools.positions[self.drawer_mode]=tools.canvas.yview()[0]
+        self.drawer_mode=None if self.drawer_mode==mode else mode
+        self.details_expanded=self.drawer_mode=='details'
+        self.advanced=self.drawer_mode=='advanced'
+        if self.drawer_mode=='plan' and self.workspace_stage=='编辑':
+            self.workspace_stage='完整建议' if self.recommendation.available() else '补全'
+            self.recommendation.visible=self.recommendation.available()
+        if self.drawer_mode:tools.pending_position=tools.positions.get(self.drawer_mode,0.)
         self.refresh()
+
+    def toggle_details(self):
+        self.toggle_drawer('details')
 
     def filter_source(self, ident):
         self.source_filter_id=ident
@@ -186,6 +197,7 @@ class CurveApplication:
             self.tell('请先导入旋律或添加有音符的素材。')
             return False
         self.page.secondary_tools.next_busy_position=self.page.secondary_tools.canvas.yview()[0]
+        self.drawer_mode='plan';self.details_expanded=False;self.advanced=False
         self.show_curve_stage('完整建议')
         return self.recommendation.start()
 
@@ -279,19 +291,14 @@ class CurveApplication:
         return False
 
     def toggle_advanced(self):
-        self.advanced=not self.advanced
-        if self.advanced:
-            self.show_curve_stage(self.workspace_stage if self.workspace_stage!='编辑' else '补全')
-        else:
-            self.suspend_private_view()
-            self.workspace_stage='编辑'
-            self.refresh()
+        if self.workspace_stage=='编辑':self.workspace_stage='补全'
+        self.toggle_drawer('advanced')
 
     def suspend_private_view(self):
         for name,stage,field in self.stages():
             preview=getattr(stage,field)
             if preview is not None:
-                self.view_bookmarks[name]=dict(preview=preview,bookmark=stage.bookmark,view=dict(selected=self.page.timeline.selected_id,bridge=self.page.timeline.selected_bridge_id,connection=self.page.timeline.selected_connection_id,scroll=self.page.timeline.canvas.xview()[0],mode=self.page.timeline.mode))
+                self.view_bookmarks[name]=dict(preview=preview,bookmark=stage.bookmark,view=dict(selected=self.page.timeline.selected_id,bridge=self.page.timeline.selected_bridge_id,connection=self.page.timeline.selected_connection_id,scroll=self.page.timeline.canvas.xview()[0],yscroll=self.page.timeline.canvas.yview()[0],mode=self.page.timeline.mode))
                 stage.restore_view()
             if hasattr(stage,'visible'):stage.visible=False
 
@@ -331,7 +338,7 @@ class CurveApplication:
             self.page.timeline.all_gaps_button.pack(side='left')
             return
         self.page.timeline.all_gaps_button.pack_forget()
-        self.page.emotion_panel.pack(side='right')
+        if self.drawer_mode=='details':self.page.emotion_panel.pack(fill='x')
         self.page.emotion_title.configure(text='情绪')
         for emotion,button in self.page.emotion_buttons.items():
             button.configure(style='Curve.Primary.TButton' if placement['emotion']==emotion else 'Curve.TButton')
@@ -378,6 +385,7 @@ class CurveApplication:
             self.history_return_stage=self.workspace_stage
             self.suspend_private_view()
             self.workspace_stage='历史'
+            self.drawer_mode='advanced';self.advanced=True;self.details_expanded=False
             self.history_expanded=True
             self.refresh()
         else:
@@ -490,7 +498,7 @@ class CurveApplication:
                                        recommendation_preview=recommendation_preview,accepted_music=self.accepted_music if not private else None)
         if project:
             self.page.grid_count.set(str(project['grid_count']))
-            self.page.grid_summary.set(f'{project["grid_count"]}格 · {project["grid_count"]*4}拍')
+            self.page.grid_summary.set(f'{project["grid_count"]}格')
         self.history = self.controller.history() if self.recommendation.available() else self.controller.history_items()
         self.page.history_list.delete(0,'end')
         for i,item in enumerate(self.history):
@@ -540,42 +548,47 @@ class CurveApplication:
             if private:
                 view=self.resumed_view;canvas=self.page.timeline
                 canvas.selected_id=view['selected'];canvas.selected_bridge_id=view['bridge'];canvas.selected_connection_id=view['connection']
-                canvas.mode=view['mode'];canvas.canvas.xview_moveto(view['scroll']);canvas.draw()
+                canvas.mode=view['mode'];canvas.canvas.xview_moveto(view['scroll']);canvas.canvas.yview_moveto(view.get('yscroll',0));canvas.draw()
             self.resumed_view=None
         self.update_transport()
         self.layout_sources()
 
     def update_workspace(self):
         page=self.page
-        empty=(not self.has_workspace_content() and not self.private_preview() and not self.jobs
-               and not self.history_expanded and self.state_data['access_mode']=='editable')
-        page.derive_row.pack_forget()
-        page.combo_panel.pack_forget()
+        empty=not self.has_workspace_content() and not self.private_preview() and not self.jobs and not self.history_expanded and self.state_data['access_mode']=='editable'
+        page.derive_row.pack_forget();page.combo_panel.pack_forget()
+        # External callers may explicitly open details; all three views remain exclusive.
+        if self.details_expanded:self.drawer_mode='details';self.advanced=False
+        elif self.advanced:self.drawer_mode='advanced'
+        if self.drawer_mode=='details' and not self.details_expanded:self.drawer_mode=None
+        if self.drawer_mode=='advanced' and not self.advanced:self.drawer_mode='plan' if self.recommendation.visible else None
+        mode=self.drawer_mode
+        page.advanced_button.configure(text='高级')
         gap=self.selected_gap()
         page.timeline.all_gaps_button.configure(text='全部范围' if gap else f'全部空缺·{len(self.completion.gaps)}处')
-        if gap and not empty and not self.private_preview() and not self.jobs:
-            page.gap_panel.pack(side='right')
-            page.gap_label.configure(text=f'当前空缺·{(gap["end_tick"]-gap["start_tick"])/480:g}拍')
-        else:page.gap_panel.pack_forget()
-        if self.advanced and not empty:
-            first=next(w for w in page.secondary_tools.content.pack_slaves()
-                       if w not in (page.creation_row,page.advanced_row))
-            # During a job, its phase/details precede the secondary stage chooser.
-            # The shared status and cancel controls remain outside this scroller.
-            page.advanced_row.pack(fill='x',before=page.stage_anchor if self.jobs else first)
+        page.final_button.configure(text=('补齐此处' if gap else '补齐全部') if self.completion.gaps else '生成方案')
+        page.gap_label.configure(text=f'当前空缺·{(gap["end_tick"]-gap["start_tick"])/480:g}拍' if gap else '全部空缺')
+        page.gap_panel.pack_forget();page.emotion_panel.pack_forget()
+        page.advanced_row.pack_forget();self.detail_row.pack_forget()
+        page.timeline.mode_buttons['gaps'].pack_forget()
+        self.recommendation.auto_button.pack_forget()
+        if mode=='advanced' and not empty:
+            page.advanced_row.pack(fill='x',before=page.stage_anchor)
             page.timeline.stage_selector.pack(side='right')
-            page.timeline.mode_buttons['gaps'].pack(side='left')
-            self.recommendation.auto_button.pack(side='left') if self.recommendation.available() else self.recommendation.auto_button.pack_forget()
-        else:
-            page.timeline.stage_selector.pack_forget()
-            page.timeline.mode_buttons['gaps'].pack_forget()
-            page.advanced_row.pack_forget()
-            self.recommendation.auto_button.pack_forget()
-        # Edit-specific controls do not consume review space.
-        if empty or self.private_preview() or self.recommendation.visible or self.jobs or self.history_expanded or self.state_data['access_mode']!='editable':
-            page.timeline.tools.pack_forget()
-            page.emotion_panel.pack_forget()
-        else:page.timeline.tools.pack(fill='x',before=page.timeline.canvas,pady=(0,4))
+            self.recommendation.auto_button.pack(side='left') if self.recommendation.available() else None
+        else:page.timeline.stage_selector.pack_forget()
+        if mode in ('details',None) or empty:
+            for _,stage,_ in self.stages():stage.panel.pack_forget()
+            page.history_panel.pack_forget()
+            self.export_row.pack_forget()
+        if mode=='details':
+            self.detail_row.pack(fill='x',before=page.stage_anchor,pady=(2,0))
+            if self.selected_placement() and not self.private_preview():page.emotion_panel.pack(fill='x',before=self.detail_row)
+            if self.last_export:self.export_row.pack(fill='x',before=page.stage_anchor,pady=(1,0))
+        if mode in ('plan','advanced') and not empty:
+            if gap and not self.private_preview() and not self.jobs:page.gap_panel.pack(fill='x',before=page.stage_anchor)
+        if empty or self.private_preview() or self.jobs or self.history_expanded or self.state_data['access_mode']!='editable':page.timeline.tools.pack_forget()
+        else:page.timeline.tools.pack(fill='x',before=page.timeline.viewport,pady=(0,4))
         self.file_menu.entryconfigure('导入旋律',state='normal' if self.editable else 'disabled')
         save_allowed=self.state_data['access_mode']=='editable' and all(j.get('kind') in ('COMPLETION','BRIDGE','CONNECTION','RECOMMENDATION','RECOMMENDATION_MODE') for j in self.jobs.values())
         self.file_menu.entryconfigure('保存快照',state='normal' if save_allowed else 'disabled')
@@ -585,39 +598,30 @@ class CurveApplication:
         if self.jobs:
             stage=self.recommendation.status_text() if self.recommendation.active_job() else self.bridge.status_text() if self.bridge.active_job() else self.connection.status_text() if self.connection.active_job() else self.full_status
             self.status_text.set(self.compact(stage))
-        if self.details_expanded:
-            for _,stage,_ in self.stages():stage.panel.pack_forget()
-            page.history_panel.pack_forget();page.advanced_row.pack_forget()
-            self.detail_row.pack(fill='x',before=page.stage_anchor,pady=(2,0))
-        else:self.detail_row.pack_forget()
         page.footer.pack_configure(pady=0)
         if empty:
             page.creation_row.pack_forget();page.memory_label.pack_forget()
             page.empty_workspace.place(x=0,y=0,relwidth=1,relheight=1);page.empty_workspace.lift()
             page.timeline.empty_import.place(relx=.5,rely=.45,anchor='center');page.timeline.empty_import.lift()
-            page.timeline.scrollbar.pack_forget()
             for w in (page.all_materials_button,page.source_frame,page.source_notes,page.source_audition,page.source_reminder):w.pack_forget()
+            page.final_button.pack_forget()
         else:
             page.empty_workspace.place_forget();page.timeline.empty_import.place_forget()
-            if self.private_preview() or self.recommendation.visible or self.jobs:page.creation_row.pack_forget()
-            elif self.advanced and not self.jobs:
-                page.creation_row.pack(fill='x',before=page.advanced_row if page.advanced_row.winfo_manager() else page.stage_anchor)
-            else:page.creation_row.pack(fill='x',before=page.timeline)
-            preview=self.private_preview()
-            info=preview.get('memory_info') if preview else self.state_data.get('memory_info')
-            if (info or {}).get('state')=='BOUND' and page.timeline.memory_overlay():
-                # The actual protected badge remains on the canvas; avoid a duplicate
-                # bound-memory row while preserving pending-gap/blank explanations.
-                page.memory_label.pack_forget()
-            else:page.memory_label.pack(fill='x',before=page.timeline,pady=(2,0))
-            page.timeline.scrollbar.pack(fill='x')
-            page.all_materials_button.pack(fill='x',pady=6)
-            page.source_frame.pack(fill='both',expand=True)
-            page.source_notes.pack(fill='x',pady=8);page.source_audition.pack(fill='x')
-            page.source_reminder.pack(anchor='w',pady=8)
+            if self.private_preview():page.final_button.pack_forget()
+            else:page.final_button.pack(side='right')
+            page.creation_row.pack(fill='x',before=page.scene_container)
+            preview=self.private_preview();info=preview.get('memory_info') if preview else self.state_data.get('memory_info')
+            if (info or {}).get('state')=='BOUND' and page.timeline.memory_overlay():page.memory_label.pack_forget()
+            else:
+                page.memory_label.configure(text='记忆待落位' if (info or {}).get('state')=='PENDING_GAP' else '记忆·保留留白' if (info or {}).get('state')=='PRESERVE_BLANK' else '记忆自动标记')
+                page.memory_label.pack(side='right',padx=4)
+            page.all_materials_button.pack(fill='x',pady=6);page.source_frame.pack(fill='both',expand=True)
+            page.source_notes.pack(fill='x',pady=8);page.source_audition.pack(fill='x');page.source_reminder.pack_forget()
         page.timeline.canvas.configure(takefocus=not empty)
-        page.secondary_tools.set_compact(self.advanced and not empty)
+        for key,button in (('details',self.detail_button),('advanced',page.advanced_button),('plan',self.plan_button)):
+            button.state(['selected'] if mode==key else ['!selected'])
         page.secondary_tools.set_busy(bool(self.jobs))
+        page.secondary_tools.layout()
 
     def preview_memory_description(self,preview=None):
         preview = self.private_preview() if preview is None else preview
@@ -657,6 +661,9 @@ class CurveApplication:
         self.cancel_interaction()
         self.suspend_private_view()
         self.workspace_stage=stage
+        if self.drawer_mode!='advanced':self.drawer_mode='plan';self.details_expanded=False
+        if stage=='编辑' and self.selected_placement():
+            self.drawer_mode='details';self.details_expanded=True;self.advanced=False
         self.history_expanded=False
         if stage=='完整建议':self.recommendation.show()
         elif stage=='连接':self.connection.show()
@@ -737,11 +744,14 @@ class CurveApplication:
         if kind=='source':self.selected_source_id = ident
         if kind=='history':self.selected_history_id = ident
         if kind=='placement':self.page.timeline.selected_id = ident
+        if kind=='placement' and redraw and not self.private_preview():
+            self.drawer_mode='details';self.details_expanded=True;self.advanced=False
         if redraw and kind=='material':
             self.page.cards.render()
             self.card_view_flags = (self.theme.name,self.selected_material_id)
         self.update_emotions()
         self.update_transport()
+        if kind=='placement' and redraw:self.update_workspace()
 
     def source_detail(self):
         source = self.resolve('source',self.selected_source_id)
@@ -1168,7 +1178,8 @@ class CurveApplication:
         if not self.editable:
             return
         self.material_drag = dict(material=copy.deepcopy(material),widget=event.widget,
-                                  start=(event.x_root,event.y_root),offset=event.x_root-card.winfo_rootx(),active=False)
+                                  start=(event.x_root,event.y_root),offset=(event.x_root-card.winfo_rootx())/max(1,card.winfo_width())*material['length_ticks']*self.page.timeline.scale,
+                                  anchor_y=(event.y_root-card.winfo_rooty())/max(1,card.winfo_height())*self.page.timeline.half_block*2,active=False)
 
     def material_motion(self, event):
         d = self.material_drag
@@ -1188,7 +1199,7 @@ class CurveApplication:
                 self.card_scroll_timer = self.root.after(60,self.cards_edge_step)
             self.page.cards.show_drop_target(*hit)
             self.ghost().show(d['material'],event.x_root,event.y_root,text='组合 · '+('放在目标之前' if hit[1]=='left' else '放在目标之后'))
-            self.show_detail('松开后加入行内组合草稿：'+('放在目标左侧' if hit[1]=='left' else '放在目标右侧'))
+            self.show_detail('松开后确认组合：'+('放在目标左侧' if hit[1]=='left' else '放在目标右侧'))
 
     def cards_edge_step(self):
         self.card_scroll_timer = None
@@ -1215,7 +1226,7 @@ class CurveApplication:
             result=self.ghost().check('place',material_id=d['material']['id'],start_tick=canvas.preview[0])
             if raw<0 or raw+d['material']['length_ticks']>canvas.project['total_ticks']:result=dict(allowed=False,error=dict(message='落点超出时间轴'))
             canvas.preview_state=result;canvas.preview_material=d['material']
-            self.ghost().show(d['material'],x,y,result)
+            self.ghost().show(d['material'],x,y,result,offset=(d['offset'],d.get('anchor_y',canvas.half_block)))
             canvas.edge_scroll(x,y)
         else:
             canvas.preview = None
@@ -1246,6 +1257,7 @@ class CurveApplication:
             self.tell('拖放已取消 · 工程未改变。')
 
     def cancel_interaction(self, event=None):
+        active=bool(self.material_drag or self.page.timeline.drag or self.page.timeline.intensity_draft)
         if self.card_scroll_timer is not None:
             self.root.after_cancel(self.card_scroll_timer)
             self.card_scroll_timer = None
@@ -1257,7 +1269,8 @@ class CurveApplication:
         if self.drag_ghost:self.drag_ghost.clear()
         self.page.cards.clear_drop_target()
         self.page.timeline.cancel()
-        if event is not None:self.exit_private_preview()
+        if event is not None and not active and self.drawer_mode:
+            self.drawer_mode=None;self.details_expanded=False;self.advanced=False;self.refresh()
         return 'break' if event else None
 
     def propose_combo(self, source, target_id, side):
@@ -1267,7 +1280,8 @@ class CurveApplication:
         name='+'.join(short_name(m) for m in self.combo_inputs)
         beats=sum(m['length_ticks'] for m in self.combo_inputs)/480
         self.page.combo_name.set(name)
-        if messagebox.askokcancel('组合素材',f'合并为 {name}？\n{beats:g}拍',parent=self.root):
+        from curve_dialogs import confirm_combination
+        if confirm_combination(self,name,beats):
             return self.confirm_combo()
         self.cancel_combo()
         return False
@@ -1428,6 +1442,7 @@ class CurveApplication:
 
     def _switched(self):
         self.invalidate_play_intent()
+        self.drawer_mode=None;self.details_expanded=False;self.advanced=False
         self.view_bookmarks.clear()
         self.source_filter_id=None
         self.workspace_stage='编辑'
@@ -1487,6 +1502,10 @@ class CurveApplication:
     def resized(self, event):
         if event.widget!=self.root:
             return
+        size=(event.width,event.height)
+        if getattr(self,'last_window_size',size)!=size and self.page.timeline.intensity_draft:
+            self.cancel_interaction()
+        self.last_window_size=size
         self.layout_sources()
         width = max(400,event.width-50)
         self.status_label.configure(wraplength=0)
@@ -1508,7 +1527,9 @@ class CurveApplication:
             self.page.secondary_tools.canvas.yview_scroll(units*24,'units')
             return 'break'
         if widget==self.page.timeline.canvas:
-            widget.xview_scroll(units*24,'units')
+            vertical=widget.yview()[1]-widget.yview()[0]<.999
+            axis='x' if int(getattr(event,'state',0))&1 or not vertical else 'y'
+            (widget.xview_scroll if axis=='x' else widget.yview_scroll)(units*24,'units')
             return 'break'
         while widget:
             if isinstance(widget,(tk.Listbox,tk.Text,ttk.Combobox,ttk.Entry,ttk.Spinbox)):
@@ -1525,7 +1546,9 @@ class CurveApplication:
             scroll_canvas_pixels(self.page.secondary_tools.canvas,'y',dy)
             return 'break'
         if widget==self.page.timeline.canvas:
-            scroll_canvas_pixels(widget,'x',dx if abs(dx)>abs(dy) else dy)
+            vertical=widget.yview()[1]-widget.yview()[0]<.999
+            if dx:scroll_canvas_pixels(widget,'x',dx)
+            if dy:scroll_canvas_pixels(widget,'y' if vertical else 'x',dy)
             return 'break'
         while widget:
             if isinstance(widget,(tk.Listbox,tk.Text,ttk.Combobox,ttk.Entry,ttk.Spinbox)):

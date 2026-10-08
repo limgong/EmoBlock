@@ -347,11 +347,13 @@ class CurveP4Tests(MappedUIFixture):
         self.assertFalse(c.readonly);self.assertEqual(c.project,self.controller.state()['project'])
         self.assertAlmostEqual(c.canvas.xview()[0],scroll,places=2);self.assertEqual(self.musical_state(),before)
 
-    def test_mapped_escape_exits_preview_without_changing_edit_or_play(self):
+    def test_mapped_escape_collapses_dock_without_changing_preview_edit_or_play(self):
         self.run_completion();before=self.musical_state();self.preview()
         canvas=self.app.page.timeline.canvas;canvas.focus_force();self.root.update()
         canvas.event_generate('<Escape>');self.root.update()
-        self.assertIsNone(self.app.completion.preview_candidate)
+        self.assertIsNotNone(self.app.completion.preview_candidate)
+        self.assertIsNone(self.app.drawer_mode)
+        self.assertTrue(self.app.page.timeline.readonly)
         self.assertEqual(self.musical_state(),before)
 
     def test_theme_resize_preview_keeps_selection_and_usable_player(self):

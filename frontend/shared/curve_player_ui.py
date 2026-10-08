@@ -154,6 +154,7 @@ def clock(seconds):
 def build_transport(app,footer):
     top=app.footer_top=ttk.Frame(footer,style='Curve.Panel.TFrame');top.pack(fill='x')
     top.columnconfigure(0,weight=1)
+    ttk.Label(top,text='调校成曲',style='Curve.Title.TLabel').grid(row=0,column=1,sticky='e')
     app.transport_label=ttk.Label(top,text='尚未播放',style='Curve.Panel.TLabel',takefocus=True)
     app.transport_label.grid(row=0,column=0,sticky='ew')
     hint(app.transport_label,app.transport_description,app.show_detail)
