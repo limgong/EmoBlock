@@ -423,6 +423,7 @@ def _joints(boundaries, before, after):
 
 def plan_boundaries(request, should_cancel=None, on_progress=None):
     """Produce concrete local edits and performance handoffs, never a score."""
+    # 无需过渡也是有效结果；不自动处理每一处四拍或情绪分界。
     try: ledger = _validate(request)
     except m.ProjectError: raise
     except (KeyError,TypeError,OverflowError,RecursionError) as exc:

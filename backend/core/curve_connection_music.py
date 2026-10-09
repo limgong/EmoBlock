@@ -340,6 +340,7 @@ def _analyze(request,tick):
 
 
 def plan_connection_blocks(request,should_cancel=None,on_progress=None):
+    # 无需过渡也是有效结果；不得把预算耗尽伪装成无需连接。
     _validate_request(request);_check(should_cancel);_progress(on_progress,'分析真实P5拼接的动机、入口、密度及保护外空间。')
     layout=request['actual_layout'];params=request['parameters'];seams={0,layout['total_ticks']}
     for p in layout['base_project']['placements']:

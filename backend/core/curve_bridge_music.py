@@ -265,6 +265,7 @@ def _joint_conditions(windows):
 
 
 def decide(request, should_cancel=None, on_progress=None):
+    # 无需过渡也是有效结果；搜索不完整仍须保留准确的终止原因。
     """Finite evaluation, global conflict resolution, then joint endpoints."""
     if request['algorithm_version'] == GLOBAL_ALGORITHM:
         return _decide_global(request, should_cancel, on_progress)
