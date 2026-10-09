@@ -8,7 +8,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  const c=await b.newContext({viewport:{width:1920,height:1080},deviceScaleFactor:1});const p=await c.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:8765');await p.getByRole('heading',{name:'情绪搭建画板'}).waitFor();
  await p.evaluate(()=>{localStorage.setItem('theme','light')});await p.reload();await p.getByRole('heading',{name:'情绪搭建画板'}).waitFor();
  // Set timeline through genuine UI, before recording.
- for(let i=0;i<8;i++){await p.getByLabel('减少四拍').click();await pause(130)}
+ while((await p.evaluate(()=>fetch('/api/project').then(r=>r.json()))).grid_count>8){await p.getByLabel('减少四拍').click();await pause(130)}
  let n=0,frames=[],marks={},running=true;const begin=performance.now();
  const client=await c.newCDPSession(p);
  client.on('Page.screencastFrame',async ev=>{if(running){const file=String(n++).padStart(6,'0')+'.jpg';fs.writeFileSync(path.join(out,file),Buffer.from(ev.data,'base64'));frames.push({file,time:(performance.now()-begin)/1000});if(n%20===0)fs.writeFileSync(path.join(out,'frames.json'),JSON.stringify(frames))}await client.send('Page.screencastFrameAck',{sessionId:ev.sessionId}).catch(()=>{})});
@@ -19,7 +19,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  await overlay('你决定音乐在何时如何发展','规划长段配乐的旋律、情绪与起伏\n让音乐灵活满足视频、游戏等场景的需要');await pause(1600);
  mark('scenario');await overlay('假设你正在给一段视频配乐','开头平静 → 中段紧张 → 熟悉旋律达到高潮 → 结尾回落\n这些变化，需要出现在你指定的位置');await pause(2500);
  await p.evaluate(()=>document.getElementById('video-intro')?.remove());mark('materials');await pause(2500);
- const first=p.getByRole('button',{name:/选择 A1/}).first();await first.click();await p.getByRole('button',{name:/选择试听 A1/}).first().click();await p.getByLabel('播放',{exact:true}).click();await pause(2200);await p.getByLabel('停止',{exact:true}).click();
+ const first=p.getByRole('button',{name:/选择 A1/}).first();await first.click();await p.getByRole('button',{name:/^播放 A1$/}).first().click();await pause(2200);await p.getByLabel('停止',{exact:true}).click();
  await p.getByLabel('新旋律方式').selectOption('counter');await p.getByRole('button',{name:'新旋律',exact:true}).click();await pause(2400);
  await p.locator('.cards').evaluate(x=>x.scrollTop=x.scrollHeight);await pause(2500);await p.locator('.cards').evaluate(x=>x.scrollTop=0);await pause(2500);
  mark('curve');await p.getByRole('button',{name:'手绘强度',exact:true}).click();const rect=await p.locator('svg.canvas').boundingBox();const w=850,H=340,pad=34,total=15360;

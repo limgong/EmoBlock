@@ -16,7 +16,7 @@ LMMS must be installed; set EMOBLOCKS_LMMS if discovery cannot locate it. Data d
 
 One built-in Ode to Joy melody, real block/phrase rules, fixed timeline, draw/control-point intensity, placement/move/delete/emotion, active silence, automatic memory protection, undo/redo, persisted session, real completion → bridge and protection → connection blocks → boundary transitions → LMMS audio. Two genuinely different candidates when available; insufficient results are explicitly reported. Preview and confirmation use authenticated candidate snapshots. Downloads validate WAV/MIDI/MMP against their score and hash.
 
-Source block audition is a clearly labelled browser oscillator pitch preview, not LMMS timbre. Full candidate comparisons use real LMMS WAVs. No uploads, humming, external model inference, or full desktop feature parity claimed. Confirm is one undoable backend transaction. New requests never silently replace the audible object. Generated cards use stored base-note previews; exact final notes are heard in the candidate WAV.
+The play icon on a source card starts the clearly labelled browser oscillator pitch preview immediately; card selection stays silent. The shared bottom player can replay or stop it. This preview does not use LMMS timbre. Full candidate comparisons use real LMMS WAVs. No uploads, humming, external model inference, or full desktop feature parity claimed. Confirm is one undoable backend transaction. New requests never silently replace the audible object. Generated cards use stored base-note previews; exact final notes are heard in the candidate WAV.
 
 ## Isolation and limits
 
@@ -68,3 +68,15 @@ The browser Demo reads `assets/samples/classical-catalog.json` for its built-in 
 The catalog records file hashes, note counts, original BPM, attribution and adaptation. Canon derives from Jim Paterson's single-violin arrangement, Mutopia-2009/09/07-1700, under CC BY 3.0; the selected source's credit, source link and license are available in the source panel. Minuet and Für Elise use the package's 4/4 import containers: original pitches and tick durations are preserved, without claiming a musical meter rearrangement. The workflow's existing fixed 120 BPM remains unchanged.
 
 Labels match desktop main commit 3383929: 旋律原料 / 音乐积木库 / 情绪搭建画板 / 智能加工; emotions are 平静／安定, 温暖／希望, 悲伤／失落, 悬疑／不安, 紧张／危机, 振奋／坚定. The API derives `display_name` from the existing pure `curve_material_names.short_name` helper. A/B/C, prime derivations and combinations therefore follow stored desktop identities, rather than parsing the terminal M index. Source labels, IDs, note snapshots and fingerprints are not rewritten. Original phrase aliases and phrase containers follow the desktop library visibility rules; independent new-melody blocks remain visible.
+
+## Local UI preview (2026-10-09)
+
+New experiences use eight four-beat cells (32 beats). Existing saved sessions are not resized automatically. “清空画板”, beside the canvas title, clears placements, intentional silence, protections and the edited intensity curve, while retaining the library and current canvas length. It cancels current generation and commits one undoable transaction. It also clears the current player target; undo restores the project without autoplay.
+
+The browser Demo can shorten an empty tail after drawing: it keeps control points inside the retained duration and interpolates the new endpoint. Existing notes, intentional silence and fixed protection ranges cannot be silently cut. This behavior is scoped to the browser adapter; desktop resize rules are unchanged.
+
+Generation uses a prominent eight-node progress indicator driven by real job phases. Milestones reached stay visible while a second candidate is computed; the final node completes only when usable results actually return. It is not a linear percentage or estimated duration. Backend step descriptions are hidden. Queueing, completion, cancellation and failure have separate generic labels.
+
+Preview worktree: `codex/demo-ui-preview-20261009`, based on `abbfd41`. Run one local instance on 127.0.0.1:8877 with an isolated `EMOBLOCKS_WEB_DATA` folder, and `EMOBLOCKS_SECURE_COOKIE=0` for loopback HTTP. This preview is not uploaded or merged into the deployed release.
+
+Validation: `python -m unittest web_demo.tests.test_api -v`; `node web_demo/tests/browser_preview.cjs` with the existing Playwright module configured. The browser script uses real pointer, keyboard, source audio and edit API operations; progress terminal/multi-candidate states use explicitly marked HTTP fixtures. Actual LMMS generation, WAV browser playback, accepted-result clear/undo, shared-frontend contracts and the complete desktop suite are checked separately.

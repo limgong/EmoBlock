@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
-from .core import ROOT, SAMPLES, SAMPLE_CATALOG, model, workflow, controller, short_name
+from .core import ROOT, SAMPLES, SAMPLE_CATALOG, model, workflow, controller, short_name, edit_board
 from runtime_config import find_lmms
 
 DATA = Path(os.environ.get('EMOBLOCKS_WEB_DATA', str(ROOT / 'data/web-demo'))).resolve()
@@ -108,7 +108,8 @@ def view(c):
 
 def candidates(c):
     attempt = c._recommendation_attempt()
-    if not attempt or attempt['recommendation']['outcome'] is None:
+    if (not c.project['placements'] or not attempt or attempt['state'] not in ('READY','APPLIED')
+            or attempt['recommendation']['outcome'] is None):
         return []
     return [dict(id=x['id'], rank=x['rank'], reasons=x['reasons'], mode=attempt['recommendation']['request']['mode'],
                  changed=x['modes'][attempt['recommendation']['request']['mode']]['assets']['comparison']['files']['wav']['sha256']!=x['modes'][attempt['recommendation']['request']['mode']]['assets']['final']['files']['wav']['sha256'], ready=attempt['state']=='READY', applied=bool(attempt['recommendation']['receipt'] and attempt['recommendation']['receipt']['candidate_ref']['id']==x['id'] and c.project['accepted_candidate_id']==attempt['recommendation']['receipt']['accepted_record_id']))
@@ -284,12 +285,12 @@ def project(request:Request):
 def edit(data:Mutation,request:Request):
     with LOCK:
         sid,c=session(request);version(c,data.fingerprint)
-        if data.action not in ('place','move','delete','resize','set_intensity','set_trace','mark_blank','delete_blank','set_emotion','undo','redo','derive'):
+        if data.action not in ('place','move','delete','resize','clear_canvas','set_intensity','set_trace','mark_blank','delete_blank','set_emotion','undo','redo','derive'):
             raise HTTPException(422,'此操作不可用。')
         args=data.args
         allowed={'place':{'material_id','start_tick'},'move':{'placement_id','start_tick'},'delete':{'placement_id'},
           'resize':{'grid_count'},'set_intensity':{'points'},'set_trace':{'points'},'mark_blank':{'start_tick','end_tick'},
-          'delete_blank':{'blank_id'},'set_emotion':{'placement_ids','emotion'},'undo':set(),'redo':set(),'derive':{'material_id','method'}}
+          'delete_blank':{'blank_id'},'set_emotion':{'placement_ids','emotion'},'undo':set(),'redo':set(),'clear_canvas':set(),'derive':{'material_id','method'}}
         if set(args)!=allowed[data.action]: raise HTTPException(422,'操作参数不完整或包含未知字段。')
         if data.action=='resize' and (type(args.get('grid_count')) is not int or not 1<=args['grid_count']<=32):
             raise HTTPException(422,'在线体验支持1至32格。')
@@ -303,6 +304,7 @@ def edit(data:Mutation,request:Request):
             args={'points':curve_memory.normalize_trace(args['points'],c.project['total_ticks'])}
         cancel_active(sid,c)
         if data.action in ('undo','redo'): getattr(c,data.action)()
+        elif data.action in ('clear_canvas','resize'): edit_board(c,data.action,**args)
         elif data.action=='derive':
             if len(c.project['materials'])>150: raise HTTPException(422,'示例素材已达上限。')
             if set(args)!= {'material_id','method'} or args['method'] not in ('variant','answer','counter','rhythm','develop','density'):

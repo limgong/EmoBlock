@@ -7,6 +7,7 @@ from web_demo.api import app as service
 
 class API(unittest.TestCase):
     def setUp(self):
+        service.CREATIONS.clear()
         self.client=TestClient(service.app);self.client.__enter__()
         response=self.client.post('/api/session',json={'sample':'joy'})
         self.assertEqual(response.status_code,200,response.text)
@@ -38,10 +39,10 @@ class API(unittest.TestCase):
         self.assertNotIn('/Users/',str(self.p))
     def test_trace_single_undo_and_owner_checks(self):
         before=self.p['fingerprint']
-        points=[{'tick':i*240,'level':1-abs(i-64)/64} for i in range(129)]
+        points=[{'tick':i*120,'level':1-abs(i-64)/64} for i in range(129)]
         self.assertEqual(self.edit('set_trace',{'points':points}).status_code,200)
         self.assertLess(len(self.p['intensity_points']),10)
-        self.assertEqual(max(self.p['intensity_points'],key=lambda x:x['level'])['tick'],15360)
+        self.assertEqual(max(self.p['intensity_points'],key=lambda x:x['level'])['tick'],7680)
         self.assertEqual(self.edit('undo',{}).status_code,200)
         self.assertEqual(self.p['fingerprint'],before)
         sid=self.client.cookies.get(service.COOKIE)
@@ -64,6 +65,69 @@ class API(unittest.TestCase):
         self.assertEqual(self.edit('mark_blank',{'start_tick':0,'end_tick':1920}).status_code,200)
         self.assertEqual(self.edit('place',{'material_id':self.p['materials'][0]['id'],'start_tick':0}).status_code,422)
         self.assertEqual(self.edit('delete_blank',{'blank_id':self.p['blanks'][0]['id']}).status_code,200)
+
+    def test_default_and_shrink_drawn_curve(self):
+        self.assertEqual(self.p['grid_count'],8)
+        self.assertEqual(self.p['total_ticks'],32*480)
+        points=[dict(tick=0,level=.2),dict(tick=7680,level=.9),dict(tick=14000,level=.4),dict(tick=15360,level=.25)]
+        self.assertEqual(self.edit('set_intensity',{'points':points}).status_code,200)
+        before=self.p.copy()
+        controller=service.SESSIONS[self.client.cookies.get(service.COOKIE)]
+        expected=service.model.intensity_at(controller.project,13440)
+        self.assertEqual(self.edit('resize',{'grid_count':7}).status_code,200)
+        self.assertEqual(self.p['intensity_points'][-1],dict(tick=13440,level=expected))
+        self.assertTrue(all(p['tick']<=13440 for p in self.p['intensity_points']))
+        self.assertEqual(self.edit('undo',{}).status_code,200)
+        self.assertEqual(self.p['fingerprint'],before['fingerprint'])
+        self.assertEqual(self.edit('redo',{}).status_code,200)
+        service.SESSIONS.clear()
+        self.assertEqual(self.client.get('/api/project').json()['grid_count'],7)
+
+    def test_shrink_preserves_tail_music_and_blank(self):
+        mid=self.p['materials'][0]['id']
+        self.assertEqual(self.edit('place',{'material_id':mid,'start_tick':13440}).status_code,200)
+        before=self.p['fingerprint']
+        response=self.edit('resize',{'grid_count':7})
+        self.assertEqual(response.status_code,422)
+        self.assertIn('清空画板',response.json()['detail'])
+        self.assertEqual(self.p['fingerprint'],before)
+        self.assertEqual(self.edit('delete',{'placement_id':self.p['placements'][0]['id']}).status_code,200)
+        self.assertEqual(self.edit('mark_blank',{'start_tick':13440,'end_tick':15360}).status_code,200)
+        self.assertEqual(self.edit('resize',{'grid_count':7}).status_code,422)
+
+    def test_clear_is_one_undoable_transaction_and_invalidates_job(self):
+        mid=self.p['materials'][0]['id']
+        self.assertEqual(self.edit('derive',{'material_id':mid,'method':'rhythm'}).status_code,200)
+        self.assertEqual(self.edit('place',{'material_id':mid,'start_tick':13440}).status_code,200)
+        self.assertEqual(self.edit('mark_blank',{'start_tick':0,'end_tick':1920}).status_code,200)
+        self.assertEqual(self.edit('set_intensity',{'points':[dict(tick=0,level=.2),dict(tick=14000,level=.9),dict(tick=15360,level=.3)]}).status_code,200)
+        self.assertEqual(self.p['memory']['state'],'BOUND')
+        before=self.p.copy()
+        controller=service.SESSIONS[self.client.cookies.get(service.COOKIE)]
+        captured=controller.capture_recommendations(mode='melody_only')
+        self.assertTrue(controller.accepts(captured['token']))
+        with tempfile.TemporaryDirectory() as directory:
+            from pathlib import Path
+            folder=Path(directory)
+            service.JOBS['clear-active']=dict(sid=self.client.cookies.get(service.COOKIE),status='RUNNING',folder=folder,capture=captured)
+            try:
+                self.assertEqual(self.edit('clear_canvas',{}).status_code,200)
+                self.assertTrue((folder/'cancel').is_file())
+            finally:
+                service.JOBS.pop('clear-active')
+        self.assertFalse(controller.accepts(captured['token']))
+        self.assertEqual(self.p['materials'],before['materials'])
+        self.assertEqual(self.p['grid_count'],before['grid_count'])
+        self.assertFalse(self.p['placements']);self.assertFalse(self.p['blanks']);self.assertFalse(self.p['protections']);self.assertFalse(self.p['candidates'])
+        self.assertEqual(self.p['intensity_points'],[dict(tick=0,level=.25),dict(tick=15360,level=.25)])
+        self.assertEqual(self.edit('undo',{}).status_code,200)
+        self.assertEqual(self.p['fingerprint'],before['fingerprint'])
+        self.assertEqual(self.edit('redo',{}).status_code,200)
+        self.assertFalse(self.p['placements'])
+        self.assertEqual(self.edit('resize',{'grid_count':7}).status_code,200)
+        fingerprint=self.p['fingerprint']
+        self.assertEqual(self.edit('clear_canvas',{'unknown':True}).status_code,422)
+        self.assertEqual(self.p['fingerprint'],fingerprint)
 
     def test_official_names_and_catalog(self):
         samples=self.client.get('/api/samples').json()
