@@ -1,5 +1,5 @@
 """Frozen r3 musical state. Pure data validation and fixed-time editing, no planning."""
-import copy
+import curve_copy as copy
 import hashlib
 import math
 import uuid
@@ -82,9 +82,12 @@ def cached_validation(fn,args,kwargs):
     with validation_scope() as context:
         key=digest('emoblocks.native-validation-cache.v1',dict(function=fn.__module__+'.'+fn.__name__,args=args,kwargs=kwargs))
         cache=context['native_checks']
-        if key in cache:return copy.deepcopy(cache[key])
+        if key in cache:
+            value=cache.pop(key);cache[key]=value
+            return copy.deepcopy(value)
         value=fn(*args,**kwargs)
-        if len(cache)<128:cache[key]=copy.deepcopy(value)
+        if len(cache)>=128:cache.pop(next(iter(cache)))
+        cache[key]=copy.deepcopy(value)
         return value
 
 
@@ -528,8 +531,8 @@ def records_check(records, protections, placements, total, materials, sources, p
                     reject('桥计划不能跳过实际结果声明就绪。', 'BRIDGE_NOT_READY')
 
 
-def _validate(project):
-    canonical(project)
+def _validate(project, *, json_checked=False):
+    if not json_checked:canonical(project)
     shape(project, 'schema spec_rev contract_rev project_id ppq bpm grid_count total_ticks sources materials label_counters placements intensity_points blank_regions protections records accepted_candidate_id settings')
     if (project['schema'], project['spec_rev']) != (SCHEMA, SPEC_REV) or project['contract_rev'] not in SUPPORTED_CONTRACT_REVS:
         reject('工程格式或契约版本不受支持。', 'UNSUPPORTED_VERSION')
@@ -613,7 +616,9 @@ def new_project(grid_count=8):
 
 
 def fingerprint(project):
-    validate(project)
+    encoded=_validated_encoding(project)
+    if encoded is not None:
+        return hashlib.sha256(b'emoblocks.project.v2.1\n'+encoded).hexdigest()
     return digest('emoblocks.project.v2.1', project)
 
 
@@ -854,12 +859,18 @@ def edit(project, action, recompute=None, **args):
         raise ProjectError('INVALID_PROJECT', '工程编辑参数无效。') from exc
 
 
-def validate(project):
+def _validated_encoding(project):
     context = _VALIDATION_CONTEXT.get() or _IDENTITY_CONTEXT.get()
-    key = digest('emoblocks.validation-cache.v1',project) if context is not None else None
-    if context is not None and key in context['validated_projects']: return
+    encoded=canonical_bytes(project) if context is not None else None
+    key=hashlib.sha256(b'emoblocks.validation-cache.v1\n'+encoded).hexdigest() if encoded is not None else None
+    if context is not None and key in context['validated_projects']:return encoded
     try:
-        _validate(project)
+        _validate(project,json_checked=encoded is not None)
         if context is not None and len(context['validated_projects'])<128: context['validated_projects'].add(key)
+        return encoded
     except (KeyError, TypeError, AttributeError, RecursionError) as exc:
         raise ProjectError('INVALID_PROJECT', '工程损坏或字段类型无效。') from exc
+
+
+def validate(project):
+    _validated_encoding(project)

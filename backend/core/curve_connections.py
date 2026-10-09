@@ -1,5 +1,5 @@
 """P6 immutable connection facts and independent, non-composing validators."""
-import copy
+import curve_copy as copy
 import math
 from functools import wraps
 

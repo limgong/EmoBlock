@@ -1,5 +1,5 @@
 """P7 final musical facts. Validation is pure and never calls a composer."""
-import copy
+import curve_copy as copy
 from functools import wraps
 
 import curve_project as m
@@ -38,9 +38,13 @@ def guard(fn):
         try:
             with m.validation_scope() as context:
                 key=m.digest('emoblocks.final-validation-cache.v1',dict(function=fn.__module__+'.'+fn.__name__,args=args,kwargs=kwargs)) if fn.__name__.startswith('validate_') else None
-                if key is not None and key in context['final_checks']:return copy.deepcopy(context['final_checks'][key])
+                if key is not None and key in context['final_checks']:
+                    result=context['final_checks'].pop(key);context['final_checks'][key]=result
+                    return copy.deepcopy(result)
                 result=fn(*args, **kwargs)
-                if key is not None and len(context['final_checks'])<32:context['final_checks'][key]=copy.deepcopy(result)
+                if key is not None:
+                    if len(context['final_checks'])>=32:context['final_checks'].pop(next(iter(context['final_checks'])))
+                    context['final_checks'][key]=copy.deepcopy(result)
                 return result
         except (KeyError, TypeError, AttributeError, IndexError, RecursionError) as exc:
             raise m.ProjectError('INVALID_FINAL_SCORE', '最终乐谱字段缺失或结构无效。') from exc

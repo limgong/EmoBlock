@@ -3,7 +3,7 @@
 Only prepare_completion calls the pure search module. Validators never trust
 READY, claimed fingerprints, UI coordinates, or the algorithm's coverage claim.
 """
-import copy
+import curve_copy as copy
 import math
 from functools import wraps
 

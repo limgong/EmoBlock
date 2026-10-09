@@ -1,5 +1,5 @@
 """P5 private bridge facts and independent gates. Validators never compose music."""
-import copy
+import curve_copy as copy
 import math
 from functools import wraps
 

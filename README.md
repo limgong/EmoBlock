@@ -95,7 +95,9 @@ CLI 接受独立 story JSON（可取生成目录中的 `story.json`），不是�
 
 音频转 MIDI 为可选独立环境：在 `work/basic-pitch-venv` 安装 `requirements-basic-pitch.txt`，或用 `EMOBLOCKS_BASIC_PITCH_PYTHON` 指定含 Basic Pitch 的 Python；基础 MIDI / MMP 工作流不依赖它。
 
-生成使用单次任务内的有界校验缓存。可选的原生 JSON 加速模块由 Cython 编译兼容转换、Rust `orjson` 负责编码；保留当前规范化字节、指纹及非法输入检查。在已有 Python 环境运行 `python -m pip install ./native/json_codec` 可构建安装（需要适配当前平台的 C 编译工具）。未安装时自动使用标准编码器，设置 `EMOBLOCKS_JSON_ENCODER=stdlib` 可显式关闭加速。模块不包含音乐生成规则，不改变工程格式，也不接入隔离中的实验功能。
+生成使用单次任务内的有界校验缓存，保留近期通过的纯数据检查；每次读取仍按全部内容计算缓存键，不缓存文件可用性或任务授权。单次工程指纹计算复用本次校验的规范化字节，不跨调用复用可变对象的编码。
+
+可选的原生 JSON 加速模块由 Cython 编译兼容转换与数据复制、Rust `orjson` 负责编码；保留规范化字节、指纹及非法输入检查。在已有 Python 环境运行 `python -m pip install ./native/json_codec` 可构建安装（需要适配当前平台的 C 编译工具）。未安装时使用标准编码器和 Python JSON 复制；自定义类型、显式复制 memo 和过深数据回退标准深复制，快照仍彼此独立。设置 `EMOBLOCKS_JSON_ENCODER=stdlib` 关闭原生编码，`EMOBLOCKS_JSON_COPY=stdlib` 恢复标准深复制。模块不包含音乐生成规则，不改变工程格式，也不接入隔离中的实验功能。
 
 ## 目录与文档
 

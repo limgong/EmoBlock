@@ -1,5 +1,5 @@
 """Public r3 desktop facade: immutable jobs and atomic material/state operations."""
-import copy
+import curve_copy as copy
 from pathlib import Path
 import wave
 
@@ -689,7 +689,8 @@ class Controller(RecommendationFacade):
             error=copy.deepcopy(attempt['error']), message=messages[attempt['state']])
 
     def _current_bundle(self):
-        bundle = copy.deepcopy(self._bundle)
+        # The old project is immediately replaced; do not clone it twice.
+        bundle = copy.deepcopy({k:v for k,v in self._bundle.items() if k!='project'})
         bundle['project'] = self.session.project
         bundle['contract_rev'] = bundle['project']['contract_rev']
         return bundle

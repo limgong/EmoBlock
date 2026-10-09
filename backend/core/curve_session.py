@@ -1,5 +1,5 @@
 """Atomic musical edits, content-based saving, and monotonic async identity."""
-import copy
+import curve_copy as copy
 
 import curve_project as model
 

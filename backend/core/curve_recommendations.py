@@ -1,5 +1,5 @@
 """P7 finite private candidate pipeline and pure fact authentication."""
-import copy
+import curve_copy as copy
 import traceback
 from collections import deque
 from datetime import datetime, timezone
@@ -375,7 +375,8 @@ def prepare_candidate_mode(request,candidate_id,mode,source_facts,should_cancel=
 def validate_p7_bundle(bundle):
     import curve_store
     m.canonical(bundle);m.shape(bundle,'schema spec_rev contract_rev project snapshots attempts results final_facts')
-    plain=copy.deepcopy(bundle);plain['schema']=curve_store.SCHEMA;plain.pop('final_facts')
+    # The underlying validator is read-only; only this temporary envelope changes.
+    plain=dict(bundle);plain['schema']=curve_store.SCHEMA;plain.pop('final_facts')
     plain['attempts']=[a for a in plain['attempts'] if 'recommendation' not in a]
     curve_store._validate_bundle(plain)
     rows=validate_facts(bundle['final_facts'])

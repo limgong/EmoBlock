@@ -1,5 +1,5 @@
 """Version-dispatched snapshots. No conversion, planning, playback or overwrite."""
-import copy
+import curve_copy as copy
 import json
 import os
 from pathlib import Path
