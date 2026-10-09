@@ -87,7 +87,7 @@ class BlockTimeline:
             c.create_polygon(x,135,x-4,139,x,143,x+4,139,fill=theme_color('memory'),outline='')
         status=getattr(self,'preview_status','')
         c.create_line(12,217,self.timeline_width+12,217,fill=theme_color('line'))
-        c.create_text(16,229,text='拼接预览',anchor='w',fill=theme_color('muted'),font=font)
+        c.create_text(16,229,text='旋律编排 · 指定主旋律，情绪可变',anchor='w',fill=theme_color('muted'),font=font)
         c.create_text(self.timeline_width+12,229,text=status or '已更新',anchor='e',fill=theme_color('muted'),font=font)
         if self.planned and not self.drag_preview:
             selected=self.blocks.selection()
@@ -127,6 +127,7 @@ class BlockTimeline:
             brick(c,a,36,b,106,COLORS[v['emotion']],True,lift=7,tags='drag-ghost')
             text((a+b)/2,53,LABELS[v['emotion']].split('／')[0],b-a-8,bold=True)
             text((a+b)/2,80,'松开拼接',b-a-8)
+        if hasattr(self,'draw_composer_overlay'):self.draw_composer_overlay()
         self.timeline_scale=max(.1,c.winfo_height()/310) if c.winfo_height()>1 else 1.
         c.scale('all',0,0,1,self.timeline_scale)
         c.configure(scrollregion=(0,0,self.timeline_width+24,max(1,c.winfo_height())))
@@ -226,6 +227,7 @@ class BlockTimeline:
             self.line.xview_scroll(direction,'units');self.motion(SimpleNamespace(x=x,y=y))
 
     def cancel_drag(self,event=None):
+        if hasattr(self,'stroke_samples'):self.stroke_samples=[]
         if hasattr(self,'block_motion'):self.block_motion.cancel()
         self.settling=False
         if self.scroll_timer:self.line.after_cancel(self.scroll_timer);self.scroll_timer=None

@@ -156,7 +156,7 @@ class UnifiedApp(PreviewAudio):
         self.curve=[dict(emotion='calm',start=.2,end=.4),dict(emotion='suspense',start=.4,end=.55),dict(emotion='crisis',start=.55,end=.9),dict(emotion='resolve',start=.7,end=.95)]
         root.title('EmoBlocks · 音乐积木工作室')
         ui_platform.configure_scaling(root)
-        root.geometry(f'{min(1300,root.winfo_screenwidth()-70)}x{min(870,root.winfo_screenheight()-90)}+30+30');root.minsize(1020,700);root.configure(bg=BG)
+        root.geometry(f'{min(1360,root.winfo_screenwidth()-70)}x{min(950,root.winfo_screenheight()-90)}+30+30');root.minsize(1020,700);root.configure(bg=BG)
         self.style()
         import ui_theme
         ui_theme.apply(root,'light')
@@ -269,6 +269,7 @@ class UnifiedApp(PreviewAudio):
         if hasattr(self,'story_page'):
             page=self.story_page
             page.draw_source_cards();page.draw_block_cards();page.draw_source_notes();page.brush_changed();page.draw()
+            page.refresh_composer()
             for button in page.emotion_buttons.values():
                 button.configure(foreground=theme_color('ink'),activeforeground=theme_color('ink'),background=theme_color('panel'),activebackground=theme_color('hover'))
 
@@ -479,6 +480,9 @@ class UnifiedApp(PreviewAudio):
         while widget:
             # Lists and text areas already handle their own wheel events.
             if isinstance(widget,(tk.Text,tk.Listbox,ttk.Treeview,ttk.Combobox)):return
+            if hasattr(widget,'scroll_canvas'):
+                action=widget.scroll_canvas.xview_scroll if getattr(widget,'scroll_axis','y')=='x' else widget.scroll_canvas.yview_scroll
+                action(ui_platform.wheel_units(event.delta),'units');return 'break'
             if isinstance(widget,(ScrollPage,story_ui.StoryPage)):widget.canvas.yview_scroll(ui_platform.wheel_units(event.delta),'units');return
             widget=getattr(widget,'master',None)
 

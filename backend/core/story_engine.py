@@ -102,10 +102,13 @@ def validate(project, require_source=True):
         for o in project['overrides']:
             if o['start'] < previous and o['end'] > a['time']:
                 raise ValueError('普通块编辑不能覆盖固定锚点，请直接修改锚点。')
+    import brick_model
+    brick_model.validate(project)
     return project
 
 
 import intensity_curve
+import brick_model
 
 
 def expression(v):
@@ -129,6 +132,11 @@ def raw_state_at(project, seconds):
             fraction=(seconds-a['time'])/a.get('hold',2.)
             return dict(emotion=a['emotion'], level=a['level']+(a.get('end_level',a['level'])-a['level'])*fraction,
                         specified=True, source_id=a.get('source_id'), anchor=True,original_only=a.get('original_only',False))
+    placement=brick_model.placement_at(project,seconds)
+    if placement:
+        p,b=placement
+        return dict(emotion=p['emotion'],level=intensity_curve.level_at(project,seconds),specified=True,
+                    source_id=b['source_id'],anchor=False,manual_brick=True)
     for key in ('overrides', 'curve'):
         for v in project[key]:
             if v['start'] <= seconds < v['end']:
@@ -211,6 +219,7 @@ def automatic_peak_anchor(project):
         # Partial final block uses its actual midpoint.
         start=math.floor((peak['time']+1e-8)/bar)*bar;end=min(project['duration'],start+bar)
         region=next(v for v in project['curve'] if v['start']<=peak['time']<v['end'])
+        if any(a<end-1e-8 and b>start+1e-8 for a,b,p,v in brick_model.spans(project)):return None
         if any(a['time']<end and a['time']+a.get('hold',2.)>start for a in project['anchors']):return None
         if project.get('memory_mode')!='automatic' and any(v['start']<end and v['end']>start for v in project['overrides']):return None
         source=next((s for s in project['sources'] if s['id']==region.get('source_id')),None)
@@ -224,6 +233,7 @@ def automatic_peak_anchor(project):
     starts=[t for t in grid if region['start']-1e-8<=t<region['end']-.099999]
     if not starts:return None
     start=starts[-1] if rising else starts[0];end=min(start+bar,region['end'],project['duration'])
+    if any(a<end-1e-8 and b>start+1e-8 for a,b,p,v in brick_model.spans(project)):return None
     if any(a['time']<end-1e-8 and a['time']+a.get('hold',2.)>start+1e-8 for a in project['anchors']):return None
     if any(v['start']<end-1e-8 and v['end']>start+1e-8 for v in project['overrides']):return None
     source=next((s for s in project['sources'] if s['id']==region.get('source_id')),None)
@@ -280,6 +290,10 @@ def plan(project):
     requests += [dict(v, at=v['start'], hard=False) for v in project['curve'] if v['start']>0]
     requests += [dict(v,at=v['end'],level=v.get('end_level',v['level']),ramp_start=v['start'],hard=False)
                  for v in project['curve'] if abs(v.get('end_level',v['level'])-v['level'])>=.35]
+    for start,end,placement,b in brick_model.spans(project):
+        requests.append(dict(emotion=placement['emotion'],level=state_at(project,start)['level'],at=start,hard=False))
+        if end<project['duration']:
+            state=state_at(project,end+1e-7);requests.append(dict(emotion=state['emotion'],level=state['level'],at=end,hard=False))
     for request in sorted(requests,key=lambda r:r['at']):
         end=request['at']
         # Measure the gap from the last *requested* state, not our own interpolation.
@@ -307,6 +321,7 @@ def plan(project):
                   and 'ramp_start' not in request and max(request['level'],request.get('end_level',request['level']))<.7)
         protected=any(tick(a['time'])<total and tick(a['time']+a.get('hold',2.))>boundary for a in project['anchors'])
         protected=protected or any(tick(v['start'])<total and tick(v['end'])>boundary for v in project['overrides'])
+        protected=protected or any(tick(a)<total and tick(b)>boundary for a,b,p,v in brick_model.spans(project))
         if terminal and not protected:
             windows.append(dict(start=boundary,end=total,kind='transition_ending',from_state=before,target=request,gap=gap,
                                 boundary_seconds=end,direction='after',carrier='calm',protection='terminal-cadence; preserve-climax-and-fixed-points'))
@@ -324,6 +339,7 @@ def plan(project):
                 if any(a<w['end'] and b>w['start'] for w in windows):break
                 if any(a<tick(v['time']+v.get('hold',2.)) and b>tick(v['time']) for v in project['anchors']):break
                 if any(a<tick(v['end']) and b>tick(v['start']) for v in project['overrides']):break
+                if any(a<tick(end) and b>tick(start) for start,end,p,v in brick_model.spans(project,protected=True)):break
                 states=[state_at(project,t/rate) for t in (a+.001,(a+b)/2,b-.001)]
                 state=states[1]
                 if carrier is None:carrier=state['emotion']
@@ -386,6 +402,11 @@ def plan(project):
                 else:
                     chosen=max(originals,key=lambda m:(m['role']==targetrole, -abs(m['energy']-selection_level), m['id']==main['id']))
             sid=chosen['source_id'];offset=cursor_by_source.get(sid,0);cycle=cycle_by_source.get(sid,0)
+            manual=brick_model.placement_at(project,(start+end)/2/rate)
+            if manual:
+                placement,assembly=manual;local=start-placement['start_bar']*music.BAR
+                offset=assembly['block_indices'][local//music.BAR]*music.BAR+local%music.BAR
+                offset=min(offset,chosen['ticks']-1);cycle=0
             version=('original','variant','answer','secondary')[cycle%4]
             material=next(m for m in bank if m['source_id']==sid and m['version']==version)
             if state.get('original_only'):material=chosen;cycle=0
@@ -417,6 +438,8 @@ def plan(project):
                              kind=window['kind'] if window else 'content',notes=notes,emotion=state['emotion'],level=state['level'],end_level=final_state['level'],
                              pinned=bool(state.get('anchor')),order_policy='source-order; explicit target may interrupt',version=material['version']))
             if size!=music.BAR:warnings.append('%.2f–%.2fs 为固定时间/结尾约束截段（%g 拍）；普通块固定 4 拍，后续拍网格不重排。'%(seconds,end/rate,size/PPQ))
+    # User assemblies replace only their own score slots, before endpoint-aware links.
+    brick_model.apply_rows(project,rows)
     # Actual neighboring endpoints determine every transition run.
     for w in windows:
         if w['kind']=='transition_ending':
@@ -575,7 +598,9 @@ def compile_score(planned):
                 add('handoff','soft',r['notes'][0]['pitch'],max(prev['start_tick'],start-PPQ//2),min(PPQ//2,start-prev['start_tick']),35,12)
             boundaries.append(dict(tick=start,from_entry=prev['id'],to_entry=r['id'],actions=actions))
     blocks=[dict(entry_id=r['id'],name=r['name'],kind=r['kind'],start_seconds=r['start_seconds'],end_seconds=r['end_seconds'],
-                 emotion=r['emotion'],intensity_start=r['level'],intensity_end=r['end_level']) for r in planned['blocks']]
+                 emotion=r['emotion'],intensity_start=r['level'],intensity_end=r['end_level'],
+                 manual_brick=bool(r.get('manual_brick')),placement_id=r.get('placement_id'),
+                 brick_id=r.get('brick_id'),edge_connect_allowed=bool(r.get('edge_connect_allowed'))) for r in planned['blocks']]
     if project.get('continuous_intensity'):
         points=intensity_curve.controls(project)
         for block in blocks:
@@ -588,6 +613,7 @@ def compile_score(planned):
                             render_mode='melody_only' if solo else 'arranged',
                             melody_continuity=dict(joined_fragments=joined,output_notes=len(melody),policy='same-source-note-only; retain-onset-timbre'),
                             connections_enabled=True,boundaries=boundaries,playback_blocks=blocks,anchors=planned['anchors'],
+                            composition_summary=dict(brick_model.summary(project),emotion_drawn=bool(project.get('emotion_drawn'))),
                             warnings=planned['warnings']+['离线规则原型；非生成式 AI。锚点误差不超过半个 LMMS 时间格。']))
 
 

@@ -54,7 +54,7 @@ class ResponsiveLayout:
         walk(self.root)
         s=ttk.Style(self.root);s.configure('.',font=font(('Microsoft YaHei UI',10)))
         s.configure('Compact.TButton',font=font(('Microsoft YaHei UI',8)))
-        p.source_panel.configure(height=round(176*factor))
+        p.source_panel.configure(height=p.panel_height())
         app.rail_page.export.configure(height=round(124*factor))
         room=max(350,height-round(110*factor)-round(124*factor)-64)
         app.rail_page.audition.configure(height=min(round(422*factor),room))

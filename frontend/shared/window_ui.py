@@ -59,13 +59,32 @@ class IconButton(tk.Canvas):
 
 
 class RoundedPanel(tk.Canvas):
-    def __init__(self,parent,padding=12,**kwargs):
+    def __init__(self,parent,padding=12,scrollable=False,**kwargs):
         super().__init__(parent,highlightthickness=0,bg=color('bg'),**kwargs)
         self.padding=padding
         self.body=ttk.Frame(self,style='Panel.TFrame')
         self.window=self.create_window(padding,padding,anchor='nw',window=self.body)
         self.bind('<Configure>',self.layout)
         self.body.bind('<Configure>',lambda _:self.refresh_theme())
+        if scrollable:
+            self.scroll_canvas=tk.Canvas(self.body,bg=color('panel'),highlightthickness=0,yscrollincrement=24)
+            self.scrollbar=ttk.Scrollbar(self.body,orient='vertical',command=self.scroll_canvas.yview)
+            self.scroll_canvas.pack(fill='both',expand=True)
+            self.content=ttk.Frame(self.scroll_canvas,style='Panel.TFrame')
+            self.content_window=self.scroll_canvas.create_window(0,0,anchor='nw',window=self.content)
+            self.scroll_canvas.configure(yscrollcommand=self._scrollbar_state)
+            self.scroll_canvas.bind('<Configure>',self._viewport_size)
+            self.content.bind('<Configure>',lambda _:self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox('all')))
+
+    def _viewport_size(self,event):
+        self.scroll_canvas.itemconfigure(self.content_window,width=max(1,event.width))
+        self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox('all'))
+
+    def _scrollbar_state(self,first,last):
+        self.scrollbar.set(first,last)
+        if float(last)-float(first)<.999:
+            if not self.scrollbar.winfo_manager():self.scrollbar.pack(side='right',fill='y',before=self.scroll_canvas)
+        else:self.scrollbar.pack_forget()
 
     def layout(self,event=None):
         pad=self.padding

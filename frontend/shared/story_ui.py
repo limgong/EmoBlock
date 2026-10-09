@@ -13,6 +13,8 @@ import block_labels
 import block_audition
 import intensity_curve
 import block_editor
+import brick_model
+from composer_ui import ComposerUI
 from ui_hints import Tooltip, rounded
 from block_timeline import BlockTimeline
 from block_actions import BlockActions
@@ -25,7 +27,7 @@ ROLE_LABELS={'auto':'自动判断','main':'主基调','secondary':'副旋律','c
 COLORS=dict(calm='#8fcddd',hope='#ebd18c',sad='#a6a6df',suspense='#c8a6df',crisis='#e99c98',resolve='#97d9ba')
 
 
-class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
+class StoryPage(ComposerUI,BlockActions,BlockTimeline,ttk.Frame):
     def __init__(self,parent,host):
         super().__init__(parent);self.host=host;self.project=emotion_input.default_story();self.planned=None;self.history=[];self.drag=None;self.source=None;self.path=None
         self.project['sources']=[default_melody.source()]
@@ -41,12 +43,12 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.message=tk.StringVar(value='')
         self.drag_preview=None;self.drag_error='';self.scroll_timer=None;self.hover_region=None
         self.columnconfigure(0,weight=1);self.rowconfigure(1,weight=1)
-        self.source_panel=RoundedPanel(self,padding=10,height=176)
+        self.source_panel=RoundedPanel(self,padding=10,height=176,scrollable=True)
         self.source_panel.grid(row=0,column=0,sticky='ew',pady=(8,10))
         self.editor_panel=RoundedPanel(self,padding=10)
         self.editor_panel.grid(row=1,column=0,sticky='nsew')
         self.canvas=tk.Canvas(self,highlightthickness=0,bg=theme_color('bg'))  # legacy scroll adapter, not displayed
-        body=self.source_panel.body
+        body=self.source_panel.content
         self.source_page=0;self.source_card_columns=1
         row=self.row(body)
         ttk.Label(row,text='旋律素材',font=scaled_font(('Microsoft YaHei UI',11,'bold'))).pack(side='left',padx=(0,16))
@@ -67,15 +69,16 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.source_prev=self.btn(source_header,'‹',lambda:self.page_sources(-1),'上一页素材')
         self.source_next=self.btn(source_header,'›',lambda:self.page_sources(1),'下一页素材')
         ttk.Label(source_header,textvariable=self.source_page_label,style='Muted.TLabel').pack(side='right')
-        self.source_details=tk.Toplevel(self);self.source_details.withdraw();self.source_details.title('旋律分块试听')
-        self.source_details.geometry('760x460');self.source_details.transient(self.host.root)
-        self.source_details.protocol('WM_DELETE_WINDOW',self.source_details.withdraw)
-        source_body=ttk.Frame(self.source_details,padding=12);source_body.pack(fill='both',expand=True)
+        self.source_details=ttk.Frame(body);self.source_details_open=False
+        source_body=self.source_details
         self.source_audio=None;self.source_seek=False
         row=self.row(source_body)
         self.source_play_button=ttk.Button(row,text='▶ 播放 / 暂停',command=lambda:self.host.safe(self.toggle_source_play))
+        self.source_play_button.pack(side='left')
         self.source_time=tk.StringVar(value='选择一张旋律卡片');ttk.Label(row,textvariable=self.source_time).pack(side='left',padx=6)
+        row.pack_forget()  # card transport and the main audition panel already show progress
         self.source_slider=ttk.Scale(source_body,from_=0,to=100,orient='horizontal',cursor='hand2');self.source_slider.pack(fill='x')
+        self.source_slider.pack_forget()
         for event,phase in [('<ButtonPress-1>','start'),('<B1-Motion>','move'),('<ButtonRelease-1>','end')]:
             self.source_slider.bind(event,lambda e,p=phase:self.source_seek_event(e,p))
         self.source_settings=ttk.Frame(body);self.selected_role=tk.StringVar(value='自动判断')
@@ -87,13 +90,20 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         for col,label in [('#0','所选输入旋律 · 四拍分块'),('beats','拍范围'),('seconds','秒范围'),('notes','音符数')]:
             self.input_blocks.heading(col,text=label);self.input_blocks.column(col,width=125)
         self.input_blocks.column('#0',width=220)
-        self.block_cards=ttk.Frame(source_body);self.block_cards.pack(fill='x',pady=4)
-        self.block_cards.bind('<Configure>',self.resize_block_cards)
+        self.parts_scroller=tk.Canvas(source_body,height=69,bg=theme_color('panel'),highlightthickness=0,xscrollincrement=100)
+        self.parts_scroller.pack(fill='x',pady=(3,0))
+        self.parts_scroller.scroll_canvas=self.parts_scroller;self.parts_scroller.scroll_axis='x'
+        self.parts_scrollbar=ttk.Scrollbar(source_body,orient='horizontal',command=self.parts_scroller.xview)
+        self.parts_scrollbar.pack(fill='x')
+        self.parts_scroller.configure(xscrollcommand=self.parts_scrollbar.set)
+        self.block_cards=ttk.Frame(self.parts_scroller);self.parts_window=self.parts_scroller.create_window(0,0,anchor='nw',window=self.block_cards)
+        self.block_cards.bind('<Configure>',lambda _:self.parts_scroller.configure(scrollregion=self.parts_scroller.bbox('all')),add='+')
+        self.block_cards.bind('<Configure>',self.resize_block_cards,add='+')
         self.input_blocks.bind('<<TreeviewSelect>>',lambda _:self.draw_source_notes())
         self.input_blocks.bind('<Double-1>',lambda _:self.host.safe(self.play_source_block))
-        self.source_notes=tk.Canvas(source_body,height=75,bg=theme_color('#0c131c'),highlightthickness=0);self.source_notes.pack(fill='x')
+        self.source_notes=tk.Canvas(source_body,height=75,bg=theme_color('#0c131c'),highlightthickness=0)
         self.source_notes.bind('<Configure>',lambda _:self.draw_source_notes())
-        row=self.row(source_body);self.btn(row,'▶ 这一块',self.play_source_block);self.btn(row,'下一块',self.next_source_block);self.btn(row,'■ 停止',self.host.stop_playback)
+        # Audition controls stay in each inline block; no detached detail window.
         body=self.editor_panel.body
         row=self.row(body);self.editor_heading=row
         ttk.Label(row,text='情绪积木',font=scaled_font(('Microsoft YaHei UI',11,'bold'))).pack(side='left',padx=(0,16))
@@ -143,6 +153,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.preview_status=''
         self.preview_planner=PreviewPlanner(self.after,self.after_cancel,engine.plan,self.accept_preview,self.preview_failed)
         self.bind('<Destroy>',lambda event:self.preview_planner.close() if event.widget is self else None,add='+')
+        self.build_composer(self.source_panel.content,body)
         self.refresh()
         self.trend.trace_add('write',lambda *args:self.brush_changed())
         self.pick_emotion('calm')
@@ -182,14 +193,14 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             else:arrow.pack_forget()
         if not self.project['sources']:return
         i=self.source_page;s=self.project['sources'][i];width=max(240,getattr(self,'source_card_width',600))
-        card=tk.Canvas(self.source_cards,width=width,height=round(94*ui_scale.factor),bg=theme_color('panel'),highlightthickness=0,takefocus=True,cursor='hand2')
+        card=tk.Canvas(self.source_cards,width=width,height=round(72*ui_scale.factor),bg=theme_color('panel'),highlightthickness=0,takefocus=True,cursor='hand2')
         card.pack(fill='x')
-        shape=rounded(card,1,1,width-2,93,theme_color('inset'),theme_color('line'),radius=14)
-        card.create_text(27,40,text='♫',fill=theme_color('accent'),font=scaled_font(('Segoe UI',22)))
+        shape=rounded(card,1,1,width-2,71,theme_color('inset'),theme_color('line'),radius=14)
+        card.create_text(27,34,text='♫',fill=theme_color('accent'),font=scaled_font(('Segoe UI',22)))
         title=s['name'].replace('默认 · ','')
         if s.get('builtin_default'):title='欢乐颂 · 主题旋律'
         card.create_text(55,20,text=title,anchor='w',width=max(140,width-130),fill=theme_color('ink'),font=scaled_font(('Microsoft YaHei UI',10)))
-        metadata=card.create_text(55,42,text=f'M{i+1:02}     {s["ticks"]/480:g} 拍',anchor='w',fill=theme_color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
+        metadata=card.create_text(55,38,text=f'M{i+1:02}     {s["ticks"]/480:g} 拍',anchor='w',fill=theme_color('muted'),font=scaled_font(('Microsoft YaHei UI',8)))
         role_button=ttk.Menubutton(card,text=ROLE_LABELS[s['role']]+' ▾',width=8,style='Card.TMenubutton')
         role_button.configure(style='SourceRole.TMenubutton')
         ttk.Style(card).configure('SourceRole.TMenubutton',font=scaled_font(('Microsoft YaHei UI',9)),padding=(6,3))
@@ -199,21 +210,21 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         menu.add_separator();menu.add_command(label='删除此素材',command=lambda sid=s['id']:self.host.safe(lambda:self.card_action(sid,'delete')))
         role_button.configure(menu=menu)
         role_x=card.bbox(metadata)[2]+round(16*ui_scale.factor)
-        role_item=card.create_window(role_x,42,window=role_button,anchor='w')
+        role_item=card.create_window(role_x,38,window=role_button,anchor='w')
         self.card_role_buttons[s['id']]=role_button
         notes=s['notes'];low=min(n['pitch'] for n in notes);high=max(n['pitch'] for n in notes)
         strip=min(230,width-130)
         for n in notes:
             x=55+strip*n['start']/s['ticks'];end=55+strip*(n['start']+n['duration'])/s['ticks']
-            y=78-14*(n['pitch']-low)/max(1,high-low)
+            y=63-9*(n['pitch']-low)/max(1,high-low)
             card.create_rectangle(x,y,max(x+1,end-2),y+3,fill=theme_color('accent'),outline='')
         play_button=ttk.Button(card,text='▶',width=3,style='Compact.TButton',command=lambda sid=s['id']:self.host.safe(lambda:self.card_action(sid,'play')))
-        card.create_window(width-28,44,window=play_button,height=30,width=32)
+        card.create_window(width-28,34,window=play_button,height=30,width=32)
         self.card_play_buttons[s['id']]=play_button
         card.scale('all',0,0,1,ui_scale.factor)
         # Set embedded-widget dimensions after Canvas scaling to avoid scaling twice.
         card.itemconfigure(role_item,width=round(98*ui_scale.factor),height=round(26*ui_scale.factor))
-        Tooltip(card,s['name']+'\n点击试听；用途菜单可更改用途或删除素材。')
+        Tooltip(card,s['name']+'\n点击展开内联分块；▶ 试听；用途菜单更改用途或删除素材。')
         card.bind('<Button-1>',lambda event,sid=s['id']:self.host.safe(lambda:self.select_source_card(sid)))
         card.bind('<Return>',lambda event,sid=s['id']:self.host.safe(lambda:self.select_source_card(sid)))
         card.bind('<Delete>',lambda event:self.host.safe(lambda:self.card_action(s['id'],'delete')))
@@ -231,7 +242,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
     def select_source_card(self,sid):
         self.sources.selection_set(sid);self.refresh_source_blocks();self.draw_source_cards()
         self.source_settings.pack_forget();self.source_seek=False;self.source_slider['value']=0
-        self.start_source_audio()
+        if not self.source_details_open:self.toggle_source_details()
 
     def start_source_audio(self,fraction=0.):
         self.source_block_playing=None
@@ -339,13 +350,18 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         return button
 
     def toggle_source_details(self):
-        if self.source_details.state()=='withdrawn':
-            self.source_details.deiconify();self.source_details.lift()
-        else:self.source_details.withdraw()
+        self.source_details_open=not self.source_details_open
+        if self.source_details_open:self.source_details.pack(fill='x',after=self.source_cards,pady=(4,0))
+        else:self.source_details.pack_forget()
+        self.source_detail_button.configure(text='收起分块 ▴' if self.source_details_open else '分块组合 ▾')
+        self.source_panel.configure(height=self.panel_height())
 
     def page_sources(self,delta):
         count=max(1,(len(self.project['sources'])+getattr(self,'source_card_columns',3)-1)//getattr(self,'source_card_columns',3))
-        self.source_page=(self.source_page+delta)%count;self.draw_source_cards()
+        self.source_page=(self.source_page+delta)%count
+        if self.project['sources']:
+            self.sources.selection_set(self.project['sources'][self.source_page]['id']);self.refresh_source_blocks()
+        self.draw_source_cards()
 
     def select_palette(self,key):
         if self.drag:self.cancel_drag()
@@ -357,17 +373,21 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
     def refresh_source_blocks(self):
         ids=self.sources.selection()
         source=next((s for s in self.project['sources'] if ids and s['id']==ids[0]),None)
+        changed=(source['id'] if source else None)!=getattr(self,'part_source_id',None)
+        self.part_source_id=source['id'] if source else None
         old=self.input_blocks.selection();self.input_blocks.delete(*self.input_blocks.get_children())
         self.source_block_rows=block_audition.source_blocks(source,self.project['bpm']) if source else []
         for i,r in enumerate(self.source_block_rows):
             self.input_blocks.insert('','end',iid=str(i),text=f'第{i+1}块'+('（尾部不足4拍）' if r['end_tick']-r['start_tick']<1920 else ''),
                                      values=(f'{r["start_tick"]/480:g}–{r["end_tick"]/480:g}',f'{r["start_seconds"]:.2f}–{r["end_seconds"]:.2f}',len(r['notes'])))
-        if self.source_block_rows:self.input_blocks.selection_set(old[0] if old and self.input_blocks.exists(old[0]) else '0')
+        if self.source_block_rows:
+            retained=[i for i in old if self.input_blocks.exists(i)]
+            self.input_blocks.selection_set(*(['0'] if changed else retained))
         self.draw_source_notes()
         self.draw_block_cards()
 
     def resize_block_cards(self,event):
-        columns=max(1,event.width//115)
+        columns=max(1,len(getattr(self,'source_block_rows',[])))
         if columns!=getattr(self,'block_card_columns',6):
             self.block_card_columns=columns;self.draw_block_cards()
 
@@ -376,10 +396,10 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.block_play_buttons={};columns=getattr(self,'block_card_columns',6)
         selected=self.input_blocks.selection()
         for i,row in enumerate(getattr(self,'source_block_rows',[])):
-            active=bool(selected and selected[0]==str(i));color=theme_color('#80d9b4') if active else theme_color('#354659')
-            card=tk.Canvas(self.block_cards,width=107,height=77,bg=theme_color('#101721'),highlightthickness=0,cursor='hand2',takefocus=True)
+            active=str(i) in selected;color=theme_color('#80d9b4') if active else theme_color('#354659')
+            card=tk.Canvas(self.block_cards,width=107,height=63,bg=theme_color('panel'),highlightthickness=0,cursor='hand2',takefocus=True)
             card.grid(row=i//columns,column=i%columns,padx=4,pady=4,sticky='nw')
-            shape=card.create_polygon(11,2,96,2,105,2,105,11,105,66,105,75,96,75,11,75,2,75,2,66,2,11,2,2,
+            shape=card.create_polygon(11,2,96,2,105,2,105,11,105,52,105,61,96,61,11,61,2,61,2,52,2,11,2,2,
                                       smooth=True,splinesteps=20,fill=theme_color('#203c35') if active else theme_color('#192532'),outline=color,width=2)
             card.create_text(9,13,text=f'第 {i+1} 块',anchor='w',fill=theme_color('#ecf3f8'),font=scaled_font(('Microsoft YaHei UI',8,'bold')))
             beats=(row['end_tick']-row['start_tick'])/480
@@ -389,16 +409,17 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
                 low=min(n['pitch'] for n in notes);high=max(n['pitch'] for n in notes)
                 for n in notes:
                     x=9+89*n['start']/length;end=9+89*(n['start']+n['duration'])/length
-                    y=42-16*(n['pitch']-low)/max(1,high-low)
+                    y=35-12*(n['pitch']-low)/max(1,high-low)
                     card.create_rectangle(x,y,max(x+1,end-1),y+2,fill=theme_color('#eab970') if n.get('continuation') else theme_color('#86dcba'),outline='')
             else:card.create_text(53,35,text='休止',fill=theme_color('#9db7c8'),font=scaled_font(('Microsoft YaHei UI',8)))
-            card.create_text(9,61,text=f'{row["start_seconds"]:.1f}–{row["end_seconds"]:.1f}s',anchor='w',fill=theme_color('#a3b8c7'),font=scaled_font(('Segoe UI',7)))
+            card.create_text(9,51,text=f'{row["start_seconds"]:.1f}–{row["end_seconds"]:.1f}s',anchor='w',fill=theme_color('#a3b8c7'),font=scaled_font(('Segoe UI',7)))
             button=ttk.Button(card,text='▶',width=2,style='Compact.TButton',command=lambda index=i:self.host.safe(lambda:self.toggle_block_card(index)))
-            card.create_window(90,61,window=button,width=25,height=22);self.block_play_buttons[i]=button
-            card.bind('<Button-1>',lambda event,index=i:self.host.safe(lambda:self.select_block_card(index)))
-            card.bind('<Return>',lambda event,index=i:self.host.safe(lambda:self.select_block_card(index)))
+            card.create_window(90,51,window=button,width=25,height=20);self.block_play_buttons[i]=button
+            card.bind('<Button-1>',lambda event,index=i:self.host.safe(lambda:self.select_part(index,event)))
+            card.bind('<Return>',lambda event,index=i:self.host.safe(lambda:self.select_part(index,event)))
             card.bind('<Enter>',lambda event,c=card,item=shape:c.itemconfigure(item,outline=theme_color('#a7edd1')))
             card.bind('<Leave>',lambda event,c=card,item=shape,border=color:c.itemconfigure(item,outline=border))
+        self.selection_changed()
 
     def select_block_card(self,index):
         self.input_blocks.selection_set(str(index));self.draw_source_notes();self.draw_block_cards();self.play_source_block()
@@ -407,7 +428,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         sid=self.selected_source()['id']
         if getattr(self,'source_block_playing',None)==(sid,index) and self.source_is_playing():
             self.toggle_source_play()
-        else:self.select_block_card(index)
+        else:self.play_source_block(index)
 
     def draw_source_notes(self):
         c=self.source_notes;c.delete('all');ids=self.input_blocks.selection()
@@ -421,10 +442,10 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             a=10+width*n['start']/length;b=10+width*(n['start']+n['duration'])/length;y=48-(n['pitch']-low)/max(1,high-low)*33
             c.create_rectangle(a,y,b,y+6,fill=theme_color('#eab970') if n['continuation'] else theme_color('#80d9b4'),outline='')
 
-    def play_source_block(self):
+    def play_source_block(self,index=None):
         ids=self.sources.selection();blocks=self.input_blocks.selection()
-        if not ids or not blocks:raise ValueError('请先选择输入旋律和它的一个块。')
-        source=copy.deepcopy(next(s for s in self.project['sources'] if s['id']==ids[0]));index=int(blocks[0]);bpm=self.project['bpm']
+        if not ids or (index is None and not blocks):raise ValueError('请先选择输入旋律和它的一个块。')
+        source=copy.deepcopy(next(s for s in self.project['sources'] if s['id']==ids[0]));index=int(blocks[0]) if index is None else index;bpm=self.project['bpm']
         self.host.stop_playback()
         def done(result):
             path,rows=result
@@ -517,7 +538,9 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
     def remove_source(self):
         ids=self.sources.selection()
         if not ids:raise ValueError('请选中素材。')
-        project=self.snapshot();project['sources']=[s for s in project['sources'] if s['id'] not in ids]
+        project=self.snapshot()
+        for sid in ids:project=brick_model.remove_source(project,sid)
+        project['sources']=[s for s in project['sources'] if s['id'] not in ids]
         for key in ('curve','anchors','overrides'):
             for value in project[key]:
                 if value.get('source_id') in ids:value.pop('source_id')
@@ -532,6 +555,7 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         return dict(emotion=emotion,level=float(self.level.get())/100,end_level=float(self.end_level.get())/100,source_id=None)
 
     def undo(self):
+        if self.assembly_drag:self.cancel_assembly();return
         if self.drag:self.cancel_drag();return
         if not self.history:raise ValueError('没有可撤销的操作。')
         self.selected_region=None;self.project=self.history.pop();self.duration.set(str(self.project['duration']));self.bpm.set(str(self.project['bpm']));self.planned=None;self.host.dirty=True;self.refresh()
@@ -554,12 +578,14 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
         self.preview_planner.invalidate()
         def done(result):
             self.project=project;self.planned,report=result;self.preview_status='';self.host.dirty=True;self.refresh();self.host.add_result(report,'快速成品')
-        self.host.job('生成情绪故事…',lambda:engine.generate(project,self.host.progress_message),done)
+        counts=brick_model.summary(project)
+        self.host.job('按情绪编配指定主旋律，填充 '+str(counts['empty'])+' 个空位…',lambda:engine.generate(project,self.host.progress_message),done)
 
     def select_block(self,event=None):
         ids=self.blocks.selection()
         if not self.planned or not ids:return
         self.draw()
+        self.refresh_composer()
 
     def refresh(self):
         old_source=self.sources.selection()
@@ -582,3 +608,4 @@ class StoryPage(BlockActions,BlockTimeline,ttk.Frame):
             self.host.summary.configure(text='%d 段旋律 · %d 块 · %.1f 秒'%(len(self.project['sources']),len(emotion_input.grid_seconds(self.project))-1,self.project['duration']))
             self.preview()
         self.draw()
+        self.refresh_composer()

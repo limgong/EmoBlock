@@ -38,6 +38,10 @@ Finder 拖入采用 [tkinterdnd2](https://github.com/pmgagne/tkinterdnd2)。如�
 
 ## 验证记录与 Mac 实测步骤
 
+2026-10-01 新增的内联分块、多选组成旋律积木、时间线拖放吸附、内联颜色/变体设置和手绘情绪识别，都实现在 `frontend/shared/composer_ui.py` 与共享 StoryPage 中。Windows/macOS 使用完全相同的交互逻辑，无新增 Win32 依赖；多选仅使用通用 Shift 状态，手绘使用跨平台 crosshair 光标。新增旋律积木模型位于后端 `brick_model.py`，不导入 Tk。Mac 的原生拖放、鼠标捕获及真实显示仍需按下述流程实测。
+
+“指定主旋律，情绪可变”的文案和说明也位于共享前端，两端同步：保护主旋律不被连接替换，不等于关闭音色、伴奏、和声或力度变化。本次不改变平台适配器接口。
+
 本次在 Windows 验证音乐逻辑与后端独立导入；通过模拟 afplay 验证截取帧数、暂停/恢复计时、播放结束和临时文件清理；用临时目录验证 Mac bundle 资源路径。模拟不会发出声音，也不能证明实际 macOS 播放成功。
 
 Mac 需依次执行：
