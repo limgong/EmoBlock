@@ -10,7 +10,8 @@ from curve_raster import bitmap, blend, pixels
 def icon_image(root, name, ink, background):
     if name=='brand':
         path=Path(__file__).resolve().parents[2]/'assets/brand/emoblocks-icon.png'
-        source=tk.PhotoImage(master=root,file=str(path))
+        # Tk 9 on macOS can autodetect a file icon instead of PNG pixels.
+        source=tk.PhotoImage(master=root,file=str(path),format='png')
         factor=max(1,round(source.width()/pixels(root,28)))
         return source.subsample(factor)
     segments=[];circles=[];solids=[]
