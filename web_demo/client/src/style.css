@@ -6,6 +6,7 @@
 @media(max-width:650px){header{padding:0 14px}.brand{font-size:21px}.workspace{display:flex;flex-direction:column;height:auto}.library{height:260px;flex-shrink:0;border-right:0}.cards{display:flex;gap:12px;flex:1;overflow:auto}.material{min-width:175px;margin:0}.derive{display:none}.studio{overflow:visible}.canvas-tools{gap:8px}.memory-label{font-size:10px}.selection{flex-wrap:wrap}.generation .spacer{display:none}.player{margin-top:8px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 .deployment-note{flex-shrink:0;margin:0 0 14px;font-size:11px;line-height:1.7;color:var(--text);overflow-wrap:anywhere}.deployment-note a{color:inherit;margin-left:8px;text-decoration-color:var(--accent);text-underline-offset:3px}.deployment-note a:hover{text-decoration-color:var(--text)}
+.generation-notice{width:420px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);overflow:auto;margin:auto;padding:24px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow)}.generation-notice::backdrop{background:#0006}.generation-notice h2{font-size:19px}.generation-notice p{margin:16px 0 20px;font-size:14px;line-height:1.7;overflow-wrap:anywhere}.notice-actions{display:flex;justify-content:flex-end}.notice-actions button{font-size:13px;min-width:76px}
 
 .source-note a{color:var(--accent);overflow-wrap:anywhere}.source-note summary{cursor:pointer}
 

@@ -36,7 +36,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
   await pause(400);await p.locator('svg.canvas .block').last().click();if(emotion!=='平静／安定')await p.getByRole('button',{name:emotion,exact:true}).click();await pause(1000);
  }
  await p.locator('svg.canvas').click({position:{x:pad+6/8*(w-pad-16)+8,y:H-18}});await p.getByLabel('放置格').fill('7');await p.getByRole('button',{name:'标为留白',exact:true}).click();await pause(1700);
- mark('generate');await p.getByRole('button',{name:'生成方案',exact:true}).click();
+ mark('generate');await p.getByRole('button',{name:'生成方案',exact:true}).click();await p.getByRole('button',{name:'知道了',exact:true}).click();
  const started=Date.now();while(Date.now()-started<610000){await pause(3000);if(await p.locator('.candidate').count())break;if(await p.locator('.error').count())throw Error(await p.locator('.error').innerText())}
  if(!await p.locator('.candidate').count())throw Error('Real generation timed out');mark('ready');await pause(2300);
  const prepared=await p.evaluate(()=>fetch('/api/project').then(r=>r.json()));const audible=prepared.candidates[0].id;

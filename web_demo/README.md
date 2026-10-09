@@ -18,6 +18,8 @@ Five built-in classical melody entries (including only the latest Ode to Joy), r
 
 The bottom deployment note links to the desktop source and its setup instructions. The online service has finite resources and omits desktop import/assembly operations; it is not a substitute for the full desktop workflow. See the repository root README for Windows/macOS setup. This link does not imply that isolated humming or external-model branches are released.
 
+Each click on “生成方案” immediately opens an informational dialog: “服务器性能低下，复杂任务可能耗时过长，本地更快速”. Submission and progress continue while it is open. “知道了” or Escape dismisses the dialog without cancelling generation; explicit task cancellation remains a separate action. A new generation click shows the notice again. The dialog follows the current theme and fits narrow windows.
+
 The play icon on a source card starts the clearly labelled browser oscillator pitch preview immediately; card selection stays silent. The shared bottom player can replay or stop it. This preview does not use LMMS timbre. Full candidate comparisons use real LMMS WAVs. No uploads, humming, external model inference, or full desktop feature parity claimed. Confirm is one undoable backend transaction. New requests never silently replace the audible object. Generated cards use stored base-note previews; exact final notes are heard in the candidate WAV.
 
 ## Isolation and limits
