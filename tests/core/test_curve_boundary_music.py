@@ -11,6 +11,7 @@ import curve_boundary_music as music
 import curve_connection_music as connection_music
 import curve_connections as connections
 import curve_bridges as bridges
+import curve_emotion as emotion_music
 import curve_project as m
 from test_curve_connection_music import request as connection_request
 from test_curve_bridge_music import fixture
@@ -273,6 +274,26 @@ class BoundaryMusicTests(unittest.TestCase):
         bad=copy.deepcopy(req)
         for entry in bad['actual_layout']['emission_ledger']:entry['performance_id']='collapsed-occurrences'
         for segment in bad['actual_layout']['segments']:segment['performance_id']='collapsed-occurrences'
+        rehash(bad)
+        with self.assertRaises(m.ProjectError) as exc:music.plan_boundaries(bad)
+        self.assertEqual('INVALID_SOURCE',exc.exception.code)
+
+    def test_emotion_variant_keeps_nested_combination_parent_paths(self):
+        p=fixture(4,rough=False);leaf=copy.deepcopy(p['materials'][0])
+        inner=combination('inner',[leaf,leaf]);outer=combination('outer',[inner,inner])
+        p['materials'].append(outer);place=copy.deepcopy(p['placements'][0])
+        variant=emotion_music.emotion_variant(outer,'crisis',p['intensity_points'],0,[])
+        self.assertEqual('phrase',variant['kind'])
+        place.update(material_id=outer['id'],length_ticks=outer['length_ticks'],base_snapshot=outer,
+                     emotion='crisis',emotion_variant=variant)
+        p['placements']=[place]
+        req=request(p,parameters=dict(policy='none'));proposal=music.plan_boundaries(req)
+        ledger=req['actual_layout']['emission_ledger']
+        self.assertEqual(4,len({e['performance_id'] for e in ledger}))
+        self.assertTrue(all(len(e['parent_ref']['component_path'])==2 for e in ledger))
+        self.assertEqual(req['actual_layout']['notes'],actual_notes(req,proposal))
+        bad=copy.deepcopy(req)
+        bad['actual_layout']['emission_ledger'][0]['parent_ref']['component_path']=[]
         rehash(bad)
         with self.assertRaises(m.ProjectError) as exc:music.plan_boundaries(bad)
         self.assertEqual('INVALID_SOURCE',exc.exception.code)

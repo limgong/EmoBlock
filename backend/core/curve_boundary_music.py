@@ -169,7 +169,9 @@ def _validate(request):
             actual = next((n for n in m.placed_notes(place) if n['id'] == entry['note_id']), None)
             if actual != by_note[entry['note_id']] or parent['note_id'] not in (entry['note_id'], actual['id'][len(place['id'])+1:]):
                 _fail('INVALID_SOURCE', '音符没有对应真实放置父。')
-            path = []; leaf = material; onset = actual['start_tick']-place['start_tick']
+            # Emotion variants flatten combinations into phrases; occurrence
+            # ownership still comes from the unchanged placement base tree.
+            path = []; leaf = place['base_snapshot']; onset = actual['start_tick']-place['start_tick']
             while leaf['kind']=='combination':
                 child = next((c for c in leaf['children'] if c['offset_tick']<=onset<c['offset_tick']+c['snapshot']['length_ticks']),None)
                 if child is None: _fail('INVALID_SOURCE', '音符不属于实际组合子使用。')
