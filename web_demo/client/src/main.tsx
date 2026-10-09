@@ -30,13 +30,13 @@ function App(){
  const svg=useRef<SVGSVGElement>(null),audio=useRef<HTMLAudioElement>(null),ctx=useRef<AudioContext|null>(null),timer=useRef<number>(0),draft=useRef<Point[]|null>(null),gesture=useRef<{kind:string;index?:number;id?:string;offset?:number;tick?:number}|null>(null);
  useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('theme',theme)},[theme]);
  useEffect(()=>{api('/samples').then(setSamples).catch(e=>setError(e.message))},[]);
- useEffect(()=>{api('/project').then(setP).catch(()=>api('/session',{sample:'joy'}).then(setP).catch(e=>setError(e.message)));return()=>{playback.current++;ctx.current?.close();clearTimeout(timer.current)}},[]);
+ useEffect(()=>{(new URLSearchParams(location.search).get('example')==='joy'?api('/session',{sample:'joy',example:true}).then(next=>{setP(next);setMode('arranged');history.replaceState(null,'',location.pathname)}):api('/project').then(setP).catch(()=>api('/session',{sample:'joy'}).then(setP))).catch(e=>setError(e.message));return()=>{playback.current++;ctx.current?.close();clearTimeout(timer.current)}},[]);
  function stop(){playback.current++;audio.current?.pause();if(audio.current)audio.current.currentTime=0;ctx.current?.close();ctx.current=null;clearTimeout(timer.current);setPlaying(false)}
  async function update(action:string,args:unknown={}){if(!p||busy)return false;setBusy(true);setError('');try{setP(await api('/edit',{fingerprint:p.fingerprint,action,args}));setCandidate('');setJob('');setProgress(null);return true}catch(e){setError((e as Error).message);setP(await api('/project'));return false}finally{setBusy(false)}}
  async function clearBoard(){stop();if(await update('clear_canvas')){setSelected('');setCell(0);setPoints(null);draft.current=null;gesture.current=null;setDragTick(null);setPreview(null);setPlayerLabel('选择素材或成品试听')}}
  async function reset(){stop();setBusy(true);try{setP(await api('/session',{sample}));setSelected('');setMaterial('');setJob('');setProgress(null);setCandidate('');setPreview(null);setError('')}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  useEffect(()=>{if(!job)return;let done=false;const tick=async()=>{try{const j=await api('/jobs/'+job);if(done)return;
-  if(['QUEUED','RUNNING'].includes(j.status)){setProgress(old=>({step:Math.max(old?.step||0,progressStep(j.progress.phase)),status:j.status==='QUEUED'?'queued':'running'}));return}
+  if(['QUEUED','RUNNING'].includes(j.status)){setProgress(old=>({step:Math.max(old?.step||0,progressStep(j.progress.phase)),phase:j.progress.phase,status:j.status==='QUEUED'?'queued':'running'}));return}
   const next=await api('/project');if(done)return;setP(next);setJob('');
   const finished=['SUCCEEDED','INSUFFICIENT'].includes(j.status)&&next.candidates.length>0;
   setProgress(old=>({step:finished?8:j.status==='CANCELLED'?0:old?.step||0,status:finished?'done':j.status==='CANCELLED'?'cancelled':'failed'}));

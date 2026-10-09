@@ -235,6 +235,7 @@ async def project_error(request, exc):
 class NewSession(BaseModel):
     model_config=ConfigDict(extra='forbid')
     sample:str='joy'
+    example:bool=False
 class Mutation(BaseModel):
     model_config=ConfigDict(extra='forbid')
     fingerprint:str=Field(max_length=128)
@@ -260,6 +261,7 @@ def samples():
 @app.post('/api/session')
 def create_session(data:NewSession, response:Response, request:Request):
     if data.sample not in SAMPLES: raise HTTPException(422,'示例不存在。')
+    if data.example and data.sample != 'joy': raise HTTPException(422,'搭建示例使用欢乐颂。')
     with LOCK:
         cleanup()
         ip=request.client.host if request.client else 'unknown'
@@ -272,7 +274,7 @@ def create_session(data:NewSession, response:Response, request:Request):
         with db() as connection:
             count=connection.execute('SELECT count(*) FROM sessions').fetchone()[0]
         if count>=100: raise HTTPException(429,'体验人数较多，请稍后再试。')
-        sid=secrets.token_hex(24);c=controller(data.sample);SESSIONS[sid]=c;persist(sid,c)
+        sid=secrets.token_hex(24);c=controller(data.sample, example=data.example);SESSIONS[sid]=c;persist(sid,c)
         response.set_cookie(COOKIE,sid,max_age=MAX_AGE,httponly=True,samesite='strict',secure=os.environ.get('EMOBLOCKS_SECURE_COOKIE')=='1')
         return view(c)
 

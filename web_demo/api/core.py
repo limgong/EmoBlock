@@ -14,10 +14,22 @@ from curve_material_names import short_name
 SAMPLE_CATALOG = json.loads((ROOT / 'assets/samples/classical-catalog.json').read_text(encoding='utf-8'))
 SAMPLES = {item['id']: (item['label'], item['file']) for item in SAMPLE_CATALOG}
 
-def controller(sample='joy'):
+def controller(sample='joy', example=False):
     value = workflow.Controller(model.new_project(8))
     job = value.capture_job('IMPORT')
     value.apply_batch(workflow.prepare_import(ROOT / 'assets/samples' / SAMPLES[sample][1]), job['token'])
+    if example:
+        # An explicitly requested new experience; never modifies an existing project.
+        originals = [m for m in value.project['materials']
+                     if m['kind'] == 'block' and not m['phrase_id'] and not m['generation']]
+        positions = (0, 1, 2, 4, 5, 6, 7)
+        emotions = ('calm', 'hope', 'crisis', 'resolve', 'resolve', 'hope', 'calm')
+        for index, emotion in zip(positions, emotions):
+            value.edit('place', material_id=originals[index]['id'], start_tick=index * model.BAR)
+            value.edit('set_emotion', placement_ids=[value.project['placements'][-1]['id']], emotion=emotion)
+        value.edit('set_intensity', points=[dict(tick=0,level=.2),dict(tick=3840,level=.45),
+            dict(tick=7680,level=.85),dict(tick=8640,level=.95),dict(tick=11520,level=.6),
+            dict(tick=value.project['total_ticks'],level=.2)])
     return value
 
 def edit_board(value, action, grid_count=None):

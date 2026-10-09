@@ -37,6 +37,23 @@ class API(unittest.TestCase):
         self.assertEqual(other.get('/api/project').status_code,401)
         self.assertEqual(self.client.get('/api/jobs/missing').status_code,404)
         self.assertNotIn('/Users/',str(self.p))
+
+    def test_populated_joy_example_is_new_and_persists(self):
+        original_sid=self.client.cookies.get(service.COOKIE)
+        before=self.p['fingerprint']
+        response=self.client.post('/api/session',json={'sample':'joy','example':True})
+        self.assertEqual(response.status_code,200,response.text)
+        example=response.json()
+        self.assertNotEqual(self.client.cookies.get(service.COOKIE),original_sid)
+        self.assertEqual(service.model.fingerprint(service.SESSIONS[original_sid].project),before)
+        self.assertEqual(example['grid_count'],8)
+        self.assertEqual([p['start_tick']//1920 for p in example['placements']],[0,1,2,4,5,6,7])
+        self.assertEqual([p['emotion'] for p in example['placements']],['calm','hope','crisis','resolve','resolve','hope','calm'])
+        self.assertEqual([p['base_snapshot']['display_name'] for p in example['placements']],['A1','A2','A3','A5','A6','A7','A8'])
+        self.assertEqual(example['memory']['state'],'BOUND')
+        service.SESSIONS.clear()
+        self.assertEqual(self.client.get('/api/project').json()['fingerprint'],example['fingerprint'])
+        self.assertEqual(self.client.post('/api/session',json={'sample':'missing','example':True}).status_code,422)
     def test_trace_single_undo_and_owner_checks(self):
         before=self.p['fingerprint']
         points=[{'tick':i*120,'level':1-abs(i-64)/64} for i in range(129)]
