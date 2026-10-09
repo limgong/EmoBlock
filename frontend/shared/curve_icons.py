@@ -1,12 +1,18 @@
 """One drawn icon vocabulary on accessible native ttk buttons."""
 import math
 import weakref
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 from curve_raster import bitmap, blend, pixels
 
 
 def icon_image(root, name, ink, background):
+    if name=='brand':
+        path=Path(__file__).resolve().parents[2]/'assets/brand/emoblocks-icon.png'
+        source=tk.PhotoImage(master=root,file=str(path))
+        factor=max(1,round(source.width()/pixels(root,28)))
+        return source.subsample(factor)
     segments=[];circles=[];solids=[]
     def line(points):segments.extend(zip(points,points[1:]))
     def rect(box):

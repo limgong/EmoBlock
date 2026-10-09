@@ -268,7 +268,7 @@ def build_chrome(app):
     app.shell.columnconfigure(0,weight=1);app.shell.rowconfigure(1,weight=1)
     header=ttk.Frame(app.shell,style='Curve.TFrame',height=pixels(root,48))
     header.grid(row=0,column=0,sticky='ew',pady=(0,8));header.pack_propagate(False)
-    app.brand_button=IconButton(header,app,'blocks','EmoBlocks',lambda:None,style='Curve.Header.TButton')
+    app.brand_button=IconButton(header,app,'brand','EmoBlocks',lambda:None,style='Curve.Header.TButton')
     app.brand_button.pack(side='left')
     ttk.Label(header,text='EmoBlocks',style='Curve.Brand.TLabel').pack(side='left',padx=(0,10))
     app.file_menu=tk.Menu(root,tearoff=False)
