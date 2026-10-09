@@ -85,6 +85,8 @@ CLI 接受独立 story JSON（可取生成目录中的 `story.json`），不是�
 
 音频转 MIDI 为可选独立环境：在 `work/basic-pitch-venv` 安装 `requirements-basic-pitch.txt`，或用 `EMOBLOCKS_BASIC_PITCH_PYTHON` 指定含 Basic Pitch 的 Python；基础 MIDI / MMP 工作流不依赖它。
 
+生成使用单次任务内的有界校验缓存。可选的原生 JSON 加速模块由 Cython 编译兼容转换、Rust `orjson` 负责编码；保留当前规范化字节、指纹及非法输入检查。在已有 Python 环境运行 `python -m pip install ./native/json_codec` 可构建安装（需要适配当前平台的 C 编译工具）。未安装时自动使用标准编码器，设置 `EMOBLOCKS_JSON_ENCODER=stdlib` 可显式关闭加速。模块不包含音乐生成规则，不改变工程格式，也不接入隔离中的实验功能。
+
 ## 目录与文档
 
 ```text

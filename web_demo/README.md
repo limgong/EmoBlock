@@ -10,6 +10,8 @@ Python 3.11. Install `web_demo/requirements.lock.txt` in an isolated virtual env
 python -m uvicorn web_demo.api.app:app --host 127.0.0.1 --port 8765 --workers 1
 ```
 
+Generation retains the existing music rules and byte-level fingerprint format. A bounded validation scope now spans one complete recommendation job; desktop progress retains full stage snapshots while the web worker requests lightweight progress. The Docker build installs the optional `native/json_codec` extension in a separate compiler stage. For a local Python setup, `python -m pip install ./native/json_codec` builds the Cython compatibility layer and installs its pinned Rust JSON encoder. Without the extension, the same workflow uses the standard encoder; `EMOBLOCKS_JSON_ENCODER=stdlib` explicitly selects that fallback. This does not migrate saved projects or bypass file, protection, source or stale-result checks.
+
 LMMS must be installed; set EMOBLOCKS_LMMS if discovery cannot locate it. Data defaults to data/web-demo; EMOBLOCKS_WEB_DATA overrides it. Only one Uvicorn worker and one application instance are supported. The owned generation subprocess serializes LMMS work and enforces a 10-minute timeout. Do not horizontally scale this implementation.
 
 ## Current scope

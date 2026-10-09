@@ -1,7 +1,6 @@
 """Frozen r3 musical state. Pure data validation and fixed-time editing, no planning."""
 import copy
 import hashlib
-import json
 import math
 import uuid
 from contextlib import contextmanager
@@ -9,6 +8,7 @@ from contextvars import ContextVar
 from functools import wraps
 
 import intensity_curve
+import curve_json
 
 SCHEMA = 'emoblocks.assembly.v2'
 SPEC_REV = 'curve-workflow-v2-r3'
@@ -90,13 +90,22 @@ def cached_validation(fn,args,kwargs):
 
 def canonical(value):
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        return curve_json.dumps_text(value)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise ProjectError('INVALID_PROJECT', '工程必须是有限、无环的 JSON 数据。') from exc
+
+
+def canonical_bytes(value):
+    try:
+        return curve_json.dumps_bytes(value)
+    except UnicodeEncodeError:
+        raise
     except (ValueError, TypeError, RecursionError) as exc:
         raise ProjectError('INVALID_PROJECT', '工程必须是有限、无环的 JSON 数据。') from exc
 
 
 def digest(domain, value):
-    return hashlib.sha256((domain + '\n' + canonical(value)).encode('utf-8')).hexdigest()
+    return hashlib.sha256(domain.encode('utf-8') + b'\n' + canonical_bytes(value)).hexdigest()
 
 
 def shape(value, fields):

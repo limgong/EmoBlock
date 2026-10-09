@@ -7,6 +7,8 @@ files=[]
 for folder in ('backend','assets/samples','web_demo/api','web_demo/deploy','web_demo/client/src'):
  for p in (root/folder).rglob('*'):
   if p.is_file() and '__pycache__' not in p.parts and p.suffix not in ('.pyc',) and p.name!='.env':files.append(p)
+for name in ('pyproject.toml','setup.py','emoblocks_json_native.pyx'):
+ files.append(root/'native/json_codec'/name)
 for name in ('web_demo/README.md','web_demo/requirements.lock.txt','web_demo/client/package.json','web_demo/client/package-lock.json','web_demo/client/tsconfig.json','web_demo/client/vite.config.ts','web_demo/client/index.html'):
  files.append(root/name)
 with tarfile.open(output,'w:gz') as tar:

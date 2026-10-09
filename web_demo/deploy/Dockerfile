@@ -5,11 +5,18 @@ RUN npm ci --no-audit --no-fund
 COPY web_demo/client/ ./
 RUN npm run build
 
+FROM public.ecr.aws/docker/library/python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89 AS native
+RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY native/json_codec/pyproject.toml native/json_codec/setup.py native/json_codec/emoblocks_json_native.pyx /build/json_codec/
+RUN pip wheel --no-deps --index-url https://pypi.tuna.tsinghua.edu.cn/simple --timeout 60 --retries 3 /build/json_codec -w /wheels && pip download --only-binary=:all: --no-deps --index-url https://pypi.tuna.tsinghua.edu.cn/simple orjson==3.13.0 -d /wheels
+
 FROM public.ecr.aws/docker/library/python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89
 RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends lmms ca-certificates libgl1 libxkbcommon-x11-0 fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY web_demo/requirements.lock.txt /app/web_demo/requirements.lock.txt
 RUN pip install --no-cache-dir --index-url https://pypi.tuna.tsinghua.edu.cn/simple --timeout 60 --retries 3 -r web_demo/requirements.lock.txt
+COPY --from=native /wheels/ /tmp/native-wheels/
+RUN pip install --no-cache-dir --no-index /tmp/native-wheels/*.whl && rm -rf /tmp/native-wheels
 COPY backend/ /app/backend/
 COPY assets/samples/ /app/assets/samples/
 COPY web_demo/api/ /app/web_demo/api/

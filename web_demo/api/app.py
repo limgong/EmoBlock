@@ -157,6 +157,7 @@ def run_jobs():
                     if c: c.fail_recommendations(j['capture']['token'], {'code':'CANCELLED','message':'任务已取消。','details':{}});persist(j['sid'],c)
                     continue
                 j['status']='RUNNING'
+            timing=dict(queue_seconds=time.time()-j['created'])
             env = dict(os.environ, EMOBLOCKS_DATA_DIR=str(j['folder']/'assets'), PYTHONUNBUFFERED='1')
             with (j['folder']/'worker.log').open('wb') as log:
                 proc = subprocess.Popen([sys.executable, '-m', 'web_demo.api.worker', str(j['folder'])],
@@ -170,6 +171,8 @@ def run_jobs():
                         if cancelling is None: cancelling=time.monotonic()
                         if time.monotonic()-cancelling>3: terminate(proc)
                     time.sleep(.1)
+            timing['worker_seconds']=time.monotonic()-began
+            admission=time.monotonic()
             with LOCK:
                 c=SESSIONS[j['sid']]
                 if (j['folder']/'cancel').exists():
@@ -183,7 +186,11 @@ def run_jobs():
                 else:
                     c.fail_recommendations(j['capture']['token'], {'code':'RENDER_FAILED','message':'生成失败，请重试或选择较短工程。','details':{}})
                     j['status']='FAILED';j['error']='生成失败。服务器已保留诊断。'
-                persist(j['sid'],c)
+                timing['admission_seconds']=time.monotonic()-admission
+                saving=time.monotonic();persist(j['sid'],c)
+                timing['persist_seconds']=time.monotonic()-saving
+            try:(j['folder']/'job-timings.json').write_text(json.dumps(timing),encoding='utf-8')
+            except OSError:pass  # Telemetry is independent of result admission.
         except Exception:
             import traceback
             traceback.print_exc()

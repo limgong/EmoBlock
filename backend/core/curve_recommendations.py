@@ -187,12 +187,13 @@ def source_snapshots(project,source_facts):
     return [snapshots[k] for k in sorted(snapshots)]
 
 
-def prepare_recommendations(request,source_facts=None,should_cancel=None,on_progress=None):
+@m.validated_operation
+def prepare_recommendations(request,source_facts=None,should_cancel=None,on_progress=None,*,include_stage_bundle=True):
     with m.deterministic_ids(request_fingerprint(request)):
-        return _prepare_recommendations(request,source_facts,should_cancel,on_progress)
+        return _prepare_recommendations(request,source_facts,should_cancel,on_progress,include_stage_bundle)
 
 
-def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_progress=None):
+def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_progress=None,include_stage_bundle=True):
     """Every recommendation goes through actual P4/P5/P6 before final processing."""
     validate_request(request)
     from curve_workflow import Controller,decide_bridge,generate_bridges
@@ -208,8 +209,10 @@ def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_pro
     seq=0;current=None;facts=[];candidates=[];failures=[];duplicates=0;tested=0
     def emit(phase,message):
         nonlocal seq
-        seq+=1;event=dict(seq=seq,phase=phase,message=message,candidate_id=current,stage_bundle=private._current_bundle())
+        seq+=1
         if on_progress is not None:
+            event=dict(seq=seq,phase=phase,message=message,candidate_id=current)
+            if include_stage_bundle:event['stage_bundle']=private._current_bundle()
             response=on_progress(event)
             if response is False or isinstance(response,dict) and not response.get('continue_processing',True):m.reject('输入已改变或请求已取消。','CANCELLED')
         _cancel(should_cancel)
