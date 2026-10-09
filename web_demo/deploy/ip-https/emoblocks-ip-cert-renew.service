@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew EmoBlocks public IP certificate and reload Caddy
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/emoblocks-demo/https/renew.sh
+TimeoutStartSec=600

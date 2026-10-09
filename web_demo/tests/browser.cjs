@@ -1,0 +1,21 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const fs=require('fs'),path=require('path'),assert=require('assert');
+const out=process.env.BROWSER_OUTPUT||'data/web-demo-evidence';fs.mkdirSync(out,{recursive:true});
+async function checkBrand(page){const logo=page.locator('.brand img.brandmark');await logo.waitFor();await page.waitForFunction(()=>{const im=document.querySelector('.brand img');return im?.complete&&im.naturalWidth>0});assert.equal(await logo.getAttribute('alt'),'');const box=await logo.boundingBox();assert.equal(box.width,36);assert.equal(box.height,36);assert(await page.locator('link[rel="icon"]').getAttribute('href'))}
+const sampleLabels=['欢乐颂','卡农 · 简易主题（8小节）','卡农 · 发展主题（16小节）','G大调小步舞曲 · 前16小节','致爱丽丝 · 开头主题'];
+async function checkSamples(page){
+ await page.waitForFunction(()=>document.querySelectorAll('.sources select option').length===5);
+ assert.deepEqual(await page.locator('.sources select option').allTextContents(),sampleLabels);
+ const counts={'canon-simple':8,'canon-developed':16,'minuet-g':12,'fur-elise':3,'joy':8};
+ for(const [id,count] of Object.entries(counts)){
+  await page.locator('.sources select').selectOption(id);
+  if(id==='canon-simple'){await page.getByText('素材来源与许可',{exact:true}).click();assert((await page.locator('.sources details').innerText()).includes('Jim Paterson'));await page.getByText('素材来源与许可',{exact:true}).click()}
+  const [response]=await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/session')&&r.request().method()==='POST'),page.getByRole('button',{name:'载入旋律 · 新体验',exact:true}).click()]);
+  assert.equal(response.status(),200);const project=await response.json();
+  await page.waitForFunction(n=>document.querySelectorAll('.material').length===n,project.materials.filter(m=>m.library_visible).length);
+  assert.equal(project.materials.filter(m=>m.library_visible&&/^A[0-9]+$/.test(m.display_name)).length,count);
+  assert.equal(await page.locator('.block').count(),0);
+  assert(await page.locator('audio').evaluate(a=>a.paused));
+ }
+}
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});const page=await browser.newPage({viewport:{width:1440,height:1000}});let errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.DEMO_URL||'http://127.0.0.1:8765');await page.getByRole('heading',{name:'情绪搭建画板'}).waitFor();await checkBrand(page);await page.getByRole('heading',{name:'旋律原料',exact:true}).waitFor();await page.getByRole('heading',{name:'音乐积木库',exact:true}).waitFor();await page.getByRole('heading',{name:'智能加工',exact:true}).waitFor();await checkSamples(page);assert.equal(await page.getByRole('button',{name:'选择 A1',exact:true}).count(),1);await page.getByRole('button',{name:/选择 A1/}).first().click();await page.getByRole('button',{name:'放入所选积木'}).click();await page.locator('.block').waitFor();await page.locator('.block').first().click();for(const name of ['平静／安定','温暖／希望','悲伤／失落','悬疑／不安','紧张／危机','振奋／坚定']){assert.equal(await page.getByRole('button',{name,exact:true}).count(),1)}await page.screenshot({path:path.join(out,'light.png'),fullPage:true});await page.getByLabel('切换明暗主题').click();await page.waitForTimeout(300);await checkBrand(page);await page.screenshot({path:path.join(out,'dark.png'),fullPage:true});await page.getByLabel('强度控制点 1').focus();await page.keyboard.press('ArrowUp');await page.waitForTimeout(200);await page.getByLabel('增加四拍').click();await page.waitForTimeout(200);await page.getByLabel('减少四拍').click();await page.waitForTimeout(200);await page.reload();await page.locator('.block').waitFor();await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'mobile.png'),fullPage:true});fs.writeFileSync(path.join(out,'browser.json'),JSON.stringify({errors,brand_icon_loaded:true,brand_size:36,official_names:true,classical_samples:sampleLabels,one_joy_version:true,sample_switching:true,unique_A1:true,overflow:await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth)}));await browser.close();if(errors.length)process.exit(1)})().catch(e=>{console.error(e);process.exit(1)});

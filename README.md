@@ -4,6 +4,19 @@
 
 当前入口 `run.py` 为三栏 Curve 工作流：左侧素材来源、中栏分块与组合、右侧唯一强度画布及共用播放器。Windows/macOS 使用同一份界面和音乐后端，由配对适配器处理平台差异。
 
+## 参赛体验与本地部署
+
+[在线 Demo](https://115.159.215.148/) 使用真实音乐后端，但受服务器性能和公开体验范围限制。完整桌面版可导入 MIDI/MMP、组装素材和创作更复杂的作品；建议评委下载源码，按下方 Windows 或 macOS 步骤运行。哼唱与外部模型仍在隔离开发，不属于当前主线。
+
+```bash
+git clone https://github.com/limgong/EmoBlock.git
+cd EmoBlock
+```
+
+源码不包含 LMMS 安装程序、模型权重或用户工程，请先安装 Python（含 Tk）与 LMMS。浏览器版的本机运行步骤另见 [Web Demo 部署说明](web_demo/README.md)。
+
+本轮主线与公网更新范围、验证及剩余人工检查见 [参赛交付记录](docs/handover/competition-mainline-update-20261009.md)。
+
 ## 主线验证状态
 
 当前 `main` 包含 Herdr 基础上的主线 UI 优化：积木外观与拖影、画板下方统一智能加工面板、蓝白浅色主题，以及还原的六类情绪显示名称。最新范围与验证记录见 [主线合并交接](docs/handover/mainline-ui-upload-20261008.md)。Windows 实机、物理输入及人工音乐听感仍待验收。

@@ -1,0 +1,23 @@
+# Private acceptance before a domain is available. Access through an SSH tunnel.
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: web_demo/deploy/Dockerfile
+      network: host
+    restart: unless-stopped
+    init: true
+    ports: ['127.0.0.1:8765:8765']
+    mem_limit: 2300m
+    cpus: 3
+    pids_limit: 128
+    environment:
+      EMOBLOCKS_SECURE_COOKIE: '0'
+    volumes: [music_data:/var/lib/emoblocks]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  music_data:

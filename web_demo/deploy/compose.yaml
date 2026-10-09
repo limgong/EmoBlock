@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: web_demo/deploy/Dockerfile
+      network: host
+    restart: unless-stopped
+    init: true
+    mem_limit: 2300m
+    cpus: 3
+    pids_limit: 128
+    environment:
+      EMOBLOCKS_SECURE_COOKIE: '1'
+    volumes:
+      - music_data:/var/lib/emoblocks
+    networks: [private]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ['80:80','443:443']
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:?Set DEMO_DOMAIN to your real DNS hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [private]
+    mem_limit: 192m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+networks:
+  private:
+volumes:
+  music_data:
+  caddy_data:
+  caddy_config:

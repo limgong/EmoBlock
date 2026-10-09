@@ -1,0 +1,8 @@
+.env
+config/
+acme/
+letsencrypt*/
+caddy-data/
+caddy-config/
+certbot-work/
+certbot-logs/

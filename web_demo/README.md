@@ -1,0 +1,104 @@
+# EmoBlocks competition browser Demo
+
+Browser entrypoint sharing the real desktop music backend, now included in main. Desktop Tk and the paired platform adapters remain the desktop entrypoint; web-specific behavior stays in `web_demo/`.
+
+## Local start
+
+Python 3.11. Install `web_demo/requirements.lock.txt` in an isolated virtual environment. In `web_demo/client`, run `npm ci` then `npm run build`. From the repository root:
+
+```sh
+python -m uvicorn web_demo.api.app:app --host 127.0.0.1 --port 8765 --workers 1
+```
+
+LMMS must be installed; set EMOBLOCKS_LMMS if discovery cannot locate it. Data defaults to data/web-demo; EMOBLOCKS_WEB_DATA overrides it. Only one Uvicorn worker and one application instance are supported. The owned generation subprocess serializes LMMS work and enforces a 10-minute timeout. Do not horizontally scale this implementation.
+
+## Current scope
+
+Five built-in classical melody entries (including only the latest Ode to Joy), real block/phrase rules, fixed timeline, draw/control-point intensity, placement/move/delete/emotion, active silence, automatic memory protection, undo/redo, persisted session, real completion → bridge and protection → connection blocks → boundary transitions → LMMS audio. Two genuinely different candidates when available; insufficient results are explicitly reported. Preview and confirmation use authenticated candidate snapshots. Downloads validate WAV/MIDI/MMP against their score and hash.
+
+The bottom deployment note links to the desktop source and its setup instructions. The online service has finite resources and omits desktop import/assembly operations; it is not a substitute for the full desktop workflow. See the repository root README for Windows/macOS setup. This link does not imply that isolated humming or external-model branches are released.
+
+The play icon on a source card starts the clearly labelled browser oscillator pitch preview immediately; card selection stays silent. The shared bottom player can replay or stop it. This preview does not use LMMS timbre. Full candidate comparisons use real LMMS WAVs. No uploads, humming, external model inference, or full desktop feature parity claimed. Confirm is one undoable backend transaction. New requests never silently replace the audible object. Generated cards use stored base-note previews; exact final notes are heard in the candidate WAV.
+
+## Isolation and limits
+
+HTTP-only SameSite strict session cookie; HTTPS deployment also marks it Secure. Origin check on writes. 128 KiB request limit, max 32 four-beat cells, one live task/session, queue 10, 6 jobs/15 minutes and 12 jobs/session, 100 total sessions, 15 new sessions/hour/IP. Anonymous IP limits are an abuse reduction measure, not identity authentication. Idle sessions and their files expire after 24 hours. File access requires the session owning that candidate. No client file paths are accepted. A minimum of 1 GiB free disk is required before enqueueing. Code does not load uploaded MIDI/MMP, XML, pickle, or model files.
+
+The internal API must remain inaccessible publicly except via Caddy; private acceptance uses loopback access through SSH. Proxy-header trust assumes this network boundary. Active jobs are not resumed after process restart: the persisted project is recoverable and users can generate again. Use `docker compose logs --tail=100 app` for errors, and keep local evidence private (it includes session cookies). Do not publish data/ or logs. Session cookies aren't included in the release package.
+
+## Server deployment
+
+Server provided by owner: Linux 4 CPU / 4 GB, 115.159.215.148. Initial private acceptance verified CentOS Stream 9, Docker 29.6.2 and Compose 5.3.1. The public Demo subsequently used IP HTTPS; the certificate and proxy setup is documented in [ip-https/README.md](deploy/ip-https/README.md). No cloud provisioning or billing actions are part of these scripts. The private setup context below records the original deployment constraints.
+
+Base images use pinned Docker Official Images hosted by [Amazon ECR Public](https://gallery.ecr.aws/docker/), because Docker Hub timed out from this server. Debian packages use the [Debian-listed Tsinghua mirror](https://www.debian.org/mirror/list-full.html) over HTTPS with Debian signature verification intact. Pinned Python packages use the [Tsinghua PyPI mirror](https://mirrors.tuna.tsinghua.edu.cn/help/pypi/) over HTTPS; npm uses its upstream registry. Existing host containers and Docker configuration are retained. Build steps use the host network for downloads because the server's default build network could not reach them. Standard runtime configurations use bridge isolation; the private fallback below shares host networking. Debian package sources use HTTPS.
+
+On this server the existing Docker firewall chains are missing (`DOCKER-FORWARD`), so creating a bridge fails. Private acceptance uses `compose.private-host.yaml`: [host networking](https://docs.docker.com/engine/network/drivers/host/) with Uvicorn explicitly bound to **127.0.0.1:8765**, no published ports, non-root process and the same resource limits. This fallback shares the host network namespace; it is not container network isolation and must not be used for public release. Host firewall rules and other containers are not changed. Public Caddy deployment first requires separately repairing and validating Docker bridge networking.
+
+1. Upload an allowlisted release generated by `python web_demo/deploy/package_release.py /path/release.tar.gz`; extract to a new versioned directory, never overwrite another application.
+2. Install Docker Engine/Compose appropriate to the observed OS using official packages. Do not disable host security services.
+3. Private acceptance: `docker compose -p emoblocks-demo -f web_demo/deploy/compose.local.yaml up -d --build`. Open an SSH tunnel to 127.0.0.1:8765. Test real LMMS WAV/MIDI/MMP on Linux, including arranged drum resources, before opening public access. The local config does not expose a public application port.
+4. Set an actual DNS hostname in `web_demo/deploy/.env` and point it to the server. Allow TCP 80/443 at cloud and host firewalls. Follow [Caddy HTTPS guidance](https://caddyserver.com/docs/automatic-https). An IP-only self-signed certificate is not a valid public HTTPS acceptance result.
+5. Stop the private compose without removing volumes, then `docker compose -p emoblocks-demo --env-file web_demo/deploy/.env -f web_demo/deploy/compose.yaml up -d --build`. Keep the same project name so the data volume persists. Caddy is the only public endpoint. Confirm a valid HTTPS certificate, browser audio, downloads, cancellation and session isolation externally.
+6. Rollback: use the prior release directory with the same Compose project and volume. Do not run `down -v`. If changing core schema, export data first and preserve a volume snapshot; this release does not promise downgrade compatibility.
+
+[LMMS Linux installation](https://docs.lmms.io/user-manual/getting-started/installation) documents distro packages and AppImage. Docker uses Debian's package; exact runtime compatibility must be demonstrated on the target, not inferred from the successful Mac render.
+
+## Validation
+
+```sh
+python -m unittest web_demo.tests.test_api -v
+python web_demo/tests/smoke_render.py
+SMOKE_URL=http://127.0.0.1:8876 python web_demo/tests/accept_deployment.py
+SMOKE_URL=http://127.0.0.1:8876 python web_demo/tests/accept_deployment.py --music-check
+# Restart only the owned app, preserve its volume, then:
+SMOKE_URL=http://127.0.0.1:8876 python web_demo/tests/accept_deployment.py --after-restart
+python scripts/check_frontends.py
+python scripts/test.py --backend-only
+```
+
+Use `SMOKE_URL` to select the running server (for example `http://127.0.0.1:8876` through SSH), and `SMOKE_OUTPUT` for a private evidence directory. `DEMO_URL` and `BROWSER_OUTPUT` select the browser acceptance target and output.
+
+The smoke test uses a running server and actual LMMS; never substitute mocked audio. It stores isolated evidence under data/web-demo-evidence. The deployment test stores session cookies in a private restart state (0600); exclude this file from distribution. Browser scripts use Playwright and an installed Chrome. Set PLAYWRIGHT_MODULE to an installed Playwright module path, and CHROME_PATH to your Chrome executable when needed. `browser.cjs` checks themes and layout; `browser_audio.cjs` checks actual cloud WAV decoding/playback using the private acceptance state. No browser, Playwright package or video encoder is installed by the production image.
+
+2026-10-08 private Linux acceptance: Docker build, four Linux API tests, 54 deployed HTTP checks, eight music-constraint checks and Chrome playback of both modes passed. Both modes produced two candidates with actual melody/rhythm differences, retained memory notes and intentional silence, and used real LMMS 1.2.2 exports. Physical listening, Windows device validation, public DNS/HTTPS and host reboot remain separate checks; application restart persistence is verified with `--after-restart`.
+
+
+## Desktop naming alignment (2026-10-08)
+
+The browser Demo reads `assets/samples/classical-catalog.json` for its built-in MIDI list: `joy` (欢乐颂, latest eight-bar package version), `canon-simple`, `canon-developed`, `minuet-g`, and `fur-elise`. New sessions default to `joy`; the source selector loads another theme only when the user clicks “载入旋律 · 新体验”. Existing sessions remain intact. There is one Ode to Joy catalog entry, and its stable MIDI filename is replaced by the latest package bytes.
+
+The catalog records file hashes, note counts, original BPM, attribution and adaptation. Canon derives from Jim Paterson's single-violin arrangement, Mutopia-2009/09/07-1700, under CC BY 3.0; the selected source's credit, source link and license are available in the source panel. Minuet and Für Elise use the package's 4/4 import containers: original pitches and tick durations are preserved, without claiming a musical meter rearrangement. The workflow's existing fixed 120 BPM remains unchanged.
+
+Labels match desktop main commit 3383929: 旋律原料 / 音乐积木库 / 情绪搭建画板 / 智能加工; emotions are 平静／安定, 温暖／希望, 悲伤／失落, 悬疑／不安, 紧张／危机, 振奋／坚定. The API derives `display_name` from the existing pure `curve_material_names.short_name` helper. A/B/C, prime derivations and combinations therefore follow stored desktop identities, rather than parsing the terminal M index. Source labels, IDs, note snapshots and fingerprints are not rewritten. Original phrase aliases and phrase containers follow the desktop library visibility rules; independent new-melody blocks remain visible.
+
+## Local UI preview (2026-10-09)
+
+New experiences use eight four-beat cells (32 beats). Existing saved sessions are not resized automatically. “清空画板”, beside the canvas title, clears placements, intentional silence, protections and the edited intensity curve, while retaining the library and current canvas length. It cancels current generation and commits one undoable transaction. It also clears the current player target; undo restores the project without autoplay.
+
+The browser Demo can shorten an empty tail after drawing: it keeps control points inside the retained duration and interpolates the new endpoint. Existing notes, intentional silence and fixed protection ranges cannot be silently cut. This behavior is scoped to the browser adapter; desktop resize rules are unchanged.
+
+Generation uses a prominent eight-node progress indicator driven by real job phases. Milestones reached stay visible while a second candidate is computed; the final node completes only when usable results actually return. It is not a linear percentage or estimated duration. Backend step descriptions are hidden. Queueing, completion, cancellation and failure have separate generic labels.
+
+Original preview worktree: `codex/demo-ui-preview-20261009`, based on `abbfd41`. These UI changes were subsequently accepted and deployed. For an isolated local review, run one instance on 127.0.0.1:8877 with an isolated `EMOBLOCKS_WEB_DATA` folder and `EMOBLOCKS_SECURE_COOKIE=0` for loopback HTTP.
+
+Validation: `python -m unittest web_demo.tests.test_api -v`; `node web_demo/tests/browser_preview.cjs` with the existing Playwright module configured. The browser script uses real pointer, keyboard, source audio and edit API operations; progress terminal/multi-candidate states use explicitly marked HTTP fixtures. Actual LMMS generation, WAV browser playback, accepted-result clear/undo, shared-frontend contracts and the complete desktop suite are checked separately.
+
+### Progress geometry and populated review (2026-10-09)
+
+Progress nodes and links occupy separate CSS grid columns. Nodes keep a fixed size and links have a minimum length plus a 5px clearance at each end. Narrow containers scroll inside the progress component instead of squeezing nodes together. The operation row follows the actual job phase, independently of the monotonic milestone count when later candidates repeat phases. When an observed operation changes, its completed label displays ✅ for 650ms before the next operation's loading indicator appears. This delay only displays an acknowledged transition; it does not advance backend work. Completion, failure and cancellation stop the spinner, and reduced-motion preferences disable its rotation. Polling can skip fast operations; the UI does not invent unseen stages.
+
+For local review, open `http://localhost:8877/?example=joy`. It explicitly creates a new 32-beat experience with seven original Ode to Joy blocks: A1/A2/A3/A5/A6/A7/A8, using calm/hope/crisis/resolve/resolve/hope/calm. Cell 4 is the only pending gap. The `localhost` example uses a separate browser-cookie hostname from the normal `127.0.0.1` preview, preserving that preview's current session. It creates a new example experience only on the explicitly requested hostname. The URL parameter is consumed once, so refreshing preserves edits instead of repeatedly creating projects. The example initially selects full arrangement so the assigned emotions also affect the music. Click “生成方案” to inspect actual progress and produce real candidate audio. The ordinary entrypoint still starts with an empty canvas for new sessions; no automatic filling is added to the normal workflow.
+
+Responsive browser acceptance checks every node/connector bounding box at widths 320, 390, 650, 651, 950, 951, 1020, 1150, 1151, 1440 and 1920, plus isolated progress-container widths 100–600px and window heights 480, 500 and 700px. Progress fixtures test operation completion/advance, repeated candidate phases, and terminal states separately from genuine LMMS generation.
+
+### Generated block purpose labels (local review)
+
+Selecting a generated candidate displays a read-only final-score view in the same canvas. Each actual ownership span is marked as 原始积木, 新旋律, 补全积木, Bridge, 连接块 or 主动留白. Classification comes from authenticated candidate score facts and the original input placement identities, not from guessing labels or treating every block boundary as a connection. The original construction view remains available through “返回搭建”. Candidate selection and inspection do not apply a recommendation or start playback.
+
+Bridge and connection spans replace the covered source display in this view; protected memory remains marked. Preview melody lines use the final score's actual notes, clipped and shifted into each displayed span. Narrow spans use vertical purpose labels, and focus, hover or click shows full identity, role and beat range under the canvas. Only roles actually present are listed; a genuine `none` decision remains unlabelled as a connection.
+
+`/review/roles` is an optional, prepared local-only inspection entrypoint. It is disabled unless `EMOBLOCKS_REVIEW_SESSION` names a valid existing session, and requires a direct loopback client. It sets the owned review session's HttpOnly cookie and opens its already-confirmed result; no account credentials or session IDs are written into source or URLs. The prepared session, real render outputs and its private runtime identifier stay outside the repository. The normal deployed service has no review session configured, and returns 404 for this entrypoint.
+
+The full-purpose acceptance example uses a purpose-built monophonic melody with large pitch contrasts so the actual pipeline can select bridges and connection treatment. It is explicitly labelled as an acceptance melody, not Ode to Joy. Its private run bounds the bridge planner to one window of at most four blocks; production defaults and music algorithms remain unchanged. The separate Ode to Joy example remains available for normal musical review.
+
+Checks: API role-projection clipping, explicit `none`, default-disabled/loopback review access; `browser_result_roles.cjs` verifies real ownership, keyboard inspection, read-only preview, both themes, responsive layouts and actual WAV playback. Screenshots and test-controlled visual states are separate from actual music generation and human listening acceptance.
