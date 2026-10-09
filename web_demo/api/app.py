@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request, Response, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from .core import ROOT, SAMPLES, SAMPLE_CATALOG, model, workflow, controller, short_name, edit_board
@@ -111,7 +111,8 @@ def candidates(c):
     if (not c.project['placements'] or not attempt or attempt['state'] not in ('READY','APPLIED')
             or attempt['recommendation']['outcome'] is None):
         return []
-    return [dict(id=x['id'], rank=x['rank'], reasons=x['reasons'], mode=attempt['recommendation']['request']['mode'],
+    from .presentation import result_view
+    return [dict(id=x['id'], rank=x['rank'], reasons=x['reasons'], mode=attempt['recommendation']['request']['mode'],result=result_view(c,x,attempt),
                  changed=x['modes'][attempt['recommendation']['request']['mode']]['assets']['comparison']['files']['wav']['sha256']!=x['modes'][attempt['recommendation']['request']['mode']]['assets']['final']['files']['wav']['sha256'], ready=attempt['state']=='READY', applied=bool(attempt['recommendation']['receipt'] and attempt['recommendation']['receipt']['candidate_ref']['id']==x['id'] and c.project['accepted_candidate_id']==attempt['recommendation']['receipt']['accepted_record_id']))
             for x in attempt['recommendation']['outcome']['candidates']]
 
@@ -375,6 +376,20 @@ def asset(candidate_id:str,kind:str,fmt:str,request:Request):
         path=Path(authenticated['files'][fmt]['path']).resolve()
         if not path.is_relative_to(DATA/'sessions'/sid) or not path.is_file(): raise HTTPException(404,'文件已过期。')
         return FileResponse(path,media_type={'wav':'audio/wav','mid':'audio/midi','mmp':'application/xml'}[fmt],filename=f'EmoBlocks-{kind}.{fmt}')
+
+@app.get('/review/roles')
+def local_role_example(request:Request):
+    # Enabled only for an explicitly prepared loopback review instance.
+    sid=os.environ.get('EMOBLOCKS_REVIEW_SESSION')
+    if not sid or not request.client or request.client.host not in ('127.0.0.1','::1'):
+        raise HTTPException(404)
+    with LOCK, db() as connection:
+        if not connection.execute('SELECT id FROM sessions WHERE id=? AND touched>?',(sid,time.time()-MAX_AGE)).fetchone():
+            raise HTTPException(404,'本地示例已过期。')
+    response=RedirectResponse('/?review=roles',status_code=303)
+    response.headers['Cache-Control']='no-store'
+    response.set_cookie(COOKIE,sid,max_age=MAX_AGE,httponly=True,samesite='strict',secure=False)
+    return response
 
 DIST=ROOT/'web_demo/client/dist'
 if DIST.is_dir(): app.mount('/',StaticFiles(directory=DIST,html=True),name='web')
