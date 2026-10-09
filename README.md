@@ -4,6 +4,16 @@
 
 当前入口 `run.py` 为三栏 Curve 工作流：左侧素材来源、中栏分块与组合、右侧唯一强度画布及共用播放器。Windows/macOS 使用同一份界面和音乐后端，由配对适配器处理平台差异。
 
+## 旧版本源码与下载
+
+需要 Curve 工作流之前的旧版积木创作界面，可以 **[下载旧版源码 ZIP](https://github.com/limgong/EmoBlock/archive/refs/tags/legacy/pre-curve-composer.zip)**，或 [在线查看旧版源码](https://github.com/limgong/EmoBlock/tree/legacy/pre-curve-composer)。
+
+- 固定历史标签：`legacy/pre-curve-composer`，对应提交 `005408a`。
+- 历史分支：[codex/local-composer-20261009](https://github.com/limgong/EmoBlock/tree/codex/local-composer-20261009)。
+- 版本内容：内联分块、多选组成旋律积木、时间线拖放排布和手绘情绪线；从 2026-10-01 共同基线分出，于 2026-10-09 从 Windows 本地保存并上传。
+
+下载的是源码包。请解压到独立目录，按包内 README 安装 Python（含 Tk）、LMMS 和 Python 依赖，再运行 `run.py`。旧版 Mac 真机兼容性仍待验证；当前默认 `main` 继续提供下述三栏 Curve 工作流。
+
 ## 参赛体验与本地部署
 
 [在线 Demo](https://115.159.215.148/) 使用真实音乐后端，但受服务器性能和公开体验范围限制。完整桌面版可导入 MIDI/MMP、组装素材和创作更复杂的作品；建议评委下载源码，按下方 Windows 或 macOS 步骤运行。哼唱与外部模型仍在隔离开发，不属于当前主线。
