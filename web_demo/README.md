@@ -52,6 +52,7 @@ On this server the existing Docker firewall chains are missing (`DOCKER-FORWARD`
 ```sh
 python -m unittest web_demo.tests.test_api -v
 python web_demo/tests/smoke_render.py
+python web_demo/tests/smoke_bridge.py
 SMOKE_URL=http://127.0.0.1:8876 python web_demo/tests/accept_deployment.py
 SMOKE_URL=http://127.0.0.1:8876 python web_demo/tests/accept_deployment.py --music-check
 # Restart only the owned app, preserve its volume, then:
@@ -61,6 +62,8 @@ python scripts/test.py --backend-only
 ```
 
 Use `SMOKE_URL` to select the running server (for example `http://127.0.0.1:8876` through SSH), and `SMOKE_OUTPUT` for a private evidence directory. `DEMO_URL` and `BROWSER_OUTPUT` select the browser acceptance target and output.
+
+The music check matches bridge protections to the authenticated candidate's actual bridge segments; a legitimate no-bridge decision is valid. `smoke_bridge.py` separately requires automatic bridge selection on a deliberately discontinuous melody, real LMMS rendering, unchanged protected bridge pitches/rhythms after connection processing, and confirmation undo/redo. It does not substitute synthetic PCM or force a bridge into the classical Demo example.
 
 The smoke test uses a running server and actual LMMS; never substitute mocked audio. It stores isolated evidence under data/web-demo-evidence. The deployment test stores session cookies in a private restart state (0600); exclude this file from distribution. Browser scripts use Playwright and an installed Chrome. Set PLAYWRIGHT_MODULE to an installed Playwright module path, and CHROME_PATH to your Chrome executable when needed. `browser.cjs` checks themes and layout; `browser_audio.cjs` checks actual cloud WAV decoding/playback using the private acceptance state. No browser, Playwright package or video encoder is installed by the production image.
 

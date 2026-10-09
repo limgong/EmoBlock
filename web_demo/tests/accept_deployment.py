@@ -184,7 +184,14 @@ def music_check():
                            placement['start_tick']+n['start_tick']+n['duration_tick'] > region['start_tick']]
             actual = [n for n in final if n[0] < region['end_tick'] and n[0]+n[2] > region['start_tick']]
             check(mode+' memory exported pitch and rhythm preserved', sorted(expected)==actual)
-            check(mode+' bridge protection retained', any(p['kind']=='bridge' for p in project['protections']))
+            selected = next(c for c in project['candidates'] if c['id'] == state['candidate_id'])
+            bridges = [s for s in selected['result']['segments'] if s['role'] == 'bridge']
+            guards = [p for p in project['protections'] if p['kind'] == 'bridge']
+            # A genuine no-bridge decision is valid. Every bridge that actually
+            # exists must remain protected, and stale guards must not survive.
+            check(mode+' bridge protection matches actual result',
+                  all(any(p['start_tick'] <= s['start_tick'] and p['end_tick'] >= s['end_tick'] for p in guards) for s in bridges)
+                  and all(any(p['start_tick'] < s['end_tick'] and p['end_tick'] > s['start_tick'] for s in bridges) for p in guards))
             melodies = []
             for candidate in project['candidates']:
                 response = client.get(f'/api/assets/{candidate["id"]}/final/mmp')
