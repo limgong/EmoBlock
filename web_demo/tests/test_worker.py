@@ -10,6 +10,18 @@ from web_demo.api.core import recommendations
 
 
 class WorkerTests(unittest.TestCase):
+    def test_large_output_uses_lossless_graph_and_reads_as_existing_outcome(self):
+        import curve_graph
+        facts = [{'id': str(i), 'notes': [60+i%12, 62]} for i in range(80)]
+        expected = {'status': 'SUCCEEDED', 'facts': facts, 'snapshot': facts}
+        folder = self.execute(lambda request, **kwargs: expected)
+        text = (folder/'output.json').read_text()
+        self.assertEqual(json.loads(text)['schema'], curve_graph.SCHEMA)
+        decoded = curve_graph.loads(text)
+        self.assertEqual(decoded, expected)
+        decoded['facts'][0]['notes'][0] = 99
+        self.assertEqual(decoded['snapshot'][0]['notes'][0], 60)
+
     def execute(self, prepare):
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
         folder = Path(directory.name)

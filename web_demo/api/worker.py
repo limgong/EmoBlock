@@ -8,6 +8,7 @@ folder = Path(sys.argv[1]).resolve()
 os.environ['EMOBLOCKS_DATA_DIR'] = str(folder / 'assets')
 from .core import recommendations
 from curve_json import encoder_name
+import curve_graph
 began = time.perf_counter()
 cpu_began = time.process_time()
 events = []
@@ -15,7 +16,8 @@ events = []
 def write(name, data):
     target = folder / name
     temp = target.with_suffix('.part')
-    temp.write_text(json.dumps(data, ensure_ascii=False, allow_nan=False), encoding='utf-8')
+    temp.write_text(curve_graph.dumps(data) if name=='output.json' else
+                    json.dumps(data, ensure_ascii=False, allow_nan=False), encoding='utf-8')
     temp.replace(target)
 
 def progress(event):

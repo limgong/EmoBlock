@@ -1,6 +1,7 @@
 """Canonical JSON with an optional byte-compatible compiled accelerator."""
 import json
 import os
+import curve_frozen
 
 try:
     import emoblocks_json_native as _native
@@ -13,9 +14,15 @@ def encoder_name():
 
 
 def _native_bytes(value):
+    if type(value) in curve_frozen.TYPES:
+        try:
+            return value.canonical_bytes()
+        except UnicodeEncodeError:
+            return None
     if encoder_name() == 'native':
         try:
-            return _native.dumps(value)
+            return (_native.dumps(value, curve_frozen.TYPES) if getattr(_native, 'frozen_support', False)
+                    else _native.dumps(value))
         except (ValueError, TypeError, RecursionError):
             # Custom types, deep structures, large integers and surrogate text
             # retain the original encoder's semantics and rejection behavior.

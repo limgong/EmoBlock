@@ -1,6 +1,7 @@
 """Version-dispatched snapshots. No conversion, planning, playback or overwrite."""
 import curve_copy as copy
 import json
+import curve_graph
 import os
 from pathlib import Path
 
@@ -137,8 +138,8 @@ def _validate_completion_attempt(attempt, snapshots):
 def save(bundle, path=None):
     validate_bundle(bundle)
     v2=bundle['schema']=='emoblocks.curve-bundle.v2'
-    serialized = json.dumps(bundle, ensure_ascii=False, indent=None if v2 else 2,
-        separators=(',',':') if v2 else None, allow_nan=False)
+    serialized = (curve_graph.dumps(bundle) if v2 else
+                  json.dumps(bundle, ensure_ascii=False, indent=2, allow_nan=False))
     limit = 128*1024*1024 if v2 else MAX_BYTES
     if len(serialized.encode('utf-8')) > limit:
         model.reject('工程及候选审计超过'+('128' if v2 else '20')+'MiB，请保留已有快照并减少候选后重试。')
@@ -196,6 +197,7 @@ def load(path):
         model.reject('工程文件超过128MiB。')
     try:
         data = json.loads(path.read_text(encoding='utf-8'), parse_constant=lambda _: model.reject('工程含非有限数字。'))
+        data = curve_graph.unpack(data)
         if not isinstance(data, dict):
             model.reject('工程根对象无效。')
         if data.get('schema') == model.SCHEMA:
@@ -221,7 +223,8 @@ def load(path):
         _legacy_validate(data, path)
         return dict(format=data['schema'], access_mode='legacy_readonly', capabilities=dict(edit=False, plan=False,
             history=history_availability(data.get('results', []))), bundle=None, legacy=copy.deepcopy(data))
-    except (KeyError, TypeError, AttributeError, RecursionError) as exc:
+    except (KeyError, TypeError, AttributeError, RecursionError, ValueError) as exc:
+        if isinstance(exc,model.ProjectError):raise
         raise model.ProjectError('INVALID_PROJECT', '工程损坏或结构无效，请选择另一个快照。') from exc
 
 

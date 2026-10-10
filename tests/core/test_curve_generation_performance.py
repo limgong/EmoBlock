@@ -88,7 +88,7 @@ class GenerationScopeTests(unittest.TestCase):
         expected=model.digest('emoblocks.project.v2.1',p)
         with model.validation_scope(),patch.object(model,'canonical_bytes',wraps=model.canonical_bytes) as encode:
             self.assertEqual(model.fingerprint(p),expected)
-            project_encodings=sum(call.args[0] is p for call in encode.call_args_list)
+            project_encodings=sum(call.args[0] == p for call in encode.call_args_list)
             self.assertEqual(project_encodings,1)
             p['settings']['melody_only']=True
             self.assertNotEqual(model.fingerprint(p),expected)

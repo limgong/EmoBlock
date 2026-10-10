@@ -178,10 +178,25 @@ class Tooltip:
         foreground=style.lookup('Curve.Panel.TLabel','foreground')
         tk.Label(self.window,text=text,justify='left',wraplength=340,padx=10,pady=8,
                  bg=background,fg=foreground,font=font(),borderwidth=1,relief='solid').pack()
+        self.position()
+
+    def position(self):
+        root=self.widget.winfo_toplevel()
         self.window.update_idletasks()
         x=min(self.widget.winfo_rootx(),root.winfo_screenwidth()-self.window.winfo_reqwidth()-8)
         y=min(self.widget.winfo_rooty()+self.widget.winfo_height()+4,root.winfo_screenheight()-self.window.winfo_reqheight()-8)
         self.window.geometry(f'+{max(0,x)}+{max(0,y)}')
+
+    def refresh(self):
+        """Update a visible tip without stealing focus or restarting its delay."""
+        if self.window is None:return
+        text=self.text() if callable(self.text) else self.text
+        if not text:self.hide();return
+        style=ttk.Style(self.widget.winfo_toplevel())
+        self.window.winfo_children()[0].configure(text=text,
+            bg=style.lookup('Curve.Panel.TLabel','background'),
+            fg=style.lookup('Curve.Panel.TLabel','foreground'),font=font())
+        self.position()
 
     def hide(self,event=None):
         if self.timer is not None:
@@ -193,9 +208,9 @@ class Tooltip:
 def hint(widget, text, show):
     existing=getattr(widget,'curve_tooltip',None)
     if existing is not None:
-        existing.hide()
         existing.text=text
         existing.show_detail=show
+        existing.refresh()
         return existing
     tooltip=widget.curve_tooltip=Tooltip(widget,text)
     tooltip.show_detail=show

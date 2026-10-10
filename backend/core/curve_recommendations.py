@@ -193,6 +193,19 @@ def prepare_recommendations(request,source_facts=None,should_cancel=None,on_prog
         return _prepare_recommendations(request,source_facts,should_cancel,on_progress,include_stage_bundle)
 
 
+def _empty_raw(service,request,plan,should_cancel):
+    """Register a fully authenticated empty plan without invoking a composer."""
+    service.validate_plan(request,plan)
+    if plan['windows'] or plan.get('inherited_bridge_ids'):
+        m.reject('非空计划必须生成和认证实际音乐。','PLAN_VERSION_MISMATCH')
+    cancelled=bool(should_cancel and should_cancel())
+    is_bridge=service is bridge
+    return dict(schema='emoblocks.bridge-raw-outcome.v1' if is_bridge else 'emoblocks.connection-raw-outcome.v1',
+        spec_rev=m.SPEC_REV,contract_rev=service.REV,request_fingerprint=service.request_fingerprint(request),
+        plan_id=plan['id'],plan_version=plan['version'],status='CANCELLED' if cancelled else 'SUCCEEDED',
+        results=[],error=service.error('CANCELLED','任务已取消。') if cancelled else None)
+
+
 def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_progress=None,include_stage_bundle=True):
     """Every recommendation goes through actual P4/P5/P6 before final processing."""
     validate_request(request)
@@ -239,16 +252,19 @@ def _prepare_recommendations(request,source_facts=None,should_cancel=None,on_pro
                 private.begin_bridge_generation(job['token'],plan);emit('BRIDGE_GENERATION','生成并逐项验证桥接乐句。')
                 def bridge_result(value):
                     private.record_bridge_result(job['token'],value);emit('BRIDGE_GENERATION','已登记桥接实际结果与保护。')
-                raw=generate_bridges(job['request'],plan,should_cancel=should_cancel,on_result=bridge_result)
+                raw=(_empty_raw(bridge,job['request'],plan,should_cancel)
+                     if not plan['windows'] and not plan['inherited_bridge_ids'] else
+                     generate_bridges(job['request'],plan,should_cancel=should_cancel,on_result=bridge_result))
                 private.finish_bridge(job['token'],raw)
-                if private.bridge_state()['status']!='READY':m.reject('桥接未完整就绪。','BRIDGE_NOT_READY')
+                if private._bridge_attempt(job['attempt_id'])['state']!='READY':m.reject('桥接未完整就绪。','BRIDGE_NOT_READY')
                 emit('CONNECTIONS','在已就绪桥接保护之外规划连接块。')
                 con=private.capture_connection(job['attempt_id'],request['seed'],request['parameters']['connection_parameters'])
                 prop=story_engine.plan_connection_request(con['request'],should_cancel=should_cancel)
                 cp=private.plan_connection(con['token'],prop);private.begin_connection_generation(con['token'],cp)
                 def connection_result(value):
                     private.record_connection_result(con['token'],value);emit('CONNECTIONS','登记连接块实际音乐。')
-                raw=story_engine.generate_connection_request(con['request'],cp,con['request']['actual_layout'],should_cancel=should_cancel,on_result=connection_result)
+                raw=(_empty_raw(connection,con['request'],cp,should_cancel) if not cp['windows'] else
+                     story_engine.generate_connection_request(con['request'],cp,con['request']['actual_layout'],should_cancel=should_cancel,on_result=connection_result))
                 private.finish_connection(con['token'],raw)
                 attempt=private._connection_attempt(con['attempt_id']);cref=dict(attempt_id=attempt['id'],**{k:copy.deepcopy(attempt['connection'][k]) for k in ('request','plan','results','outcome')})
                 emit('BOUNDARIES','统一规划最终局部交接。')
@@ -374,6 +390,7 @@ def prepare_candidate_mode(request,candidate_id,mode,source_facts,should_cancel=
 @m.validated_operation
 def validate_p7_bundle(bundle):
     import curve_store
+    bundle=m.curve_frozen.freeze(bundle)
     m.canonical(bundle);m.shape(bundle,'schema spec_rev contract_rev project snapshots attempts results final_facts')
     # The underlying validator is read-only; only this temporary envelope changes.
     plain=dict(bundle);plain['schema']=curve_store.SCHEMA;plain.pop('final_facts')

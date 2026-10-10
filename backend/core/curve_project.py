@@ -9,6 +9,7 @@ from functools import wraps
 
 import intensity_curve
 import curve_json
+import curve_frozen
 
 SCHEMA = 'emoblocks.assembly.v2'
 SPEC_REV = 'curve-workflow-v2-r3'
@@ -66,7 +67,8 @@ def validation_scope():
         return
     context=dict(validated_projects=set(),final_checks={},native_checks={})
     token=_VALIDATION_CONTEXT.set(context)
-    try:yield context
+    try:
+        with curve_frozen.scope():yield context
     finally:_VALIDATION_CONTEXT.reset(token)
 
 
@@ -80,7 +82,8 @@ def validated_operation(fn):
 def cached_validation(fn,args,kwargs):
     """Memoize only successful pure data gates inside one operation, never files."""
     with validation_scope() as context:
-        key=digest('emoblocks.native-validation-cache.v1',dict(function=fn.__module__+'.'+fn.__name__,args=args,kwargs=kwargs))
+        args,kwargs=curve_frozen.arguments(args,kwargs)
+        key=validation_key(fn,args,kwargs)
         cache=context['native_checks']
         if key in cache:
             value=cache.pop(key);cache[key]=value
@@ -88,7 +91,12 @@ def cached_validation(fn,args,kwargs):
         value=fn(*args,**kwargs)
         if len(cache)>=128:cache.pop(next(iter(cache)))
         cache[key]=copy.deepcopy(value)
-        return value
+        return copy.deepcopy(value)
+
+
+def validation_key(fn,args,kwargs):
+    return (fn.__module__+'.'+fn.__name__,tuple(digest('emoblocks.validation-argument.v1',v) for v in args),
+            tuple((k,digest('emoblocks.validation-argument.v1',v)) for k,v in sorted(kwargs.items())))
 
 
 def canonical(value):
@@ -108,6 +116,8 @@ def canonical_bytes(value):
 
 
 def digest(domain, value):
+    if type(value) in curve_frozen.TYPES:
+        return value.digest(domain)
     return hashlib.sha256(domain.encode('utf-8') + b'\n' + canonical_bytes(value)).hexdigest()
 
 
@@ -861,6 +871,9 @@ def edit(project, action, recompute=None, **args):
 
 def _validated_encoding(project):
     context = _VALIDATION_CONTEXT.get() or _IDENTITY_CONTEXT.get()
+    if context is not None:
+        try:project=curve_frozen.freeze(project)
+        except (TypeError,ValueError,RecursionError):pass
     encoded=canonical_bytes(project) if context is not None else None
     key=hashlib.sha256(b'emoblocks.validation-cache.v1\n'+encoded).hexdigest() if encoded is not None else None
     if context is not None and key in context['validated_projects']:return encoded

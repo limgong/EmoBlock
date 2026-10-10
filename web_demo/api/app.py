@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from .core import ROOT, SAMPLES, SAMPLE_CATALOG, model, workflow, controller, short_name, edit_board
+import curve_graph
 from runtime_config import find_lmms
 
 DATA = Path(os.environ.get('EMOBLOCKS_WEB_DATA', str(ROOT / 'data/web-demo'))).resolve()
@@ -44,7 +45,7 @@ def persist(sid, c):
     folder.mkdir(parents=True, exist_ok=True)
     value = c._current_bundle()
     temp = folder / 'project.tmp'
-    temp.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False), encoding='utf-8')
+    temp.write_text(curve_graph.dumps(value), encoding='utf-8')
     temp.replace(folder / 'project.json')
     with db() as connection:
         connection.execute('INSERT OR REPLACE INTO sessions VALUES (?,?)', (sid, time.time()))
@@ -179,7 +180,7 @@ def run_jobs():
                     c.fail_recommendations(j['capture']['token'], {'code':'CANCELLED','message':'任务已取消。','details':{}})
                     j['status']='CANCELLED'
                 elif (j['folder']/'output.json').is_file():
-                    outcome=json.loads((j['folder']/'output.json').read_text())
+                    outcome=curve_graph.loads((j['folder']/'output.json').read_text())
                     accepted=c.finish_recommendations(j['capture']['token'],outcome)
                     j['status']=outcome['status'] if accepted else 'STALE'
                     if outcome.get('error'): j['error']=outcome['error']['message']

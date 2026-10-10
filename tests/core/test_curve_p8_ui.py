@@ -242,6 +242,23 @@ class CurveP8MappedTests(MappedUIFixture):
         ident=self.controller._project['materials'][1]['id']
         self.assertIn('changed',self.app.page.cards.rows[ident].winfo_children()[0].winfo_children()[0].curve_tooltip.text())
 
+    def test_tip_refresh_preserves_delay_and_visible_window_without_persistent_detail(self):
+        from curve_theme import hint
+        widget=self.app.transport_label
+        persistent=self.app.detail_text.get()
+        tip=hint(widget,'original tip',self.app.show_detail)
+        tip.schedule()
+        timer=tip.timer
+        for _ in range(3):hint(widget,'updated tip',self.app.show_detail)
+        self.assertEqual(tip.timer,timer)
+        tip.show();self.root.update_idletasks()
+        window=tip.window
+        hint(widget,'new visible text',self.app.show_detail)
+        self.assertIs(tip.window,window)
+        self.assertEqual(window.winfo_children()[0].cget('text'),'new visible text')
+        self.assertEqual(self.app.detail_text.get(),persistent)
+        tip.hide()
+
     def test_long_transport_name_is_compact_but_focus_displays_full_object(self):
         name='完整对象名称 '*40
         self.controller._project['materials'][-1]['label']=name
