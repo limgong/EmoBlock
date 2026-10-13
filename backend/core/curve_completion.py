@@ -428,7 +428,17 @@ def propose(request, should_cancel=None, on_progress=None):
                 lengths = list(dict.fromkeys((remaining, min(model.BAR, remaining))))
                 options += [('compose', root, length, policy) for root in roots
                             for length in lengths for policy in range(len(POLICIES))]
-                for kind, root, length, policy in options:
+                # Reserve work for later gaps. Exhaustively expanding the first
+                # beam layer can consume the entire budget before any complete
+                # multi-gap layout is reached. Prefer complete-range options,
+                # while retaining bounded alternatives for each live state.
+                quota=len(options)
+                if len(targets)>1:
+                    options.sort(key=lambda item: -item[2])
+                    rounds=max(1,len(targets)-gap_index)
+                    quota=max(1,(search.budget['max_expansions']-search.expansions)//
+                              max(1,rounds*len(beam)))
+                for kind, root, length, policy in options[:quota]:
                     if not search.expand():
                         termination = 'BUDGET_EXHAUSTED'; break
                     if kind == 'reuse':

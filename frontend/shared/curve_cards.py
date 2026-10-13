@@ -25,10 +25,15 @@ class MaterialCards(ttk.Frame):
         self.last_view = None
         self.rendering = False
         self.materials = []
+        self.pager=ttk.Frame(self,style='Curve.Panel.TFrame')
+        self.pager.pack(side='bottom',fill='x')
+        ttk.Button(self.pager,text='‹',width=2,style='Curve.Small.TButton',command=lambda:self.turn_page(-1)).pack(side='left')
+        self.page_label=ttk.Label(self.pager,style='Curve.Muted.TLabel',anchor='center')
+        self.page_label.pack(side='left',fill='x',expand=True)
+        ttk.Button(self.pager,text='›',width=2,style='Curve.Small.TButton',command=lambda:self.turn_page(1)).pack(side='right')
         self.canvas = tk.Canvas(self,highlightthickness=0,takefocus=True)
         self.canvas.pack(side='left',fill='both',expand=True)
         bar = TransientScrollbar(self,app,self.canvas.yview)
-        bar.pack(side='right',fill='y')
         self.scrollbar = bar
         bar.attach(self.canvas)
         self.canvas.configure(yscrollcommand=self.scrolled)
@@ -59,6 +64,15 @@ class MaterialCards(ttk.Frame):
         self.canvas.itemconfigure(self.window,width=event.width)
         self.scrolled(*self.canvas.yview())
 
+    def turn_page(self,direction):
+        count=len(list(self.visible_materials()));stride=self.CARD_HEIGHT+self.gap
+        capacity=max(1,self.canvas.winfo_height()//stride)
+        pages=max(1,math.ceil(count/capacity))
+        current=round(self.canvas.canvasy(0)/(capacity*stride))
+        target=max(0,min(pages-1,current+direction))
+        self.canvas.yview_moveto(target/pages)
+        self.render()
+
     def visible_materials(self):
         parents={m['id']:m for m in self.materials if m['kind']=='phrase'}
         originals={(m['provenance'].get('source_id'),m['provenance'].get('source_start_tick'),m['length_ticks'])
@@ -75,7 +89,9 @@ class MaterialCards(ttk.Frame):
         visible=list(self.visible_materials())
         index=next((i for i,(m,_) in enumerate(visible) if m['id']==ident),None)
         if index is not None:
-            total=max(1,len(visible)*(self.CARD_HEIGHT+self.gap))
+            stride=self.CARD_HEIGHT+self.gap
+            capacity=max(1,self.canvas.winfo_height()//stride)
+            total=max(self.canvas.winfo_height(),math.ceil(len(visible)/capacity)*capacity*stride)
             self.canvas.yview_moveto(index*(self.CARD_HEIGHT+self.gap)/total)
             self.render()
 
@@ -111,11 +127,19 @@ class MaterialCards(ttk.Frame):
         visible = list(self.visible_materials())
         stride = self.CARD_HEIGHT+self.gap
         width = max(1,self.canvas.winfo_width())
-        height = max(1,len(visible)*stride)
-        self.canvas.itemconfigure(self.window,width=width,height=height)
+        capacity=max(1,self.canvas.winfo_height()//stride)
+        pages=max(1,math.ceil(len(visible)/capacity))
+        height = max(self.canvas.winfo_height(),pages*capacity*stride)
         self.canvas.configure(scrollregion=(0,0,width,height))
+        current=min(pages-1,max(0,round(self.canvas.canvasy(0)/(capacity*stride))))
+        self.page_label.configure(text=f'{current+1} / {pages}')
         start = max(0,int(self.canvas.canvasy(0)//stride)-2)
         end = min(len(visible),int(math.ceil((self.canvas.canvasy(0)+self.canvas.winfo_height())/stride))+2)
+        # Keep native child coordinates near the visible viewport. Windows
+        # clips child-window positions at 16-bit coordinates on long libraries.
+        offset=start*stride
+        self.canvas.coords(self.window,0,offset)
+        self.canvas.itemconfigure(self.window,width=width,height=max(self.canvas.winfo_height(),(end-start)*stride))
         mounted = set(range(start,end))
         drag = self.app.material_drag
         if drag:
@@ -143,14 +167,14 @@ class MaterialCards(ttk.Frame):
             if dragging and (old_version[0]!=material or old_version[2]!=self.app.theme.name):
                 self.app.cancel_interaction();drag = None;dragging = False
             if old_version==version or dragging:
-                self.rows[ident].place_configure(x=left,y=index*stride+4,width=max(1,width-left-4))
+                self.rows[ident].place_configure(x=left,y=index*stride-offset+4,width=max(1,width-left-4))
                 continue
             if ident in self.rows:self.rows.pop(ident).destroy()
             self.row_versions[ident] = copy.deepcopy(version)
             category = material_type(material,self.materials)
             surface = TYPE_COLORS[category]
             card = tk.Canvas(self.body,bg=p['panel'],height=self.CARD_HEIGHT,highlightthickness=0,borderwidth=0)
-            card.place(x=left,y=index*stride+4,width=max(1,width-left-4),height=self.CARD_HEIGHT)
+            card.place(x=left,y=index*stride-offset+4,width=max(1,width-left-4),height=self.CARD_HEIGHT)
             self.rows[ident] = card
             content = tk.Frame(card,bg=surface)
             window = card.create_window(8,3,anchor='nw',window=content,height=self.CARD_HEIGHT-pixels(self.app.root,6))

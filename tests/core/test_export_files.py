@@ -21,7 +21,7 @@ class ExportFilesTests(unittest.TestCase):
         self.assertEqual(list(self.folder.glob('.emoblocks-export-*')),[])
 
     def test_overwrite_is_complete_with_unicode_spaces_and_long_directory(self):
-        folder=self.folder/('较长路径 English '*8);folder.mkdir();target=folder/'导出 成品.wav'
+        folder=self.folder/('较长路径 English '*8).rstrip();folder.mkdir();target=folder/'导出 成品.wav'
         target.write_bytes(b'old')
         result=export_files.atomic_export(self.source,target,[self.source])
         self.assertEqual(result,target.resolve());self.assertEqual(target.read_bytes(),self.source.read_bytes())
@@ -40,9 +40,27 @@ class ExportFilesTests(unittest.TestCase):
     def test_missing_or_changed_source_does_not_replace_target(self):
         with self.assertRaises(FileNotFoundError):export_files.atomic_export(self.folder/'missing.wav',self.target,[])
         original=export_files.shutil.copyfileobj
-        def removed(src,dst):original(src,dst);self.source.unlink()
+        def removed(src,dst):
+            original(src,dst)
+            # Windows cannot unlink an open file; the production guard checks
+            # identity after copying, when simulating disappearance is portable.
+        original_stat=Path.stat
+        def vanished(path,*args,**kwargs):
+            if path==self.source:raise FileNotFoundError(str(path))
+            return original_stat(path,*args,**kwargs)
         with patch('export_files.shutil.copyfileobj',side_effect=removed):
-            with self.assertRaises(FileNotFoundError):export_files.atomic_export(self.source,self.target,[])
+            with patch('pathlib.Path.stat',autospec=True,side_effect=vanished):
+                with self.assertRaises(FileNotFoundError):export_files.atomic_export(self.source,self.target,[])
+        self.assertEqual(self.target.read_bytes(),b'old export')
+        self.assertEqual(list(self.folder.glob('.emoblocks-export-*')),[])
+
+    def test_changed_source_during_copy_preserves_target(self):
+        original=export_files.shutil.copyfileobj
+        def changed(src,dst):
+            original(src,dst)
+            with self.source.open('ab') as writer:writer.write(b'changed')
+        with patch('export_files.shutil.copyfileobj',side_effect=changed):
+            with self.assertRaises(OSError):export_files.atomic_export(self.source,self.target,[])
         self.assertEqual(self.target.read_bytes(),b'old export')
         self.assertEqual(list(self.folder.glob('.emoblocks-export-*')),[])
 

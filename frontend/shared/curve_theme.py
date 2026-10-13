@@ -5,11 +5,11 @@ import ui_platform
 
 PALETTES = {
     'light': dict(bg='#f1f5f9', panel='#ffffff', inset='#f6f9fd', line='#dbe0ea',
-                  ink='#293244', muted='#626d80', accent='#2563eb', selected='#e7f0ff',
+                  ink='#293244', muted='#626d80', accent='#6366f1', selected='#e7f0ff',
                   shadow='#d9dfea', onaccent='#ffffff', error='#ac2336'),
-    'dark': dict(bg='#1c1c1e', panel='#2c2c2e', inset='#3a3a3c', line='#66666a',
-                 ink='#f5f5f7', muted='#c4c4cc', accent='#0a84ff', selected='#3a3a3c',
-                 shadow='#1c1c1e', onaccent='#ffffff', error='#ffb4bc'),
+    'dark': dict(bg='#1c1c1e', panel='#27272a', inset='#202023', line='#414147',
+                 ink='#ededf1', muted='#a7a7b2', accent='#97dfba', selected='#36363b',
+                 shadow='#1c1c1e', onaccent='#17281f', error='#ffb4bc'),
 }
 EMOTION_COLORS = dict(calm='#c9ded8', hope='#e9ddba', sad='#ccd6e9',
                       suspense='#dccfe4', crisis='#e9cbd0', resolve='#d4e2c9')
@@ -19,13 +19,14 @@ EMOTION_NAMES = dict(calm='平静／安定', hope='温暖／希望', sad='悲伤
 
 
 def font(size=12, bold=False):
-    return (ui_platform.font_family('Microsoft YaHei UI'), size, 'bold' if bold else 'normal')
+    factor=getattr(tk._default_root,'curve_workspace_scale',1.)
+    return (ui_platform.font_family('Microsoft YaHei UI'), round(size*factor), 'bold' if bold else 'normal')
 
 
 def title_font(root, size=14):
     available=set(tkfont.families(root))
     family=next((f for f in ('Songti SC','Noto Serif CJK SC','SimSun','STSong','Georgia') if f in available),font()[0])
-    return (family,size,'bold')
+    return (family,round(size*getattr(root,'curve_workspace_scale',1.)),'bold')
 
 
 def rounded(canvas, box, fill, outline='', radius=12, tags=()):
@@ -70,6 +71,13 @@ def install_surfaces(root, style, palette, name):
         style.layout('Curve.'+suffix,[('CurveSurface'+role+resource,dict(sticky='nsew',children=[
             ('Button.padding',dict(sticky='nsew',children=[(label,dict(sticky='nsew'))]))]))])
         style.configure('Curve.'+suffix,borderwidth=0,relief='flat')
+    panel_key='WorkspacePanel'+resource
+    if panel_key not in cache:
+        panel_palette=dict(palette,panel=palette['bg'],inset=palette['panel'])
+        panel=surface_image(root,panel_palette,'Button','normal')
+        style.element_create(panel_key,'image',panel,border=pixels(root,12),sticky='nsew')
+        cache[panel_key]=[panel]
+    style.layout('Curve.Surface.TFrame',[(panel_key,dict(sticky='nsew'))])
 
 
 class Theme:
@@ -138,6 +146,8 @@ class Theme:
         s.configure('Curve.Header.TButton',background=p['bg'],foreground=p['ink'],padding=0,font=font())
         install_surfaces(self.root,s,p,name)
         for bar in getattr(self.root,'curve_scrollbars',()):bar.draw()
+        for choices in tuple(getattr(self.root,'curve_block_choices',())):
+            if choices.winfo_exists():choices.layout()
         for button in tuple(getattr(self.root,'curve_icon_buttons',())):
             if button.winfo_exists():button.refresh_icon()
 

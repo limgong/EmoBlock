@@ -15,7 +15,7 @@ class CurveThemeTests(MappedUIFixture):
     def test_exact_dark_surfaces_and_body_contrast(self):
         dark=PALETTES['dark']
         self.assertIsInstance(self.root,tk.Tk)
-        self.assertEqual([dark[k] for k in ('bg','panel','inset','accent')],['#1c1c1e','#2c2c2e','#3a3a3c','#0a84ff'])
+        self.assertEqual([dark[k] for k in ('bg','panel','inset','accent')],['#1c1c1e','#27272a','#202023','#97dfba'])
         for palette in PALETTES.values():
             for text in ('ink','muted'):
                 for surface in ('bg','panel','inset'):
@@ -27,9 +27,9 @@ class CurveThemeTests(MappedUIFixture):
         self.app.toggle_theme()
         style=ttk.Style(self.root)
         for name in ('Curve.TButton','Curve.Primary.TButton'):
-            self.assertEqual(style.lookup(name,'background'),'#3a3a3c')
+            self.assertEqual(style.lookup(name,'background'),dark['inset'])
             foreground=style.lookup(name,'foreground')
-            a,b=sorted([luminance(foreground),luminance('#3a3a3c')])
+            a,b=sorted([luminance(foreground),luminance(dark['inset'])])
             self.assertGreaterEqual((b+.05)/(a+.05),4.5)
 
     def test_window_sizes_theme_selection_scroll_model_and_player_preserved(self):

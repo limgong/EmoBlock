@@ -41,7 +41,7 @@ class VisualInteractionTests(MappedUIFixture):
                 self.assertGreaterEqual(pixels(self.root,44),44)
                 self.assertGreaterEqual(self.app.play_button.winfo_height(),44)
                 self.assertGreaterEqual(self.app.theme_button.winfo_height(),44)
-                self.assertGreaterEqual(self.app.page.cards.scrollbar.winfo_width(),12)
+                self.assertGreaterEqual(self.app.page.timeline.vscrollbar.winfo_width(),12)
         self.root.tk.call('tk','scaling',native)
         self.assertEqual(before,self.controller.state())
 
@@ -177,7 +177,7 @@ class VisualInteractionTests(MappedUIFixture):
         self.assertEqual(before,controller.state())
 
     def test_transient_scroll_near_drag_idle_keeps_geometry_and_cleans_timer(self):
-        cards=self.app.page.cards;bar=cards.scrollbar
+        cards=self.app.page.timeline;bar=cards.vscrollbar
         bar.set(0,.2);self.root.update();width=bar.winfo_width()
         bar.hide();self.assertFalse(bar.visible)
         e=SimpleNamespace(x_root=bar.winfo_rootx()+2,y_root=cards.canvas.winfo_rooty()+30)
@@ -193,7 +193,7 @@ class VisualInteractionTests(MappedUIFixture):
         bar.destroy();self.assertIsNone(bar.timer)
 
     def test_scrollbar_hide_focus_drag_real_timer_and_destroy_keep_timer_ownership(self):
-        bar=self.app.page.cards.scrollbar;before=copy.deepcopy(self.controller.state())
+        bar=self.app.page.timeline.vscrollbar;before=copy.deepcopy(self.controller.state())
         playing=copy.deepcopy(self.app.playing_target);calls=list(self.app.player.calls)
         registered=set();real_after=bar.after
         def record(ms,func=None,*args):

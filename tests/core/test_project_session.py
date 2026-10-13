@@ -69,7 +69,7 @@ class ProjectSessionTests(unittest.TestCase):
         self.assertEqual(a.edit_status_label.cget('text'),generated)
         p.resize_timeline(1);self.assertTrue(a.dirty);self.assertIn('未保存',a.save_status_label.cget('text'))
         p.undo();self.assertFalse(a.dirty);self.assertIn('已保存',a.save_status_label.cget('text'))
-        self.assertEqual(json.loads(path.read_text()),a.project_payload())
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8')),a.project_payload())
         self.assertIn(path.name,a.save_location_text());self.assertIn(str(path),a.save_location_text())
 
     def test_selection_playback_scroll_and_generated_status_are_separate(self):
@@ -84,7 +84,7 @@ class ProjectSessionTests(unittest.TestCase):
     def test_each_save_is_new_and_old_file_unchanged(self):
         first=self.app.save_project();content=first.read_bytes();second=self.app.save_project()
         self.assertNotEqual(first,second);self.assertEqual(first.read_bytes(),content)
-        self.assertEqual(json.loads(first.read_text()),json.loads(second.read_text()))
+        self.assertEqual(json.loads(first.read_text(encoding='utf-8')),json.loads(second.read_text(encoding='utf-8')))
 
     def test_save_failure_preserves_editor_history_and_old_file(self):
         a=self.app;p=self.page;old=a.save_project();content=old.read_bytes();p.resize_timeline(1)

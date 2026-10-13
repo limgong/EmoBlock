@@ -3,6 +3,8 @@ import ctypes
 from pathlib import Path
 import uuid
 import math
+import shutil
+import tempfile
 
 
 def playback_range(duration,start=0.,end=None):
@@ -18,6 +20,7 @@ class WavePlayer:
     def __init__(self):
         self.alias='emo_'+uuid.uuid4().hex
         self.opened=False
+        self.playback_copy=None
         self.api=ctypes.windll.winmm
 
     def command(self,text):
@@ -34,9 +37,17 @@ class WavePlayer:
         path=Path(path).resolve()
         if not path.is_file():raise ValueError('试听文件已移动或缺失。')
         if '"' in str(path):raise ValueError('音频路径包含无效字符。')
-        self.command(f'open "{path}" type waveaudio alias {self.alias}')
-        self.opened=True
         try:
+            # The waveaudio string driver rejects long element names even
+            # when Windows can read them. Keep a private, disposable copy;
+            # never move or rewrite the generated artifact.
+            if len(str(path))>120:
+                self.playback_copy=tempfile.TemporaryDirectory(prefix='emo-')
+                short=Path(self.playback_copy.name)/'p.wav'
+                shutil.copyfile(path,short)
+                path=short
+            self.command(f'open "{path}" type waveaudio alias {self.alias}')
+            self.opened=True
             self.command(f'set {self.alias} time format milliseconds')
             duration=int(self.command(f'status {self.alias} length'))/1000
             a,b=playback_range(duration,start,end)
@@ -56,6 +67,11 @@ class WavePlayer:
         if self.opened:self.command(f'resume {self.alias}')
 
     def close(self):
-        if self.opened:
-            try:self.command(f'close {self.alias}')
-            finally:self.opened=False
+        try:
+            if self.opened:
+                try:self.command(f'close {self.alias}')
+                finally:self.opened=False
+        finally:
+            if self.playback_copy is not None:
+                self.playback_copy.cleanup()
+                self.playback_copy=None

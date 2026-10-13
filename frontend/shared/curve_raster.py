@@ -4,7 +4,7 @@ import tkinter as tk
 
 
 def scale(root):
-    return max(1.,round(float(root.tk.call('tk','scaling'))/(4/3),2))
+    return max(1.,round(float(root.tk.call('tk','scaling'))/(4/3),2))*getattr(root,'curve_workspace_scale',1.)
 
 
 def pixels(root,value):return max(1,round(value*scale(root)))

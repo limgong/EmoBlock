@@ -194,6 +194,7 @@ class CurveP3Tests(MappedUIFixture):
     def test_mapped_scroll_and_shrink_coordinates_and_block_line_independence(self):
         ident = self.place(start=5760)
         c = self.app.page.timeline
+        c.scale=.085;c.draw()  # Exercise a zoomed view with horizontal overflow.
         self.app.edit('set_intensity',points=[dict(tick=0,level=.25),dict(tick=7200,level=.8),dict(tick=15360,level=.25)])
         for geometry in ('1440x900','1020x700'):
             self.root.geometry(geometry);self.root.update()
@@ -454,6 +455,7 @@ class CurveP3Tests(MappedUIFixture):
 
     def test_trace_after_scroll_uses_canvasx_and_edge_scroll_recomputes_tick(self):
         c = self.app.page.timeline;c.set_mode('trace')
+        c.scale=.085;c.draw()
         self.root.geometry('1020x700');self.root.update()
         c.canvas.xview_moveto(.3);self.root.update()
         before = self.controller.state()['project']

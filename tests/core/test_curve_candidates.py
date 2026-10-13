@@ -340,7 +340,7 @@ class StagingTests(unittest.TestCase):
         p=fixture().project;p['contract_rev']='curve-workflow-v2-r3-p23';ctrl=w.Controller(p)
         ctrl.session.mark_saved();before=m.fingerprint(p);job=ctrl.capture_completion();self.assertEqual(job['request']['input_contract_rev'],p['contract_rev'])
         with tempfile.TemporaryDirectory() as tmp:
-            path=ctrl.save_snapshot(Path(tmp)/'running.json');raw_data=json.loads(path.read_text())
+            path=ctrl.save_snapshot(Path(tmp)/'running.json');raw_data=json.loads(path.read_text(encoding='utf-8'))
             self.assertEqual(raw_data['project'],p);self.assertEqual(raw_data['snapshots'][0]['contract_rev'],p['contract_rev'])
             loaded=w.Controller();loaded.load(path)
             self.assertEqual(loaded.project,p);self.assertTrue(loaded.state()['is_saved']);self.assertTrue(loaded.state()['staging_dirty'])
@@ -355,7 +355,7 @@ class StagingTests(unittest.TestCase):
             path=ctrl.save_snapshot(Path(tmp)/'ready.json');loaded=w.Controller();loaded.load(path)
             self.assertEqual(loaded.completion_state()['status'],'READY');self.assertFalse(loaded.state()['staging_dirty'])
             self.assertEqual(loaded.project,ctrl.project)
-            data=json.loads(path.read_text());data['attempts'][0]['completion']['outcome']['candidates'][0]['notes']=[]
+            data=json.loads(path.read_text(encoding='utf-8'));data['attempts'][0]['completion']['outcome']['candidates'][0]['notes']=[]
             with self.assertRaises(m.ProjectError):store.validate_bundle(data)
 
     def test_no_targets_no_attempt_no_registration_no_dirty_or_undo(self):

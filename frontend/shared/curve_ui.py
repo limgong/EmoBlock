@@ -88,6 +88,7 @@ class CurveApplication:
         self.theme = Theme(root)
         self.player = WavePlayer()
         self.closed = False
+        self.layout_timer = None
         self.jobs = {}
         self.messages = queue.Queue()
         self.ready_assets = {}
@@ -139,7 +140,8 @@ class CurveApplication:
         self.bridge = BridgeUI(self)
         self.connection = ConnectionUI(self)
         self.recommendation = RecommendationUI(self)
-        self.page.history_mode = ttk.Combobox(self.page.history_panel,textvariable=self.recommendation.mode,
+        from curve_choices import BlockChoices
+        self.page.history_mode = BlockChoices(self.page.history_panel,self,textvariable=self.recommendation.mode,
             values=list(MODES.values()),state='readonly',style='Curve.TCombobox')
         self.page.history_mode.bind('<<ComboboxSelected>>',self.recommendation.mode_changed)
         hint(self.page.history_mode,'历史试听/导出明确使用此模式；缺失不回退到另一模式。',self.show_detail)
@@ -1494,7 +1496,9 @@ class CurveApplication:
         self.layout_sources()
 
     def layout_sources(self):
-        collapsed = self.source_user_collapsed if self.source_user_collapsed is not None else self.root.winfo_width()<1180
+        from curve_raster import pixels
+        threshold=round(pixels(self.root,1180)/getattr(self.root,'curve_workspace_scale',1.))
+        collapsed = self.source_user_collapsed if self.source_user_collapsed is not None else self.root.winfo_width()<threshold
         if collapsed:self.page.source_panel.grid_remove()
         else:self.page.source_panel.grid()
         self.collapse_button.state(['selected'] if not collapsed else ['!selected'])
@@ -1506,12 +1510,39 @@ class CurveApplication:
         if getattr(self,'last_window_size',size)!=size and self.page.timeline.intensity_draft:
             self.cancel_interaction()
         self.last_window_size=size
+        self.apply_workspace_scale()
         self.layout_sources()
         width = max(400,event.width-50)
         self.status_label.configure(wraplength=0)
         self.page.memory_label.configure(wraplength=0)
         self.page.draw_source()
-        self.root.after_idle(self.page.secondary_tools.layout)
+        if self.layout_timer is not None:self.root.after_cancel(self.layout_timer)
+        self.layout_timer=self.root.after_idle(self.layout_after_resize)
+
+    def layout_after_resize(self):
+        self.layout_timer=None
+        if not self.closed:self.page.secondary_tools.layout()
+
+    def apply_workspace_scale(self):
+        from curve_raster import pixels
+        factor=round(min(1.6,max(1.,min(self.root.winfo_width()/1280,self.root.winfo_height()/800))),1)
+        if factor==getattr(self.root,'curve_workspace_scale',1.):return
+        self.root.curve_workspace_scale=factor
+        self.theme.set(self.theme.name)
+        self.page.source_panel.configure(width=pixels(self.root,180))
+        self.page.middle.configure(width=pixels(self.root,252))
+        self.page.columnconfigure(1,minsize=pixels(self.root,252))
+        self.page.footer.configure(height=pixels(self.root,124))
+        self.page.cards.CARD_HEIGHT=pixels(self.root,96)
+        self.page.cards.gap=pixels(self.root,8)
+        self.page.cards.row_versions.clear()
+        self.page.source_list.configure(font=font())
+        self.page.history_list.configure(font=font())
+        self.page.source_notes.configure(height=pixels(self.root,62))
+        self.page.timeline.half_block=pixels(self.root,28)
+        self.page.timeline.margin=pixels(self.root,36)
+        self.version_selector.layout();self.block_selector.layout()
+        self.refresh()
 
     def toggle_theme(self):
         self.cancel_interaction()
@@ -1594,6 +1625,9 @@ class CurveApplication:
         return True
 
     def destroyed(self, event):
+        if event.widget==self.root and self.layout_timer is not None:
+            self.root.after_cancel(self.layout_timer)
+            self.layout_timer=None
         if event.widget==self.root and not self.closed:
             self.recommendation.shutdown()
             for job in self.jobs.values():

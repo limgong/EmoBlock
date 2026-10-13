@@ -95,6 +95,19 @@ def combination(ident, children):
 
 
 class CompletionTests(unittest.TestCase):
+    def test_four_gaps_with_large_library_reach_complete_layout_with_default_budget(self):
+        p=model.new_project(8)
+        p['sources']=project()['sources']
+        p['materials']=[material('root-%02d'%i,1920) for i in range(24)]
+        p['placements']=[dict(id='placed-%s'%i,material_id=m['id'],base_snapshot=copy.deepcopy(m),
+            start_tick=i*1920,length_ticks=1920,emotion='calm',emotion_variant=None)
+            for i,m in zip((0,2,4,6),p['materials'])]
+        req=request(p,selected=False)
+        result=completion.propose(req)
+        self.assert_complete(req,result)
+        self.assertLessEqual(result['search']['expansions'],req['budget']['max_expansions'])
+        self.assertTrue(all(len(proposal['placements'])==4 for proposal in result['proposals']))
+
     def assert_complete(self, req, result):
         self.assertTrue(result['proposals'], result)
         self.assertNotIn('ENOUGH_CANDIDATES', (result['search']['termination'], result['search']['raw_termination']))
@@ -424,7 +437,7 @@ class RealCompletionIntegrationTests(unittest.TestCase):
             loaded = curve_workflow.Controller(); loaded.load(ready)
             self.assertEqual(loaded.completion_state()['status'], 'READY')
             self.assertEqual(loaded.project, before)
-            serialized = json.loads(ready.read_text())
+            serialized = json.loads(ready.read_text(encoding='utf-8'))
             self.assertEqual(serialized['project']['materials'], before['materials'])
             self.assertEqual(serialized['attempts'][0]['completion']['outcome'], outcome)
             late = loaded.capture_completion(loaded.gap_items()[0]['id'])

@@ -390,7 +390,7 @@ class StoreTests(unittest.TestCase):
             pool = studio_model.materials.new_pool()
             report = dict(mode='story', report=dict(output_directory=str(root), duration_seconds=1, bars=1))
             path = studio_model.save_project(pool, None, [dict(emotion='calm', start=.3, end=.5)], [report], settings=dict(story=old), path=root/'studio.json')
-            raw = json.loads(path.read_text()); loaded = curve_store.load(path)
+            raw = json.loads(path.read_text(encoding='utf-8')); loaded = curve_store.load(path)
             self.assertEqual(loaded['legacy'], raw)
             self.assertEqual(loaded['capabilities']['history'], [dict(wav=False, midi=True, mmp=False)])
             doc = studio_model.quick_document(studio_model.materials.import_theme(ASSETS/'theme-c.mid', name='theme'), [dict(emotion='calm', start=.2, end=.3)])

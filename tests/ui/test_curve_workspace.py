@@ -3,6 +3,7 @@ import unittest
 import copy
 from tkinter import ttk, font as tkfont
 from types import SimpleNamespace
+from curve_raster import pixels
 from unittest.mock import patch
 import curve_project
 import curve_workflow
@@ -225,7 +226,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
                     canvas=self.app.page.timeline.canvas
                     self.assertGreaterEqual(canvas.winfo_height(),240 if self.app.drawer_mode else 320)
                     self.assertEqual(bool(self.app.page.source_panel.winfo_ismapped()),not collapsed)
-                    self.assertEqual(self.app.page.middle.winfo_width(),252)
+                    self.assertEqual(self.app.page.middle.winfo_width(),pixels(self.root,252))
                     for widget in (self.app.play_button,self.app.stop_button,self.app.pause_button):
                         self.assertTrue(widget.winfo_ismapped())
                         self.assertGreaterEqual(widget.winfo_height(),44)
@@ -235,7 +236,7 @@ class WorkspaceLayoutTests(MappedUIFixture):
 
     def test_card_geometry_notes_and_real_focus_tooltip(self):
         cards=self.app.page.cards;card=cards.rows['child0']
-        self.assertEqual(card.winfo_height(),96)
+        self.assertEqual(card.winfo_height(),cards.CARD_HEIGHT)
         content=card.winfo_children()[0]
         thumbnails=[w for w in content.winfo_children() if w.winfo_class()=='Canvas' and getattr(w,'material_thumbnail',False)]
         self.assertTrue(thumbnails[0].find_all())
@@ -250,7 +251,8 @@ class WorkspaceLayoutTests(MappedUIFixture):
         self.assertIs(self.app.prepare_button,self.app.play_button)
         before=self.controller.state()['project']
         for width,collapsed in ((1150,True),(1179,True),(1180,False)):
-            self.app.source_user_collapsed=None;self.root.geometry(f'{width}x700');self.root.update()
+            factor=getattr(self.root,'curve_workspace_scale',1.)
+            self.app.source_user_collapsed=None;self.root.geometry(f'{round(pixels(self.root,width)/factor)}x{round(pixels(self.root,700)/factor)}');self.root.update()
             self.assertEqual(bool(self.app.page.source_panel.winfo_ismapped()),not collapsed)
         self.app.source_user_collapsed=False;self.root.geometry('1020x700');self.root.update()
         self.assertTrue(self.app.page.source_panel.winfo_ismapped())

@@ -113,7 +113,7 @@ class CurveCardsTests(MappedUIFixture):
         self.controller._project['materials'][0]['generation']={'method':'answer'}
         self.app.refresh();self.root.update()
         row=cards.rows['child1']
-        cards.canvas.yview_moveto(row.winfo_y()/cards.body.winfo_height());self.root.update()
+        cards.locate('child1');self.root.update()
         self.assertGreaterEqual(row.winfo_rooty(),cards.canvas.winfo_rooty()-2)
         canvas=self.app.page.timeline
         self.drag('child1',canvas.canvas.winfo_rootx()+canvas.x(480)+18,

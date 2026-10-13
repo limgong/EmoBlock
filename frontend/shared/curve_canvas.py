@@ -46,7 +46,8 @@ class CurveCanvas(ttk.Frame):
         self.selected_connection_id = None
         self.selected_id = None
         self.scene_height=pixels(app.root,400)
-        self.scale = .085*pixels(app.root,100)/100
+        self._scale = .085*pixels(app.root,100)/100
+        self.manual_scale = False
         self.half_block=pixels(app.root,28)
         self.margin = pixels(app.root,36)
         self.boxes = {}
@@ -136,6 +137,16 @@ class CurveCanvas(ttk.Frame):
         self.app.update_emotions()
         self.app.update_workspace()
 
+    @property
+    def scale(self):
+        return self._scale
+
+    @scale.setter
+    def scale(self,value):
+        # Explicit view zoom must survive redraws and native scrolling.
+        self._scale=value
+        self.manual_scale=True
+
     def points(self):
         return self.intensity_draft['points'] if self.intensity_draft else self.project['intensity_points']
 
@@ -181,6 +192,12 @@ class CurveCanvas(ttk.Frame):
             c.create_text(24,80,anchor='nw',text='旧工程只读 · 请选择已有成品试听或导出',fill=p['muted'],font=font())
             return
         total = self.project['total_ticks']
+        # Fit short scores to the viewport; retain a readable minimum cell
+        # width and horizontal navigation for long scores.
+        minimum = (.04 if total <= 16*1920 else .085)*pixels(self.app.root,100)/100
+        if not self.manual_scale:
+            self._scale=max(minimum,
+                            max(1,c.winfo_width()-2*self.margin)/max(1,total))
         height = self.scene_height
         width = max(c.winfo_width(), self.x(total)+self.margin)
         c.configure(scrollregion=(0,0,width,height))
@@ -545,13 +562,13 @@ class CurveCanvas(ttk.Frame):
         left,right = c.canvasx(0),c.canvasx(c.winfo_width())
         if b<left or a>right:return
         x = max(left+4,min((a+b)/2+6,right-56))
-        y = 44+lane*22
+        y = pixels(self.app.root,44)
         label = c.create_text(x+3,y+2,anchor='nw',text=text,fill=ink,font=font(9,True),tags=tag)
         l,t,r,d = c.bbox(label)
         width,height=r-l+6,d-t+4
         if width>right-left-8:
             c.delete(label);return
-        y=44+lane*22
+        y=pixels(self.app.root,44)+lane*(height+pixels(self.app.root,3))
         while True:
             occupied=sorted((max(left+4,u-3),min(right-4,z+3)) for (u,v,z,w),_ in self.range_badges+self.number_badges if v<y+height and y<w)
             cursor=left+4;options=[]

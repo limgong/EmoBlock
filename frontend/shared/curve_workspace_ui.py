@@ -160,7 +160,7 @@ def build_page(page, parent, app, methods, emotions):
     page.columnconfigure(1, weight=0, minsize=pixels(app.root,252))
     page.columnconfigure(2, weight=1, minsize=pixels(app.root,440))
     page.rowconfigure(0, weight=1)
-    page.source_panel = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=pixels(app.root,180))
+    page.source_panel = ttk.Frame(page, style='Curve.Surface.TFrame', padding=12, width=pixels(app.root,180))
     page.source_panel.grid(row=0, column=0, sticky='nsew', padx=(0,8))
     page.source_panel.pack_propagate(False)
     row = ttk.Frame(page.source_panel, style='Curve.Panel.TFrame'); row.pack(fill='x')
@@ -184,7 +184,7 @@ def build_page(page, parent, app, methods, emotions):
     hint(page.source_audition, '选择来源只筛选；试听明确准备并播放该原始旋律。', app.show_detail)
     page.source_reminder=ttk.Label(page.source_panel,text='原始来源始终保留',style='Curve.Muted.TLabel')
     page.source_reminder.pack(anchor='w',pady=8)
-    page.middle = ttk.Frame(page, style='Curve.Panel.TFrame', padding=8, width=pixels(app.root,252))
+    page.middle = ttk.Frame(page, style='Curve.Surface.TFrame', padding=12, width=pixels(app.root,252))
     page.middle.grid(row=0, column=1, sticky='nsew', padx=(0,8));page.middle.pack_propagate(False)
     ttk.Label(page.middle,text='音乐积木库',style='Curve.Title.TLabel').pack(anchor='w',pady=(2,6))
     # Kept as an unmounted compatibility holder; creation is in block menus.
@@ -204,7 +204,7 @@ def build_page(page, parent, app, methods, emotions):
         IconButton(row,app,{'试听':'play','确认':'combine','取消':'cancel'}[text],text,lambda f=fn:app.safe(f)).pack(side='left',padx=1)
     page.cards=MaterialCards(page.middle,app);page.cards.canvas.configure(width=1)
     page.cards.pack(fill='both',expand=True,pady=(6,0))
-    page.right=ttk.Frame(page,style='Curve.Panel.TFrame',padding=8);page.right.grid(row=0,column=2,sticky='nsew')
+    page.right=ttk.Frame(page,style='Curve.Surface.TFrame',padding=(12,8));page.right.grid(row=0,column=2,sticky='nsew')
     # Packed bottom first: the player always retains its own space.
     page.footer=ttk.Frame(page.right,style='Curve.Panel.TFrame',height=pixels(app.root,124))
     page.footer.pack(side='bottom',fill='x',pady=(6,0));page.footer.pack_propagate(False)
@@ -292,6 +292,8 @@ def build_chrome(app):
     app.collapse_button=IconButton(header,app,'sidebar','旋律原料',app.toggle_sources,tip=lambda:'展开旋律原料' if app.source_user_collapsed or not app.page.source_panel.winfo_manager() else '收起旋律原料')
     app.collapse_button.pack(side='left',before=app.brand_button,padx=(0,4))
     app.history_button=button(header,'历史',app.toggle_history);app.history_button.pack(side='right',padx=2)
+    from curve_window import WindowChrome
+    app.window_chrome=WindowChrome(app,header)
 
 
 def build_player(app):

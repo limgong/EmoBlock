@@ -104,6 +104,7 @@ class ProcessingDockTests(MappedUIFixture):
 
     def test_wheel_shift_and_diagonal_touchpad_route_both_axes(self):
         timeline=self.app.page.timeline;c=timeline.canvas
+        timeline.scale=.085;timeline.draw()
         self.app.toggle_drawer('advanced');self.root.update()
         c.xview_moveto(.1);c.yview_moveto(0);self.root.update()
         x=c.xview()[0];y=c.yview()[0]
@@ -145,6 +146,7 @@ class ProcessingDockTests(MappedUIFixture):
 
     def test_edge_scroll_moves_both_axes_and_cancel_retires_timer(self):
         timeline=self.app.page.timeline;c=timeline.canvas
+        timeline.scale=.085;timeline.draw()
         self.app.toggle_drawer('advanced');self.root.update()
         c.xview_moveto(.2);c.yview_moveto(.1);self.root.update()
         before=(c.xview()[0],c.yview()[0])
@@ -172,8 +174,8 @@ class ProcessingDockTests(MappedUIFixture):
             self.assertIsNone(self.root.grab_current())
             self.assertEqual(before,self.controller.state())
 
-    def test_clear_semantic_icons_are_distinct_and_palette_is_blue_white(self):
-        self.assertEqual(self.app.theme.colors['accent'],'#2563eb')
+    def test_clear_semantic_icons_are_distinct_and_palette_matches_light_preview(self):
+        self.assertEqual(self.app.theme.colors['accent'],'#6366f1')
         self.assertEqual(self.app.theme.colors['panel'],'#ffffff')
         for first,second in (('play','generate'),('stop','cancel'),('details','advanced')):
             a=icon_image(self.root,first,'#000000','#ffffff')
